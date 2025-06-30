@@ -50,18 +50,20 @@ check_tidy_types <- function(map, .data) {
 #' @param map a `redist_map` object
 #' @param x a variable to tally. Tidy-evaluated.
 #' @param .data a `redist_plans` object or matrix of plans
+#' @param num_threads The number of threads to use for the calculation. Can
+#' significantly speedup calculations for a large number of plans. 
 #'
 #' @return a vector containing the tallied values by district and plan (column-major)
 #'
 #' @concept analyze
 #' @export
-tally_var <- function(map, x, .data = pl()) {
+tally_var <- function(map, x, .data = pl(), num_threads = 1) {
     check_tidy_types(map, .data)
     if (length(unique(diff(as.integer(.data$district)))) > 2)
         cli_warn("Districts not sorted in ascending order; output may be incorrect.")
 
     x <- rlang::eval_tidy(rlang::enquo(x), map)
-    as.numeric(pop_tally(get_plans_matrix(.data), x, attr(.data, "ndists")))
+    as.numeric(pop_tally(get_plans_matrix(.data), x, attr(.data, "ndists"), num_threads))
 }
 
 #' @rdname redist.group.percent
@@ -69,11 +71,13 @@ tally_var <- function(map, x, .data = pl()) {
 #'
 #' @param map a \code{\link{redist_map}} object
 #' @param .data a \code{\link{redist_plans}} object or matrix of plans
+#' @param num_threads The number of threads to use for the calculation. Can
+#' significantly speedup calculations for a large number of plans.
 #'
 #' @concept analyze
 #' @export
 group_frac <- function(map, group_pop, total_pop = map[[attr(map, "pop_col")]],
-                       .data = pl()) {
+                       .data = pl(), num_threads = 1) {
     check_tidy_types(map, .data)
     # districts not in ascending order
     if (length(unique(diff(as.integer(.data$district)))) > 2)
@@ -91,12 +95,13 @@ group_frac <- function(map, group_pop, total_pop = map[[attr(map, "pop_col")]],
     if (length(group_pop) != nrow(plans))
         cli_abort("{.arg .data} and {.arg group_pop} must have the same number of precincts.")
 
-    as.numeric(group_pct(plans, group_pop, total_pop, attr(.data, "ndists")))
+    as.numeric(group_pct(plans, group_pop, total_pop, attr(.data, "ndists"), num_threads))
 }
 
 
-#' Average a variable by precinct
+#' Average a variable by precinct (Deprecated)
 #'
+#' Deprecated in favor of [proj_avg()].
 #' Takes a column of a `redist_plans` object and averages it across a set of
 #' `draws` for each precinct.
 #'
@@ -109,44 +114,10 @@ group_frac <- function(map, group_pop, total_pop = map[[attr(map, "pop_col")]],
 #'
 #' @return a vector of length matching the number of precincts, containing the average.
 #'
-#' @concept analyze
 #' @export
 avg_by_prec <- function(plans, x, draws = NA) {
-    plans_m <- get_plans_matrix(plans)
-
-    n_ref <- 0
-    # copied from get_n_ref()
-    if (!is.null(colnames(plans_m))) {
-        refs <- which(nchar(colnames(plans_m)) > 0)
-        n_ref <- length(unique(colnames(plans_m)[refs]))
-    }
-
-    if (is.null(draws)) {
-        draw_idx <- seq_len(ncol(plans_m))
-    } else if (length(draws) == 1 && is.na(draws)) {
-        if (n_ref > 0) {
-            draw_idx <- seq_len(ncol(plans_m))[-seq_len(n_ref)]
-        } else {
-            draw_idx <- seq_len(ncol(plans_m))
-        }
-    } else if (is.logical(draws)) {
-        draw_idx <- which(draws)
-    } else {
-        draw_idx <- match(as.character(draws), levels(plans$draw))
-    }
-
-    plans <- arrange(plans, as.integer(.data$draw), .data$district)
-    n_distr <- max(plans_m[, draw_idx[1]])
-    m_val <- matrix(rlang::eval_tidy(rlang::enquo(x), plans), nrow = n_distr)
-
-    plans_m <- plans_m[, draw_idx, drop = FALSE]
-    m_val <- m_val[, draw_idx, drop = FALSE]
-    m_prec <- matrix(nrow = nrow(plans_m), ncol = ncol(plans_m))
-    for (i in seq_len(ncol(plans_m))) {
-        m_prec[, i] <- m_val[, i][plans_m[, i]]
-    }
-
-    rowMeans(m_prec)
+    .Deprecated("proj_avg")
+    proj_avg(plans, {{ x }}, draws)
 }
 
 
@@ -154,18 +125,25 @@ avg_by_prec <- function(plans, x, draws = NA) {
 #'
 #' @param map a \code{\link{redist_map}} object
 #' @param .data a \code{\link{redist_plans}} object
-#' @param ... passed on to \code{redist.parity}
+#' @param num_threads The number of threads to use for the calculation. Can
+#' significantly speedup calculations for a large number of plans.
+#' @param rep_by_district Whether or not to return a duplicated value for each 
+#' district (so size `nsims*districts`) or return a single value for each plan.
 #'
 #' @concept analyze
 #' @export
-plan_parity <- function(map, .data = pl(), ...) {
+plan_parity <- function(map, .data = pl(), num_threads = 1, rep_by_district = TRUE) {
     check_tidy_types(map, .data)
     ndists <- attr(map, "ndists")
     total_pop <- map[[attr(map, "pop_col")]]
     if (is.null(total_pop)) cli_abort("Population vector missing from {.arg map}")
 
-    rep(max_dev(get_plans_matrix(.data), total_pop, ndists),
-        each = ndists)
+    if(rep_by_district){
+        return(rep(max_dev(get_plans_matrix(.data), total_pop, ndists, num_threads),
+                each = ndists))
+    }else{
+        return(max_dev(get_plans_matrix(.data), total_pop, ndists, num_threads))
+    }
 }
 
 

@@ -2,40 +2,37 @@
 % Please edit documentation in R/redist_ms.R
 \name{redist_mergesplit}
 \alias{redist_mergesplit}
-\title{Merge-Split/Recombination MCMC Redistricting Sampler (Carter et al. 2019)}
+\title{Parallel Merge-Split/Recombination MCMC Redistricting Sampler (Carter et al. 2019)}
 \usage{
 redist_mergesplit(
   map,
   nsims,
+  counties = NULL,
   warmup = if (is.null(init_plan)) 10 else max(100, nsims\%/\%5),
   thin = 1L,
+  chains = 1,
   init_plan = NULL,
-  counties = NULL,
-  compactness = 1,
   constraints = list(),
   constraint_fn = function(m) rep(0, ncol(m)),
-  adapt_k_thresh = 0.99,
-  k = NULL,
+  sampling_space = c("graph_plan_space", "spanning_forest_space", "linking_edge_space"),
+  split_method = c("naive_top_k", "uniform_valid_edge", "expo_bigger_abs_dev"),
+  split_params = list(adapt_k_thresh = 0.99),
+  merge_prob_type = "uniform",
+  compactness = 1,
+  ncores = NULL,
+  cl_type = "PSOCK",
+  return_all = TRUE,
   init_name = NULL,
   verbose = FALSE,
-  silent = FALSE
+  silent = FALSE,
+  diagnostic_mode = FALSE
 )
 }
 \arguments{
 \item{map}{A \code{\link{redist_map}} object.}
 
-\item{nsims}{The number of samples to draw, including warmup.}
-
-\item{warmup}{The number of warmup samples to discard. Recommended to be at
-least the first 20\% of samples, and in any case no less than around 100
-samples, unless initializing from a random plan.}
-
-\item{thin}{Save every \code{thin}-th sample. Defaults to no thinning (1).}
-
-\item{init_plan}{The initial state of the map. If not provided, will default to
-the reference map of the \code{map} object, or if none exists, will sample
-a random initial state using \code{\link{redist_smc}}. You can also request
-a random initial state by setting \code{init_plan="sample"}.}
+\item{nsims}{The number of samples to generate. The chain will run for
+\code{warmup+(nsims*thin)} steps.}
 
 \item{counties}{A vector containing county (or other administrative or
 geographic unit) labels for each unit, which may be integers ranging from 1
@@ -46,9 +43,20 @@ county splits further, or to constrain a second type of administrative
 split, consider using \code{add_constr_splits()}, \code{add_constr_multisplits()},
 and \code{add_constr_total_splits()}.}
 
-\item{compactness}{Controls the compactness of the generated districts, with
-higher values preferring more compact districts. Must be nonnegative. See the
-'Details' section for more information, and computational considerations.}
+\item{warmup}{The number of warmup samples to discard. Recommended to be at
+least the first 20\% of samples, and in any case no less than around 100
+samples, unless initializing from a random plan.}
+
+\item{thin}{Save every \code{thin}-th sample after running warump. Defaults to no thinning (1).}
+
+\item{chains}{the number of parallel chains to run. Each chain will have
+\code{nsims} draws. If \code{init_plan} is sampled, each chain will be initialized
+with its own sampled plan.}
+
+\item{init_plan}{The initial state of the map. If not provided, will default to
+the reference map of the \code{map} object, or if none exists, will sample
+a random initial state using \code{\link{redist_smc}}. You can also request
+a random initial state by setting \code{init_plan="sample"}.}
 
 \item{constraints}{A list containing information on constraints to implement.
 See the 'Details' section for more information.}
@@ -57,13 +65,18 @@ See the 'Details' section for more information.}
 a redistricting plan and outputs a vector of log-weights, which will be
 added the the final weights.}
 
-\item{adapt_k_thresh}{The threshold value used in the heuristic to select a
-value \code{k_i} for each splitting iteration. Set to 0.9999 or 1 if
-the algorithm does not appear to be sampling from the target distribution.
-Must be between 0 and 1.}
+\item{compactness}{Controls the compactness of the generated districts, with
+higher values preferring more compact districts. Must be nonnegative. See the
+'Details' section for more information, and computational considerations.}
 
-\item{k}{The number of edges to consider cutting after drawing a spanning
-tree. Should be selected automatically in nearly all cases.}
+\item{ncores}{The number of clusters to spawn Defaults to the
+maximum available detected by \code{parallel::detectCores()}.}
+
+\item{cl_type}{the cluster type (see \code{\link[=makeCluster]{makeCluster()}}). Safest is \code{"PSOCK"},
+but \code{"FORK"} may be appropriate in some settings.}
+
+\item{return_all}{if \code{TRUE} return all sampled plans; otherwise, just return
+the final plan from each chain.}
 
 \item{init_name}{a name for the initial plan, or \code{FALSE} to not include
 the initial plan in the output.  Defaults to the column name of the
@@ -73,10 +86,18 @@ existing plan, or "\code{<init>}" if the initial plan is sampled.}
 Recommended.}
 
 \item{silent}{Whether to suppress all diagnostic information.}
+
+\item{adapt_k_thresh}{The threshold value used in the heuristic to select a
+value \code{k_i} for each splitting iteration. Set to 0.9999 or 1 if
+the algorithm does not appear to be sampling from the target distribution.
+Must be between 0 and 1.}
+
+\item{k}{The number of edges to consider cutting after drawing a spanning
+tree. Should be selected automatically in nearly all cases.}
 }
 \value{
-\code{redist_mergesplit} returns an object of class
-\code{\link{redist_plans}} containing the simulated plans.
+A \code{\link{redist_plans}} object with all of the simulated plans, and an
+additional \code{chain} column indicating the chain the plan was drawn from.
 }
 \description{
 \code{redist_mergesplit} uses a Markov Chain Monte Carlo algorithm (Carter et
@@ -85,8 +106,8 @@ according to contiguity, population, compactness, and administrative boundary
 constraints. The MCMC proposal is the same as is used in the SMC sampler
 (McCartan and Imai 2023); it is similar but not identical to those used in
 the references.  1-level hierarchical Merge-split is supported through the
-\code{counties} parameter; unlike in the SMC algorithm, this does not
-guarantee a maximum number of county splits.
+\code{counties} parameter and it has the same guarantees of a maximum number
+of county splits as the SMCS algorithm.
 }
 \details{
 This function draws samples from a specific target measure, controlled by the
@@ -107,11 +128,13 @@ data(fl25)
 
 fl_map <- redist_map(fl25, ndists = 3, pop_tol = 0.1)
 
-sampled_basic <- redist_mergesplit(fl_map, 10000)
+sampled_basic <- redist_mergesplit(fl_map, 10000, chains = 10)
 
-sampled_constr <- redist_mergesplit(fl_map, 10000, constraints = list(
+sampled_constr <- redist_mergesplit(fl_map, 10000, chains = 10,
+    constraints = list(
     incumbency = list(strength = 1000, incumbents = c(3, 6, 25))
-))
+    )
+)
 }
 
 }
