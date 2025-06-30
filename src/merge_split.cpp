@@ -8,9 +8,7 @@
 
 #include "merge_split.h"
 
-
 constexpr bool DEBUG_PURE_MS_VERBOSE = false; // Compile-time constant
-
 
 /*
  * Select a pair of neighboring districts i, j
