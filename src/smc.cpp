@@ -116,9 +116,11 @@ void run_smc_step(
     const int reject_check_int = 200; // check for interrupts every _ rejections
     const int check_int = 50; // check for interrupts every _ iterations
 
+
     // The new region in the split plans is the number of regions in a split plan minus
     // one so the number of regions in a presplit plan
     int new_region_id = old_plan_ensemble->plan_ptr_vec.at(0)->num_regions;
+
 
     // we only save for linking edge
     bool save_edge_selection_prob = sampling_space == SamplingSpace::LinkingEdgeSpace;
@@ -962,7 +964,6 @@ List run_redist_gsmc(
 
     if(DEBUG_GSMC_PLANS_VERBOSE) Rprintf("Plan matrix (and sizes potentially) saved!\n");
 
-
     // Return results
     List out = List::create(
         _["plans_mat"] = plan_mat,
@@ -979,5 +980,4 @@ List run_redist_gsmc(
 
     if(DEBUG_GSMC_PLANS_VERBOSE) Rprintf("Returning to R!\n");
     return out;
-
 }
