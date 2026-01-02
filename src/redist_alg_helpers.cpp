@@ -947,7 +947,7 @@ num_merge_split_attempts_vec(total_ms_steps),
 cut_k_values(sampling_space == SamplingSpace::GraphSpace ? total_steps : 0)
 {
     // Level 1 Diagnostics. Not too big relative to plan size
-    log_incremental_weights_mat = arma::dmat(nsims, total_smc_steps); // entry [i][s] is the log unnormalized weight of particle i AFTER split s
+    log_incremental_weights_mat = Eigen::MatrixXd(nsims, total_smc_steps); // entry [i][s] is the log unnormalized weight of particle i AFTER split s
     draw_tries_mat = Rcpp::IntegerMatrix(nsims, total_steps); // Entry [i][s] is the number of tries it took to form particle i on split s
     parent_index_mat = Rcpp::IntegerMatrix(nsims, total_smc_steps); // Entry [i][s] is the index of the parent of particle i at split s
     // This is a nsims by total_ms_steps matrix where [i][s] is the number of 

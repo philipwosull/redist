@@ -3408,7 +3408,7 @@ std::pair<bool, EdgeCut> TreeSplitter::select_edge_to_cut(
     }
 
     // get the weights 
-    std::vector<double> unnormalized_wgts[num_valid_edges];
+    std::vector<double> unnormalized_wgts(num_valid_edges);
 
     for (size_t i = 0; i < num_valid_edges; i++)
     {

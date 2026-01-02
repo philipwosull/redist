@@ -332,7 +332,7 @@ std::vector<double> compute_plans_log_optimal_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    std::vector<double> log_weights[num_plans];
+    std::vector<double> log_weights(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -479,7 +479,7 @@ std::vector<double> compute_plans_log_simple_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    std::vector<double> log_weights[num_plans];
+    std::vector<double> log_weights(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations

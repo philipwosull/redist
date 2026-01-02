@@ -281,7 +281,7 @@ class SMCDiagnostics{
     
     // Level 1
     // These are all nsims by number of smc steps 
-    arma::dmat log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of particle i AFTER split s
+    Eigen::MatrixXd log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of particle i AFTER split s
     Rcpp::IntegerMatrix draw_tries_mat; // Entry [i][s] is the number of tries it took to form particle i on split s
     Rcpp::IntegerMatrix parent_index_mat; // Entry [i][s] is the index of the parent of particle i at split s
     // This is a nsims by total_ms_steps matrix where [i][s] is the number of 
