@@ -623,7 +623,7 @@ int Plan::choose_multidistrict_to_split(
 
     for (size_t i = 0; i < valid_region_ids.size(); i++)
     {
-        region_wgts(i) = std::pow(associated_region_sizes[i], selection_alpha);
+        region_wgts[i] = std::pow(associated_region_sizes[i], selection_alpha);
     }
     int idx = rng_state.r_int_unnormalized_wgt(region_wgts); 
     int region_id_to_split = valid_region_ids.at(idx);
@@ -3408,11 +3408,11 @@ std::pair<bool, EdgeCut> TreeSplitter::select_edge_to_cut(
     }
 
     // get the weights 
-    std::vector<double> unnormalized_wgts(num_valid_edges);
+    std::vector<double> unnormalized_wgts[num_valid_edges];
 
     for (size_t i = 0; i < num_valid_edges; i++)
     {
-        unnormalized_wgts(i) = compute_unnormalized_edge_cut_weight(
+        unnormalized_wgts[i] = compute_unnormalized_edge_cut_weight(
             valid_edges[i]
         );
     }
@@ -3424,9 +3424,9 @@ std::pair<bool, EdgeCut> TreeSplitter::select_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts[idx]) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
         // Rprintf("Save, %d valid, log prob is %f and %f\n", num_valid_edges, selected_edge_cut.log_prob, 
-        //     std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0)));
+        //     std::log(unnormalized_wgts[idx]) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0)));
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -3627,7 +3627,7 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts[idx]) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -3644,7 +3644,7 @@ double ExperimentalSplitter::get_log_selection_prob(
     
     // we want log of weight at idx / sum of all weight which is equal to
     // log(prob at idx) - log(sum of all weights)
-    return log(unnormalized_wgts(idx)) - log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
+    return log(unnormalized_wgts[idx]) - log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
 }
 
 
@@ -3672,7 +3672,7 @@ double ExperimentalSplitter::get_log_selection_prob(
 //     // compute selection probability if needed
 //     double log_selection_prob = 0.0;
 //     if(save_selection_prob){
-//         selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
+//         selected_edge_cut.log_prob = std::log(unnormalized_wgts[idx]) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
 //     }
 
 //     return std::make_pair(true, selected_edge_cut);
@@ -3728,7 +3728,7 @@ std::pair<bool, EdgeCut> ConstraintSplitter::attempt_to_find_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts[idx]) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
         // REprintf("Selection prob %f\n", selected_edge_cut.log_prob);
     }
 

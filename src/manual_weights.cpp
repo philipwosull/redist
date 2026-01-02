@@ -332,7 +332,7 @@ std::vector<double> compute_plans_log_optimal_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    std::vector<double> log_weights(num_plans);
+    std::vector<double> log_weights[num_plans];
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -382,7 +382,7 @@ std::vector<double> compute_plans_log_optimal_weights(
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function, 
@@ -394,7 +394,7 @@ std::vector<double> compute_plans_log_optimal_weights(
 
         REprintf("%f vs %f \n", 
             1.0 / static_cast<double>(incremental_weight), 
-            std::exp(log_weights(i))
+            std::exp(log_weights[i])
         );
 
         ++bar;
@@ -479,7 +479,7 @@ std::vector<double> compute_plans_log_simple_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    std::vector<double> log_weights(num_plans);
+    std::vector<double> log_weights[num_plans];
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -529,7 +529,7 @@ std::vector<double> compute_plans_log_simple_weights(
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function, 
@@ -541,7 +541,7 @@ std::vector<double> compute_plans_log_simple_weights(
 
         REprintf("%f vs %f \n", 
             1.0 / static_cast<double>(incremental_weight), 
-            std::exp(log_weights(i))
+            std::exp(log_weights[i])
         );
 
         ++bar;

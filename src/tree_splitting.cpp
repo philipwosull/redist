@@ -283,12 +283,12 @@ std::vector<double> compute_expo_prob_weights_on_edges(
     {
         std::array<double, 2> devs = valid_edges.at(i).compute_abs_pop_deviances(target);
         double bigger_dev = std::max(devs.at(0), devs.at(1));
-        unnormalized_wgts(i) = std::exp(-alpha*bigger_dev);
+        unnormalized_wgts[i] = std::exp(-alpha*bigger_dev);
         // Rprintf("Bigger abs dev = %.3f, Computed weight %.3f\n", 
-        //     bigger_dev, unnormalized_wgts(i));
+        //     bigger_dev, unnormalized_wgts[i]);
 
         // Rprintf("devs are (%.3f,%.3f),  Computed weight %.3f\n", 
-        //     devs.at(0), devs.at(1), unnormalized_wgts(i));
+        //     devs.at(0), devs.at(1), unnormalized_wgts[i]);
     }
     // Rprintf("\n\n");
     
@@ -309,12 +309,12 @@ std::vector<double> compute_expo_prob_weights_on_smaller_dev_edges(
     {
         std::array<double, 2> devs = valid_edges.at(i).compute_abs_pop_deviances(target);
         double smaller_dev = std::min(devs.at(0), devs.at(1));
-        unnormalized_wgts(i) = std::exp(-alpha*smaller_dev);
+        unnormalized_wgts[i] = std::exp(-alpha*smaller_dev);
         // Rprintf("Bigger abs dev = %.3f, Computed weight %.3f\n", 
-        //     smaller_dev, unnormalized_wgts(i));
+        //     smaller_dev, unnormalized_wgts[i]);
 
         // Rprintf("devs are (%.6f,%.6f),  Computed weight %.6f\n", 
-        //     devs.at(0), devs.at(1), unnormalized_wgts(i));
+        //     devs.at(0), devs.at(1), unnormalized_wgts[i]);
     }
     // Rprintf("\n\n");
     
@@ -337,9 +337,9 @@ std::vector<double> compute_almost_best_weights_on_smaller_dev_edges(
     {
         std::array<double, 2> devs = valid_edges.at(i).compute_abs_pop_deviances(target);
         double smaller_dev = std::min(devs.at(0), devs.at(1));
-        unnormalized_wgts(i) = smaller_dev;
+        unnormalized_wgts[i] = smaller_dev;
         // Rprintf("Bigger abs dev = %.3f, Computed weight %.3f\n", 
-        //     smaller_dev, unnormalized_wgts(i));
+        //     smaller_dev, unnormalized_wgts[i]);
 
         global_min = std::min(global_min, smaller_dev);
 
@@ -351,9 +351,9 @@ std::vector<double> compute_almost_best_weights_on_smaller_dev_edges(
     for (size_t i = 0; i < valid_edges.size(); i++){
         // make 1 if eqaul to the max, epsilon otherwise
         // REprintf("Set Weight %d, dev %f to %f \n", 
-        //     (int) i, unnormalized_wgts(i), 
-        //     (unnormalized_wgts(i) == global_min) ? 1.0 : epsilon);
-        unnormalized_wgts(i) = (unnormalized_wgts(i) == global_min) ? 1.0 : epsilon;
+        //     (int) i, unnormalized_wgts[i], 
+        //     (unnormalized_wgts[i] == global_min) ? 1.0 : epsilon);
+        unnormalized_wgts[i] = (unnormalized_wgts[i] == global_min) ? 1.0 : epsilon;
     }
     
 
