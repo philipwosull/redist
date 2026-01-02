@@ -3,7 +3,6 @@
 #define SMC_ALG_HELPERS_H
 
 // [[Rcpp::depends(redistmetrics)]]
-// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins("cpp11")]]
 
 #include <vector>

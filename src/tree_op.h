@@ -5,15 +5,14 @@
 #include <limits>
 #include <stack>
 #include <queue>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "smc_base.h"
 
-// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins("cpp11")]]
 
 using namespace Rcpp;
-using namespace arma;
+
 
 
 
@@ -51,7 +50,7 @@ void print_tree(Tree const &ust);
  * Count population below each node in tree and get parent
  */
 // TESTED
-int tree_pop(Tree &ust, int vtx, const arma::uvec &pop,
+int tree_pop(Tree &ust, int vtx, const std::vector<unsigned int> &pop,
              std::vector<int> &pop_below, std::vector<int> &parent);
 
 
@@ -61,7 +60,7 @@ int tree_pop(Tree &ust, int vtx, const arma::uvec &pop,
 // TESTED
 void get_tree_pops_below(
     const Tree &ust, const int root, TreePopStack &stack,
-    const arma::uvec &pop, std::vector<int> &pop_below);
+    const std::vector<unsigned int> &pop, std::vector<int> &pop_below);
 
 
 

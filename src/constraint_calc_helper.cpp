@@ -8,7 +8,7 @@
 
 // Header files
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "tree_op.h"
 

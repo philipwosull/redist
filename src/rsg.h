@@ -1,7 +1,7 @@
 #ifndef RSG_H
 #define RSG_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 Rcpp::List rsg (List adj_list,
                arma::ivec adj_length,

@@ -1,5 +1,5 @@
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "make_swaps_helper.h"
 #include "sw_mh_helper.h"

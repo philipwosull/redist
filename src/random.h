@@ -1,12 +1,12 @@
 #ifndef RANDOM_H
 #define RANDOM_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <vector>
 #include <cstdint>
 #include <random>
 
-using namespace arma;
+
 
 // random number generator class
 class RNGState{

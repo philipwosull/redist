@@ -2,7 +2,7 @@
 #ifndef UST_SAMPLER_H
 #define UST_SAMPLER_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "tree_op.h"
 #include "base_plan_type.h"
@@ -43,7 +43,7 @@ public:
     TreePopStack stack;
     Tree county_tree;
     TreePopStack county_stack;
-    arma::uvec county_pop;
+    std::vector<unsigned int> county_pop;
     std::vector<std::vector<int>> county_members;
     std::vector<bool> c_visited;
     std::vector<int> cty_pop_below;

@@ -3,7 +3,7 @@
 #define GRAPH_OP_H
 
 #include <vector>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <Rcpp.h>
 #include "redist_types.h"
 

@@ -2,7 +2,7 @@
 #ifndef TREE_SPLITTING_H
 #define TREE_SPLITTING_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <vector>
 #include <utility>
 #include <queue>
@@ -16,7 +16,6 @@
 
 
 
-// [[Rcpp::depends(RcppArmadillo)]]
 
 
 /* 
@@ -70,19 +69,19 @@
 
 
 
-arma::vec compute_expo_prob_weights_on_edges(
+std::vector<double> compute_expo_prob_weights_on_edges(
         std::vector<EdgeCut> &valid_edges, double alpha, double target);
 
 
-arma::vec compute_expo_prob_weights_on_smaller_dev_edges(
+std::vector<double> compute_expo_prob_weights_on_smaller_dev_edges(
         std::vector<EdgeCut> &valid_edges, double alpha, double target);
 
 
-arma::vec compute_almost_best_weights_on_smaller_dev_edges(
+std::vector<double> compute_almost_best_weights_on_smaller_dev_edges(
         std::vector<EdgeCut> &valid_edges, double epsilon, double target);
 
 
-arma::vec compute_soft_constraint_edge_cut_weights(
+std::vector<double> compute_soft_constraint_edge_cut_weights(
     std::vector<EdgeCut> &valid_edges, 
     ScoringFunction const &scoring_function, Tree const &ust, int const num_regions,
     PlanVector &region_ids, RegionSizes &region_sizes, IntPlanAttribute &region_pops,
@@ -91,7 +90,7 @@ arma::vec compute_soft_constraint_edge_cut_weights(
 );
 
 
-arma::uvec compute_retroactive_soft_constraint_edge_cut_weights(
+std::vector<unsigned int> compute_retroactive_soft_constraint_edge_cut_weights(
     std::vector<EdgeCut> &valid_edges, 
     ScoringFunction const &scoring_function, VertexGraph const &ust, int const num_regions,
     PlanVector &region_ids, RegionSizes &region_sizes, IntPlanAttribute &region_pops,
@@ -103,7 +102,7 @@ arma::uvec compute_retroactive_soft_constraint_edge_cut_weights(
 std::vector<EdgeCut> get_all_valid_edges_in_directed_tree(
     const Tree &a_ust, 
     const int root,
-    const arma::uvec &pop, TreePopStack &stack,
+    const std::vector<unsigned int> &pop, TreePopStack &stack,
     std::vector<int> &pops_below_vertex, std::vector<bool> &no_valid_edges_vertices,
     const int min_potential_cut_size, const int max_potential_cut_size,
     std::vector<int> const &smaller_cut_sizes_to_try,
@@ -114,7 +113,7 @@ std::vector<EdgeCut> get_all_valid_edges_in_directed_tree(
 std::vector<EdgeCut> get_all_valid_edges_in_undirected_tree(
     const VertexGraph &a_ust, 
     const int root,
-    const arma::uvec &pop, TreePopStack &stack,
+    const std::vector<unsigned int> &pop, TreePopStack &stack,
     std::vector<int> &pops_below_vertex, std::vector<bool> &no_valid_edges_vertices,
     const int min_potential_cut_size, const int max_potential_cut_size,
     std::vector<int> const &smaller_cut_sizes_to_try,

@@ -1,4 +1,4 @@
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 using namespace Rcpp;
 
 double var_info(IntegerVector m1, IntegerVector m2, NumericVector pop, int k) {

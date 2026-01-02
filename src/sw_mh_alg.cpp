@@ -7,7 +7,7 @@
 /////////////////////////////////////
 
 // Header files
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <RcppArmadilloExtensions/sample.h>
 #include <time.h>
 #include <R.h>
