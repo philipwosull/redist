@@ -40,17 +40,17 @@ Multigraph init_multigraph(int V) {
  * County graph is list of list of 3: <cty of nbor, index of vtx, index of nbor>
  */
 // TESTED
-Multigraph county_graph(const Graph &g, const arma::uvec &counties) {
-    int n_county = arma::max(counties);
+Multigraph county_graph(const Graph &g, const std::vector<unsigned int> &counties) {
+    int n_county = *std::max_element(counties.begin(), counties.end());
     Multigraph cg = init_multigraph(n_county);
 
     int V = g.size();
     for (int i = 0; i < V; i++) {
         std::vector<int> nbors = g[i];
         int length = nbors.size();
-        int county = counties.at(i) - 1;
+        int county = counties[i] - 1;
         for (int j = 0; j < length; j++) {
-            int nbor_cty = counties.at(nbors[j]) - 1;
+            int nbor_cty = counties[nbors[j]] - 1;
             if (county == nbor_cty) continue;
             std::array<int, 3> el = {nbor_cty, i, nbors[j]};
             cg.at(county).push_back(el);
@@ -69,7 +69,7 @@ Multigraph county_graph(const Graph &g, const arma::uvec &counties) {
  * search started from a vertex in one county will never leave that county
  *  
  */
-Graph build_restricted_county_graph(Graph const &g,  arma::uvec const &counties){
+Graph build_restricted_county_graph(Graph const &g,  std::vector<unsigned int> const &counties){
     Graph county_graph(g.size());
     // iterate through g and only add edges in the same county
     for (int v = 0; v < g.size(); v++)
@@ -77,7 +77,7 @@ Graph build_restricted_county_graph(Graph const &g,  arma::uvec const &counties)
         // iterate over v's neighbors
         for(const auto &u : g[v]){
             // if same county add the edge
-            if(counties(v) == counties(u)){
+            if(counties[v] == counties[u]){
                 county_graph[v].push_back(u);
             }
         }
