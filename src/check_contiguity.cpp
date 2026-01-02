@@ -13,7 +13,7 @@ int check_contiguity(Rcpp::List adj_list,
                      ) {
 
 	// pmember_vec tracks which district each precinct belongs to
-	//arma::ivec member_dvec(Nprecinct);
+	//std::vector<int> member_dvec(Nprecinct);
 
 	// List of vectors, where each vector is an Integervector of precincts in that district
 	//List member_plist(Ndistrict);

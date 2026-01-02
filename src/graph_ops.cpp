@@ -40,11 +40,11 @@ RegionMultigraphCount build_region_multigraph(
 
 
 
-arma::mat build_region_laplacian(
+Eigen::MatrixXd build_region_laplacian(
     RegionMultigraphCount const &region_multigraph
 ){
     int num_regions = region_multigraph.size();
-    arma::mat laplacian_mat(num_regions, num_regions, arma::fill::zeros);
+    Eigen::MatrixXd laplacian_mat(num_regions, num_regions);
     // iterate over the multigraph
     for (size_t region_id = 0; region_id < num_regions; region_id++)
     {
@@ -66,7 +66,7 @@ arma::mat build_region_laplacian(
 // Can call from R
 RegionMultigraphCount get_region_multigraph(
     Rcpp::List const &adj_list,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 ){
     std::unordered_set<int> uniqueElements;
     for (int element : region_ids) {
@@ -89,9 +89,9 @@ RegionMultigraphCount get_region_multigraph(
     ));
 }
 
-arma::mat get_region_laplacian(
+Eigen::MatrixXd get_region_laplacian(
     Rcpp::List const &adj_list,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 ){
     return(
         build_region_laplacian(get_region_multigraph(

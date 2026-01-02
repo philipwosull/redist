@@ -245,7 +245,7 @@ int estimate_mergesplit_cut_k(
     TreePopStack pop_stack(V+1);
     Tree county_tree = init_tree(plan_multigraph.map_params.num_counties);
     TreePopStack county_stack(plan_multigraph.map_params.num_counties);
-    arma::uvec county_pop(plan_multigraph.map_params.num_counties, arma::fill::zeros);
+    std::vector<unsigned int> county_pop(plan_multigraph.map_params.num_counties);
     std::vector<std::vector<int>> county_members(plan_multigraph.map_params.num_counties, std::vector<int>{});
     std::vector<bool> c_visited(plan_multigraph.map_params.num_counties, true);
     std::vector<int> cty_pop_below(plan_multigraph.map_params.num_counties, 0);
@@ -351,7 +351,7 @@ void estimate_cut_k(
     const MapParams &map_params, const SplittingSchedule &splitting_schedule,
     RNGState &rng_state,
     int &k, int const last_k, 
-    const arma::vec &unnormalized_weights, double thresh,
+    const std::vector<double> &unnormalized_weights, double thresh,
     double tol, std::vector<std::unique_ptr<Plan>> const &plan_ptrs_vec, 
     bool split_district_only,
     int const verbosity) {
@@ -377,7 +377,7 @@ void estimate_cut_k(
     TreePopStack pop_stack(V+1);
     Tree county_tree = init_tree(map_params.num_counties);
     TreePopStack county_stack(map_params.num_counties);
-    arma::uvec county_pop(map_params.num_counties, arma::fill::zeros);
+    std::vector<unsigned int> county_pop(map_params.num_counties);
     std::vector<std::vector<int>> county_members(map_params.num_counties, std::vector<int>{});
     std::vector<bool> c_visited(map_params.num_counties, true);
     std::vector<int> cty_pop_below(map_params.num_counties, 0);

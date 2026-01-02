@@ -273,11 +273,11 @@ inline std::vector<EdgeCut> get_all_valid_edge_cuts_from_edge(
  * successfully split, false otherwise
  *
  */
-arma::vec compute_expo_prob_weights_on_edges(
+std::vector<double> compute_expo_prob_weights_on_edges(
         std::vector<EdgeCut> &valid_edges, double alpha, double target){
 
     // get the weights vector
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     for (size_t i = 0; i < valid_edges.size(); i++)
     {
@@ -299,11 +299,11 @@ arma::vec compute_expo_prob_weights_on_edges(
 
 
 
-arma::vec compute_expo_prob_weights_on_smaller_dev_edges(
+std::vector<double> compute_expo_prob_weights_on_smaller_dev_edges(
         std::vector<EdgeCut> &valid_edges, double alpha, double target){
 
     // get the weights vector
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     for (size_t i = 0; i < valid_edges.size(); i++)
     {
@@ -324,11 +324,11 @@ arma::vec compute_expo_prob_weights_on_smaller_dev_edges(
 }
 
 
-arma::vec compute_almost_best_weights_on_smaller_dev_edges(
+std::vector<double> compute_almost_best_weights_on_smaller_dev_edges(
         std::vector<EdgeCut> &valid_edges, double epsilon, double target){
 
     // get the weights vector
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     // find the maximum value 
     double global_min = 42.0;
@@ -421,14 +421,14 @@ void assign_region_ids_from_uncut_tree(
     return;
 }
 
-arma::vec compute_soft_constraint_edge_cut_weights(
+std::vector<double> compute_soft_constraint_edge_cut_weights(
     std::vector<EdgeCut> &valid_edges, 
     ScoringFunction const &scoring_function, Tree const &ust, int const num_regions,
     PlanVector &region_ids, RegionSizes &region_sizes, IntPlanAttribute &region_pops,
     int const split_region_id1, int const split_region_id2,
     CircularQueue<std::pair<int,int>> &vertex_queue
 ){
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     for (size_t i = 0; i < valid_edges.size(); i++)
     {
@@ -466,7 +466,7 @@ arma::vec compute_soft_constraint_edge_cut_weights(
 std::vector<EdgeCut> get_all_valid_edges_in_directed_tree(
     const Tree &a_ust, 
     const int root,
-    const arma::uvec &pop, TreePopStack &stack,
+    const std::vector<unsigned int> &pop, TreePopStack &stack,
     std::vector<int> &pops_below_vertex, std::vector<bool> &no_valid_edges_vertices,
     const int min_potential_cut_size, const int max_potential_cut_size,
     std::vector<int> const &smaller_cut_sizes_to_try,
@@ -604,7 +604,7 @@ std::vector<EdgeCut> get_all_valid_edges_in_directed_tree(
 std::vector<EdgeCut> get_all_valid_edges_in_undirected_tree(
     const VertexGraph &a_ust, 
     const int root,
-    const arma::uvec &pop, TreePopStack &stack,
+    const std::vector<unsigned int> &pop, TreePopStack &stack,
     std::vector<int> &pops_below_vertex, std::vector<bool> &no_valid_edges_vertices,
     const int min_potential_cut_size, const int max_potential_cut_size,
     std::vector<int> const &smaller_cut_sizes_to_try,

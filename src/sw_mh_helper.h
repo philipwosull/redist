@@ -18,12 +18,12 @@
 
 using namespace Rcpp;
 
-Rcpp::NumericVector init_pop(Rcpp::NumericVector popvec, arma::vec cds);
+Rcpp::NumericVector init_pop(Rcpp::NumericVector popvec, std::vector<double> cds);
 Rcpp::List add_ties(Rcpp::List aList);
 Rcpp::List cut_edges(Rcpp::List aList_con,
 		     double eprob);
 Rcpp::List bsearch_boundary(Rcpp::List aList,
-			    arma::vec boundary);
+			    std::vector<double> boundary);
 int count_valid(Rcpp::List aList, Rcpp::List boundarypart, Rcpp::NumericVector cdvec);
 int draw_p(int lambda);
 Rcpp::List make_swaps(Rcpp::List boundary_cc,
@@ -41,7 +41,7 @@ Rcpp::List make_swaps(Rcpp::List boundary_cc,
 		      double beta,
 		      const Graph &g);
 int mh_decision(double mh_prob);
-Rcpp::List changeBeta(arma::vec betavec,
+Rcpp::List changeBeta(std::vector<double> betavec,
 		      double beta,
 		      double constraint,
 		      Rcpp::NumericVector weights,

@@ -334,10 +334,10 @@ Rcpp::IntegerVector resample_plans_lowvar(
 
 // [[Rcpp::export]]
 double get_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 );
 
 
@@ -346,10 +346,10 @@ double get_log_number_linking_edges(
  */
 // [[Rcpp::export]]
 double get_merged_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids,
+    std::vector<unsigned int> const &region_ids,
     int const region1_id, int const region2_id
 );
 

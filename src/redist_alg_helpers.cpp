@@ -947,7 +947,7 @@ num_merge_split_attempts_vec(total_ms_steps),
 cut_k_values(sampling_space == SamplingSpace::GraphSpace ? total_steps : 0)
 {
     // Level 1 Diagnostics. Not too big relative to plan size
-    log_incremental_weights_mat = arma::dmat(nsims, total_smc_steps, arma::fill::none); // entry [i][s] is the log unnormalized weight of particle i AFTER split s
+    log_incremental_weights_mat = arma::dmat(nsims, total_smc_steps); // entry [i][s] is the log unnormalized weight of particle i AFTER split s
     draw_tries_mat = Rcpp::IntegerMatrix(nsims, total_steps); // Entry [i][s] is the number of tries it took to form particle i on split s
     parent_index_mat = Rcpp::IntegerMatrix(nsims, total_smc_steps); // Entry [i][s] is the index of the parent of particle i at split s
     // This is a nsims by total_ms_steps matrix where [i][s] is the number of 
@@ -1202,10 +1202,10 @@ Rcpp::IntegerVector resample_plans_lowvar(
 
 
 double get_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 ){
     MapParams const map_params(
     adj_list, counties, {}, 
@@ -1232,10 +1232,10 @@ double get_log_number_linking_edges(
 
 
 double get_merged_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids,
+    std::vector<unsigned int> const &region_ids,
     int const region1_id, int const region2_id
 ){
     MapParams const map_params(

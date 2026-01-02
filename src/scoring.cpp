@@ -14,10 +14,10 @@ constexpr bool DEBUG_SCORING_VERBOSE = false;
 
 
 std::vector<std::vector<int>> build_admin_vertex_lists(
-    const Graph &g, const arma::uvec &admin_units
+    const Graph &g, const std::vector<unsigned int> &admin_units
 ){
     // we assume admin units is 1 indexed and if `k` units then values are in `1:k`
-    int const num_counties = arma::max(admin_units);
+    int const num_counties = *std::max_element(admin_units);
     std::vector<std::vector<int>> admin_vertex_lists(num_counties);
     // nothing if only 1 county 
     if(num_counties == 1) return admin_vertex_lists;
@@ -102,10 +102,10 @@ int count_total_admin_splits(
 // Spanning forest on the counties, ie each tree is a tree on a specific county
 // roots of each county tree, so [i] is root of tree on county[i+1]
 std::pair<Tree,std::vector<int>> build_admin_forest(
-    const Graph &g, const arma::uvec &admin_units
+    const Graph &g, const std::vector<unsigned int> &admin_units
 ){
     // we assume admin units is 1 indexed and if `k` units then values are in `1:k`
-    int const num_counties = arma::max(admin_units);
+    int const num_counties = *std::max_element(admin_units);
     // nothing if only 1 county 
     if(num_counties == 1) return make_pair(Tree(0), std::vector<int>());
     int const V = g.size();
@@ -177,7 +177,7 @@ std::pair<Tree,std::vector<int>> build_admin_forest(
 // Counts how many districts have more than 1 incumbent in them 
 // NOTE: incumbents is 1-indexed
 int count_plan_incumbent_pairings(
-    arma::uvec const &incumbents, 
+    std::vector<unsigned int> const &incumbents, 
     std::vector<int> &region_incumbent_counts, 
     PlanVector const &region_ids, 
     std::vector<int> const &region_reindex_vec,
@@ -216,8 +216,8 @@ int count_plan_incumbent_pairings(
 
 int count_min_threshold_regions(
     int const num_populations,
-    std::vector<arma::vec> const &group_pop, 
-    std::vector<arma::vec> const &total_pop, 
+    std::vector<std::vector<double>> const &group_pop, 
+    std::vector<std::vector<double>> const &total_pop, 
     std::vector<double> const &min_fracs,
     std::vector<bool> const &region_ids_to_count,
     PlanVector const &region_ids, std::vector<int> const &region_reindex_vec,
@@ -1154,7 +1154,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<StatusQuoConstraint>(
                     constr_inst, 
-                    as<arma::uvec>(constr_inst["current"]), map_params.pop,
+                    as<std::vector<unsigned int>>(constr_inst["current"]), map_params.pop,
                     map_params.ndists, as<int>(constr_inst["n_current"]), map_params.V
                 ));
         }
@@ -1166,8 +1166,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<SegregationConstraint>(
                     constr_inst, 
-                    as<arma::uvec>(constr_inst["group_pop"]), 
-                    as<arma::uvec>(constr_inst["total_pop"]), 
+                    as<std::vector<unsigned int>>(constr_inst["group_pop"]), 
+                    as<std::vector<unsigned int>>(constr_inst["total_pop"]), 
                     map_params.V
                 ));
         }
@@ -1179,8 +1179,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<GroupPowerConstraint>(
                     constr_inst, map_params.V,
-                    as<arma::uvec>(constr_inst["group_pop"]), 
-                    as<arma::uvec>(constr_inst["total_pop"]),
+                    as<std::vector<unsigned int>>(constr_inst["group_pop"]), 
+                    as<std::vector<unsigned int>>(constr_inst["total_pop"]),
                     as<double>(constr_inst["tgt_group"]),
                     as<double>(constr_inst["tgt_other"]),
                     as<double>(constr_inst["pow"])
@@ -1192,8 +1192,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
         for (int i = 0; i < constr.size(); i++) {
             List constr_inst = constr[i];
             // Competition is just group power with group target and other target .5
-            arma::uvec dvote = constr_inst["dvote"];
-            arma::uvec total = dvote + as<arma::uvec>(constr_inst["rvote"]);
+            std::vector<unsigned int> dvote = constr_inst["dvote"];
+            std::vector<unsigned int> total = dvote + as<std::vector<unsigned int>>(constr_inst["rvote"]);
             region_constraint_ptrs.emplace_back(
                 std::make_unique<GroupPowerConstraint>(
                     constr_inst, map_params.V,
@@ -1210,8 +1210,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             List constr_inst = constr[i];
             region_constraint_ptrs.emplace_back(
                 std::make_unique<GroupHingeConstraint>(
-                    constr_inst, map_params.V, as<arma::vec>(constr_inst["tgts_group"]),
-                    as<arma::uvec>(constr_inst["group_pop"]), as<arma::uvec>(constr_inst["total_pop"])
+                    constr_inst, map_params.V, as<std::vector<double>>(constr_inst["tgts_group"]),
+                    as<std::vector<unsigned int>>(constr_inst["group_pop"]), as<std::vector<unsigned int>>(constr_inst["total_pop"])
             ));
         }
     }
@@ -1223,8 +1223,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             List constr_inst = constr[i];
             region_constraint_ptrs.emplace_back(
                 std::make_unique<GroupHingeConstraint>(
-                    constr_inst, map_params.V, as<arma::vec>(constr_inst["tgts_group"]),
-                    as<arma::uvec>(constr_inst["group_pop"]), as<arma::uvec>(constr_inst["total_pop"])
+                    constr_inst, map_params.V, as<std::vector<double>>(constr_inst["tgts_group"]),
+                    as<std::vector<unsigned int>>(constr_inst["group_pop"]), as<std::vector<unsigned int>>(constr_inst["total_pop"])
                 ));
         }
     }
@@ -1234,7 +1234,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             List constr_inst = constr[i];
             region_constraint_ptrs.emplace_back(
                 std::make_unique<IncumbentConstraint>(
-                    constr_inst, as<arma::uvec>(constr_inst["incumbents"])
+                    constr_inst, as<std::vector<unsigned int>>(constr_inst["incumbents"])
                 ));
         }
     }
@@ -1245,7 +1245,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<SplitsConstraint>(
                     constr_inst, 
-                    as<arma::uvec>(constr_inst["admin"]), as<int>(constr_inst["n"]),
+                    as<std::vector<unsigned int>>(constr_inst["admin"]), as<int>(constr_inst["n"]),
                     smc
                 ));
         }
@@ -1257,7 +1257,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<MultisplitsConstraint>(
                     constr_inst, 
-                    as<arma::uvec>(constr_inst["admin"]), as<int>(constr_inst["n"]),
+                    as<std::vector<unsigned int>>(constr_inst["admin"]), as<int>(constr_inst["n"]),
                     smc
                 ));
         }
@@ -1269,7 +1269,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<TotalSplitsConstraint>(
                     constr_inst, 
-                    as<arma::uvec>(constr_inst["admin"]), as<int>(constr_inst["n"]),
+                    as<std::vector<unsigned int>>(constr_inst["admin"]), as<int>(constr_inst["n"]),
                     smc
             ));
         }
@@ -1281,10 +1281,10 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             region_constraint_ptrs.emplace_back(
                 std::make_unique<PolsbyConstraint>(
                     constr_inst, map_params.V,
-                    as<arma::ivec>(constr_inst["from"]), 
-                    as<arma::ivec>(constr_inst["to"]),
-                    as<arma::vec>(constr_inst["area"]),
-                    as<arma::vec>(constr_inst["perimeter"])
+                    as<std::vector<int>>(constr_inst["from"]), 
+                    as<std::vector<int>>(constr_inst["to"]),
+                    as<std::vector<double>>(constr_inst["area"]),
+                    as<std::vector<double>>(constr_inst["perimeter"])
                 ));
         }
     }
@@ -1353,7 +1353,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             }
             if (strength != 0) {
                 // build the forest and get the roots 
-                arma::uvec admin_units = as<arma::uvec>(constr_inst["admin"]);
+                std::vector<unsigned int> admin_units = as<std::vector<unsigned int>>(constr_inst["admin"]);
                 auto admin_vertex_lists = build_admin_vertex_lists(map_params.g, admin_units);
                 plan_constraint_ptrs.emplace_back(
                     std::make_unique<PlanSplitsConstraint>(
@@ -1389,7 +1389,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
             }
             if (strength != 0) {
                 // build the forest and get the roots 
-                arma::uvec admin_units = as<arma::uvec>(constr_inst["admin"]);
+                std::vector<unsigned int> admin_units = as<std::vector<unsigned int>>(constr_inst["admin"]);
                 auto admin_vertex_lists = build_admin_vertex_lists(map_params.g, admin_units);
                 plan_constraint_ptrs.emplace_back(
                     std::make_unique<TotalPlanSplitsConstraint>(
@@ -1427,7 +1427,7 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
                 plan_constraint_ptrs.emplace_back(
                     std::make_unique<PlanIncumbentConstraint>(
                         strength, map_params.ndists,
-                        map_params.is_district, as<arma::uvec>(constr_inst["incumbents"]),
+                        map_params.is_district, as<std::vector<unsigned int>>(constr_inst["incumbents"]),
                         num_regions_to_score,
                         hard_constraint, hard_threshold
                     )
@@ -1460,8 +1460,8 @@ any_soft_custom_constraints(false), any_hard_custom_constraints(false){
                 plan_constraint_ptrs.emplace_back(
                     std::make_unique<MinGroupFracConstraint>(
                         strength, map_params.ndists, map_params.is_district,
-                        as<std::vector<arma::vec>>(constr_inst["group_pops"]),
-                        as<std::vector<arma::vec>>(constr_inst["total_pops"]), 
+                        as<std::vector<std::vector<double>>>(constr_inst["group_pops"]),
+                        as<std::vector<std::vector<double>>>(constr_inst["total_pops"]), 
                         as<std::vector<double>>(constr_inst["min_fracs"]),
                         as<double>(constr_inst["num_populations"]),
                         num_regions_to_score,

@@ -26,7 +26,7 @@
 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     List const &constraints, 
     double const pop_temper, bool const compute_pop_temper,
     double const rho,
@@ -41,8 +41,8 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
 
 
 // [[Rcpp::export]]
-arma::vec compute_plans_log_optimal_weights(
-    List const &adj_list, arma::uvec const &counties, arma::uvec const &pop,
+std::vector<double> compute_plans_log_optimal_weights(
+    List const &adj_list, std::vector<unsigned int> const &counties, std::vector<unsigned int> const &pop,
     List const &constraints, double const pop_temper,  double const rho,
     std::string const &splitting_schedule_str,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,
@@ -54,8 +54,8 @@ arma::vec compute_plans_log_optimal_weights(
 );
 
 // [[Rcpp::export]]
-arma::vec compute_plans_log_simple_weights(
-    List const &adj_list, arma::uvec const &counties, arma::uvec const &pop,
+std::vector<double> compute_plans_log_simple_weights(
+    List const &adj_list, std::vector<unsigned int> const &counties, std::vector<unsigned int> const &pop,
     List const &constraints, double const pop_temper,  double const rho,
     std::string const &splitting_schedule_str,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,

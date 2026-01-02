@@ -30,7 +30,7 @@ List reduce_adj(List adj_list, IntegerVector prec_map, int n_keep) {
 // with multiple edges and self-loops removed.
 // idxs should run continuously from 0 to n_groups-1
 // [[Rcpp::export]]
-Graph collapse_adj(List graph, const arma::uvec &idxs) {
+Graph collapse_adj(List graph, const std::vector<unsigned int> &idxs) {
     int V = graph.size();
     int V_new = max(idxs) + 1;
     Graph collapsed = init_tree(V_new);

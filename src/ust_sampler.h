@@ -28,7 +28,7 @@ public:
         stack(map_params.V + 1),
         county_tree(init_tree(map_params.num_counties)),
         county_stack(map_params.num_counties + 1), 
-        county_pop(map_params.num_counties, arma::fill::zeros),
+        county_pop(map_params.num_counties),
         county_members(map_params.num_counties, std::vector<int>{}),
         c_visited(map_params.num_counties, true),
         cty_pop_below(map_params.num_counties, 0),

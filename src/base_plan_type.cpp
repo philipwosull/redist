@@ -6,9 +6,23 @@
  ********************************************************/
 
 #include "base_plan_type.h"
+#include <numeric>
 
 bool constexpr DEBUG_BASE_PLANS_VERBOSE = false;
 bool constexpr DEBUG_LOG_LINK_EDGE_VERBOSE = false;
+
+// Helper function for cumulative sum
+namespace {
+    inline std::vector<double> vec_cumsum(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        if (v.empty()) return result;
+        result[0] = v[0];
+        for (size_t i = 1; i < v.size(); ++i) {
+            result[i] = result[i-1] + v[i];
+        }
+        return result;
+    }
+}
 
 
 bool Plan::check_region_pop_valid(MapParams const &map_params, int const region_id) const{
@@ -185,7 +199,7 @@ void Plan::check_inputted_region_ids(int ndists) const{
 
 // Constructs existing parital plan
 Plan::Plan(int const num_regions,
-    const arma::uvec &pop,
+    const std::vector<unsigned int> &pop,
     PlanVector &this_plan_region_ids, 
     RegionSizes &this_plan_region_sizes,
     IntPlanAttribute &this_plan_region_pops,
@@ -268,7 +282,7 @@ std::pair<int, int> Plan::get_most_recently_split_regions() const{
 
 // Takes a plan and reorders the regions according to the order the regions
 // were split
-// IT IS VERY IMPORTANT THAT THE TWO PLANS NOT POINT TO THE SAME arma::umat or everything breaks
+// IT IS VERY IMPORTANT THAT THE TWO PLANS NOT POINT TO THE SAME Eigen::MatrixXi or everything breaks
 // This breaks the dummy plan and does not copy it to be the original
 void Plan::reorder_plan_by_oldest_split(
     Plan &dummy_plan) {
@@ -596,7 +610,7 @@ int Plan::choose_multidistrict_to_split(
     // If one just return that 
     if(num_candidates == 1) return valid_region_ids[0];
 
-    arma::vec region_wgts(valid_region_ids.size());
+    std::vector<double> region_wgts(valid_region_ids.size());
 
     for (size_t i = 0; i < valid_region_ids.size(); i++)
     {
@@ -642,7 +656,7 @@ std::pair<bool, int> Plan::draw_tree_on_region(
 
     Tree county_tree = init_tree(map_params.num_counties);
     TreePopStack county_stack(map_params.num_counties);
-    arma::uvec county_pop(map_params.num_counties, arma::fill::zeros);
+    std::vector<unsigned int> county_pop(map_params.num_counties);
     std::vector<std::vector<int>> county_members(map_params.num_counties, std::vector<int>{});
     std::vector<bool> c_visited(map_params.num_counties, true);
     std::vector<int> cty_pop_below(map_params.num_counties, 0);
@@ -929,7 +943,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
     }
 
     // else go through and build the laplacian for regions 0 through num_regions-1
-    arma::mat laplacian_minor(num_regions-1, num_regions-1, arma::fill::zeros);
+    Eigen::MatrixXd laplacian_minor(num_regions-1, num_regions-1);
 
     // Now we iterate through the pairs 
     for (auto const a_pair: pair_map.hashed_pairs){
@@ -1010,7 +1024,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
     determinant of the minor we actually have a num_regions-2 x num_regions-2 matrix
     where we delete the row and column corresponding to the merged region. 
      */
-    arma::mat merged_laplacian_minor(num_regions-2, num_regions-2, arma::fill::zeros);
+    Eigen::MatrixXd merged_laplacian_minor(num_regions-2, num_regions-2);
 
 
 
@@ -1580,7 +1594,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             }
 
             // Now make the graph laplacian matrix 
-            arma::mat laplacian_minor(num_component_regions-1, num_component_regions-1, arma::fill::zeros);
+            Eigen::MatrixXd laplacian_minor(num_component_regions-1, num_component_regions-1);
 
             // now we iterate through all pairs where both are in this component
             while(
@@ -1686,10 +1700,9 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     }
 
     // Now we compute spanning trees across components 
-    arma::mat component_laplacian_minor(
+    Eigen::MatrixXd component_laplacian_minor(
         num_county_connected_components-1, 
-        num_county_connected_components-1, 
-        arma::fill::zeros);
+        num_county_connected_components-1);
 
     if(DEBUG_LOG_LINK_EDGE_VERBOSE){
     REprintf("Current index now %d with %u pairs\n", curr_index, all_pairs.size());
@@ -2514,7 +2527,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             }
 
             // Now make the graph laplacian matrix 
-            arma::mat laplacian_minor(num_component_regions-1, num_component_regions-1, arma::fill::zeros);
+            Eigen::MatrixXd laplacian_minor(num_component_regions-1, num_component_regions-1);
 
             // now we iterate through all pairs where both are in this component
             while(
@@ -2642,10 +2655,9 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     }
 
     // Now we compute spanning trees across components 
-    arma::mat component_laplacian_minor(
+    Eigen::MatrixXd component_laplacian_minor(
         merged_num_admin_connected_components-1, 
-        merged_num_admin_connected_components-1, 
-        arma::fill::zeros);
+        merged_num_admin_connected_components-1);
 
     if(DEBUG_LOG_LINK_EDGE_VERBOSE){
     REprintf("Current index now %d with %d pairs\n", curr_index, all_pairs.size());
@@ -2767,8 +2779,8 @@ void PlanMultigraph::prep_for_calculations(int const num_regions){
         return;
     }else{
         // else resize the minor matrices 
-        WAIT_laplacian_minor = arma::mat(num_regions-1, num_regions-1, arma::fill::none);
-        WAIT_merged_laplacian_minor = arma::mat(num_regions-2, num_regions-2, arma::fill::none);
+        WAIT_laplacian_minor = Eigen::MatrixXd(num_regions-1, num_regions-1);
+        WAIT_merged_laplacian_minor = Eigen::MatrixXd(num_regions-2, num_regions-2);
         return;
     }
 }
@@ -3387,7 +3399,7 @@ std::pair<bool, EdgeCut> TreeSplitter::select_edge_to_cut(
     }
 
     // get the weights 
-    arma::vec unnormalized_wgts(num_valid_edges);
+    std::vector<double> unnormalized_wgts(num_valid_edges);
 
     for (size_t i = 0; i < num_valid_edges; i++)
     {
@@ -3596,7 +3608,7 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
     }
 
     // get the weights 
-    arma::vec unnormalized_wgts = compute_almost_best_weights_on_smaller_dev_edges(
+    std::vector<double> unnormalized_wgts = compute_almost_best_weights_on_smaller_dev_edges(
         valid_edges, epsilon, target);
     
     
@@ -3618,7 +3630,7 @@ double ExperimentalSplitter::get_log_selection_prob(
     int idx
     ) const{
     // get the weights 
-    arma::vec unnormalized_wgts = compute_almost_best_weights_on_smaller_dev_edges(
+    std::vector<double> unnormalized_wgts = compute_almost_best_weights_on_smaller_dev_edges(
         valid_edges, epsilon, target);
     
     // we want log of weight at idx / sum of all weight which is equal to
@@ -3638,7 +3650,7 @@ double ExperimentalSplitter::get_log_selection_prob(
 
 
 //     // get the weights 
-//     arma::vec unnormalized_wgts = compute_soft_constraint_edge_cut_weights(
+//     std::vector<double> unnormalized_wgts = compute_soft_constraint_edge_cut_weights(
 //         valid_edges, scoring_function, ust,
 //         region_ids, region_sizes, region_pops,
 //         int const split_region_id1, int const split_region_id2
@@ -3695,7 +3707,7 @@ std::pair<bool, EdgeCut> ConstraintSplitter::attempt_to_find_edge_to_cut(
 
 
     // get the weights 
-    arma::vec unnormalized_wgts = compute_soft_constraint_edge_cut_weights(
+    std::vector<double> unnormalized_wgts = compute_soft_constraint_edge_cut_weights(
         valid_edges, scoring_function, ust, plan.num_regions + 1,
         region_ids, region_sizes, region_pops,
         split_region1, split_region2, vertex_queue
@@ -3901,7 +3913,7 @@ double ConstraintSplitter::get_log_retroactive_splitting_prob_for_joined_tree(
     return log_selection_prob;
 
     // get the weights
-    arma::vec unnormalized_wgts(unnormed_wgts.size());
+    std::vector<double> unnormalized_wgts(unnormed_wgts.size());
 
     for (size_t i = 0; i < unnormed_wgts.size(); i++)
     {
@@ -3911,7 +3923,7 @@ double ConstraintSplitter::get_log_retroactive_splitting_prob_for_joined_tree(
         REprintf("%.30f\n", unnormalized_wgts[i]);
     }
 
-    unnormalized_wgts = arma::cumsum(unnormalized_wgts);
+    unnormalized_wgts = vec_cumsum(unnormalized_wgts);
     
     REprintf("Weights are:\n");
     for (auto const v: unnormalized_wgts)

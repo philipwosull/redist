@@ -25,7 +25,7 @@
 
 
 
-arma::vec get_adj_pair_unnormalized_weights(
+std::vector<double> get_adj_pair_unnormalized_weights(
     Plan const &plan,
     std::vector<std::pair<RegionID, RegionID>> const &valid_region_adj_pairs,
     std::string const &selection_type
@@ -42,7 +42,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     PlanMultigraph &proposed_plan_multigraph,
     std::string const merge_prob_type, bool save_edge_selection_prob,
     std::vector<std::pair<RegionID, RegionID>> &adj_region_pairs,
-    arma::vec &unnormalized_pair_wgts,
+    std::vector<double> &unnormalized_pair_wgts,
     double const rho, bool const is_final, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache
 );

@@ -61,7 +61,7 @@ double eval_qps(const subview_col<uword> &districts, int distr,
  * Compute the log spanning tree penalty for district `distr`
  */
 double eval_log_st(const subview_col<uword> &districts, const Graph g,
-                   arma::uvec counties, int ndists) {
+                   std::vector<unsigned int> counties, int ndists) {
     return (double) redistmetrics::log_st_map(g, districts, counties, ndists)[0];
 }
 
@@ -80,8 +80,8 @@ double eval_er(const subview_col<uword> &districts, const Graph g, int ndists) {
  * given a collection of plans
  */
 mat prec_cooccur(umat m, uvec idxs, int ncores) {
-    int v = m.n_rows;
-    int n = idxs.n_elem;
+    int v = m.rows();
+    int n = idxs.size();
     mat out(v, v);
 
     RcppThread::parallelFor(0, v, [&] (int i) {
@@ -262,7 +262,7 @@ Rcpp::IntegerMatrix infer_region_seats(
  * Create the projective distribution of a variable `x`
  */
 // [[Rcpp::export]]
-NumericMatrix proj_distr_m(IntegerMatrix districts, const arma::vec x,
+NumericMatrix proj_distr_m(IntegerMatrix districts, const std::vector<double> x,
                            IntegerVector draw_idx, int n_distr) {
     int n = draw_idx.size();
     int V = districts.nrow();
@@ -282,7 +282,7 @@ NumericMatrix proj_distr_m(IntegerMatrix districts, const arma::vec x,
  * Compute the maximum deviation from the equal population constraint.
  */
 NumericVector max_dev(
-    const IntegerMatrix &districts, const arma::vec &pop, int const n_distr,
+    const IntegerMatrix &districts, const std::vector<double> &pop, int const n_distr,
     bool const multimember_districts, int const nseats, Rcpp::IntegerMatrix const &seats_matrix,
     int const num_threads
 ) {

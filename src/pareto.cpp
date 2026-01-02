@@ -1,9 +1,9 @@
 #include "smc_base.h"
 
 // [[Rcpp::export]]
-LogicalVector pareto_dominated(arma::mat x) {
-    int n = x.n_cols;
-    int p = x.n_rows;
+LogicalVector pareto_dominated(Eigen::MatrixXd x) {
+    int n = x.cols();
+    int p = x.rows();
 
     LogicalVector dominated(n); // initialized to FALSE
     // for every elelement

@@ -55,7 +55,7 @@ int r_int_mixstrat(int max, int stratum, double p, vec cum_wgts);
  * Generate an integer vector of resampling indices with a low-variance resampler.
  */
 // [[Rcpp::export]]
-arma::ivec resample_lowvar(arma::vec wgts);
+std::vector<int> resample_lowvar(std::vector<double> wgts);
 
 
 

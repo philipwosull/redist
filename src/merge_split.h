@@ -32,7 +32,7 @@
 Rcpp::List ms_plans(
     int const nsims, int const warmup, int const thin,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     double const target, double const lower, double const upper,
     double const rho, // compactness
     Rcpp::IntegerMatrix const &init_plan, Rcpp::IntegerMatrix const &init_seats,

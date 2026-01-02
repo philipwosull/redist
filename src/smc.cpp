@@ -8,6 +8,56 @@
 constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 
 #include "smc.h"
+#include <numeric>
+#include <cmath>
+
+// Helper functions to replace Armadillo operations
+namespace {
+    // Element-wise exp on vector
+    inline std::vector<double> vec_exp(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        for (size_t i = 0; i < v.size(); ++i) {
+            result[i] = std::exp(v[i]);
+        }
+        return result;
+    }
+    
+    // Cumulative sum
+    inline std::vector<double> vec_cumsum(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        if (v.empty()) return result;
+        result[0] = v[0];
+        for (size_t i = 1; i < v.size(); ++i) {
+            result[i] = result[i-1] + v[i];
+        }
+        return result;
+    }
+    
+    // Sum of vector
+    inline double vec_sum(const std::vector<double>& v) {
+        return std::accumulate(v.begin(), v.end(), 0.0);
+    }
+    
+    // Element-wise square
+    inline std::vector<double> vec_square(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        for (size_t i = 0; i < v.size(); ++i) {
+            result[i] = v[i] * v[i];
+        }
+        return result;
+    }
+    
+    // Standard deviation
+    inline double vec_stddev(const std::vector<double>& v) {
+        if (v.empty()) return 0.0;
+        double mean = vec_sum(v) / v.size();
+        double sq_sum = 0.0;
+        for (double val : v) {
+            sq_sum += (val - mean) * (val - mean);
+        }
+        return std::sqrt(sq_sum / (v.size() - 1));
+    }
+}
 
 
 /*
@@ -95,7 +145,7 @@ void run_smc_step(
         std::unique_ptr<PlanEnsemble> &old_plan_ensemble,
         std::unique_ptr<PlanEnsemble> &new_plan_ensemble,
         std::vector<std::unique_ptr<TreeSplitter>> &tree_splitters,
-        const arma::vec &normalized_cumulative_weights,
+        const std::vector<double> &normalized_cumulative_weights,
         SMCDiagnostics &smc_diagnostics,
         int const smc_step_num, int const step_num, bool const is_final_split,
         umat &ancestors, const std::vector<int> &lags,
@@ -511,7 +561,7 @@ List run_redist_smc(
     int const total_seats, int const ndists, Rcpp::IntegerVector const district_seat_sizes,
     int const initial_num_regions,
     List const &adj_list,
-    arma::uvec const &counties, const arma::uvec &pop,
+    std::vector<unsigned int> const &counties, const std::vector<unsigned int> &pop,
     Rcpp::CharacterVector const &step_types,
     double const target, double const lower, double const upper,
     double const rho, // compactness
@@ -521,7 +571,7 @@ List run_redist_smc(
     int const verbosity, int const diagnostic_level,
     Rcpp::IntegerMatrix const &region_id_mat,
     Rcpp::IntegerMatrix const &region_sizes_mat,
-    arma::vec &log_weights
+    std::vector<double> &log_weights
 ){
     if (DEBUG_GSMC_PLANS_VERBOSE) REprintf("Inside c++ code!\n");
     bool diagnostic_mode = diagnostic_level == 1;
@@ -598,7 +648,7 @@ List run_redist_smc(
 
     // unpack control params
     // lags thing (copied from original smc code, don't understand what its doing)
-    std::vector<int> lags = as<std::vector<int>>(control["lags"]); arma::umat ancestors(nsims, lags.size(), fill::zeros);
+    std::vector<int> lags = as<std::vector<int>>(control["lags"]); Eigen::MatrixXi ancestors(nsims, lags.size(), fill::zeros);
     // weight type
     std::string wgt_type = as<std::string>(control["weight_type"]);
     // whether or not to cache the weights 
@@ -749,9 +799,9 @@ List run_redist_smc(
 
 
     // Start off all the unnormalized weights at at exp of log weights
-    arma::vec unnormalized_sampling_weights = arma::exp(log_weights);
+    std::vector<double> unnormalized_sampling_weights = vec_exp(log_weights);
     // now get initial normalized weights
-    arma::vec normalized_cumulative_weights = arma::cumsum(unnormalized_sampling_weights);
+    std::vector<double> normalized_cumulative_weights = vec_cumsum(unnormalized_sampling_weights);
     normalized_cumulative_weights = normalized_cumulative_weights / normalized_cumulative_weights[nsims-1];
 
 
@@ -1009,7 +1059,7 @@ List run_redist_smc(
 
                 // if using seq_alpha then our sampling weights for next round are
                 // proportional to exp(alpha* (prev_log_weights + incremental_weights))
-                unnormalized_sampling_weights = arma::exp(weights_alpha * log_weights);
+                unnormalized_sampling_weights = vec_exp(weights_alpha * log_weights);
                 if(!is_final_splitting_step){
                     // if not the end then multiply by 1-alpha
                     log_weights = (1-weights_alpha) * log_weights;
@@ -1018,14 +1068,14 @@ List run_redist_smc(
                 // if no seq alpha then log weights are just the incremental weights
                 // and sampling weights are just exp of exponential weights
                 log_weights = smc_diagnostics.log_incremental_weights_mat.col(smc_step_num);
-                unnormalized_sampling_weights = arma::exp(log_weights);
+                unnormalized_sampling_weights = vec_exp(log_weights);
             }
-            normalized_cumulative_weights = arma::cumsum(unnormalized_sampling_weights);
+            normalized_cumulative_weights = vec_cumsum(unnormalized_sampling_weights);
 
             // compute log weight sd
-            smc_diagnostics.log_wgt_stddevs.at(smc_step_num) = arma::stddev(log_weights);
+            smc_diagnostics.log_wgt_stddevs.at(smc_step_num) = vec_stddev(log_weights);
             // compute effective sample size
-            smc_diagnostics.n_eff.at(smc_step_num) = normalized_cumulative_weights[nsims-1] * normalized_cumulative_weights[nsims-1]  / arma::sum(arma::square(unnormalized_sampling_weights));
+            smc_diagnostics.n_eff.at(smc_step_num) = normalized_cumulative_weights[nsims-1] * normalized_cumulative_weights[nsims-1]  / vec_sum(vec_square(unnormalized_sampling_weights));
             // Now normalize the weights
             normalized_cumulative_weights = normalized_cumulative_weights / normalized_cumulative_weights[nsims-1];
 

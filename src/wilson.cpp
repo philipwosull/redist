@@ -34,8 +34,8 @@ void loop_erase_cty(std::vector<std::array<int, 3>> &path, int proposal, int roo
 
 
 // [[Rcpp::export]]
-Tree sample_ust(List l, const arma::uvec &pop, double lower, double upper,
-                const arma::uvec &counties, const std::vector<bool> ignore) {
+Tree sample_ust(List l, const std::vector<unsigned int> &pop, double lower, double upper,
+                const std::vector<unsigned int> &counties, const std::vector<bool> ignore) {
     RNGState rng_state((int) Rcpp::sample(INT_MAX, 1)[0]);
     Graph g = list_to_graph(l);
     Multigraph cg = county_graph(g, counties);
@@ -54,7 +54,7 @@ Tree sample_ust(List l, const arma::uvec &pop, double lower, double upper,
     std::vector<bool> visited(V);
     Tree county_tree = init_tree(map_params.num_counties);
     TreePopStack county_stack(map_params.num_counties + 1);
-    arma::uvec county_pop(map_params.num_counties, arma::fill::zeros);
+    std::vector<unsigned int> county_pop(map_params.num_counties);
     std::vector<std::vector<int>> county_members(map_params.num_counties, std::vector<int>{});
     std::vector<bool> c_visited(map_params.num_counties, true);
     std::vector<int> cty_pop_below(map_params.num_counties, 0);
@@ -80,7 +80,7 @@ int sample_sub_ust(
     double const lower, double const upper,
     std::vector<bool> &visited, const std::vector<bool> &ignore, 
     Tree &cty_tree, TreePopStack &county_stack, 
-    arma::uvec &county_pop, std::vector<std::vector<int>> &county_members,
+    std::vector<unsigned int> &county_pop, std::vector<std::vector<int>> &county_members,
     std::vector<bool> &c_visited, std::vector<int> &cty_pop_below,
     std::vector<std::array<int, 3>> &county_path, std::vector<int> &path,
     RNGState &rng_state) {

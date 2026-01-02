@@ -123,13 +123,13 @@ class PopTemperConstraint : public RegionConstraint {
 class PopDevConstraint : public RegionConstraint {
     private:
         double const parity;
-        arma::uvec const total_pop;
+        std::vector<unsigned int> const total_pop;
 
 
     public:
         PopDevConstraint(
             Rcpp::List const &a_constraint,
-            double const parity, arma::uvec const &total_pop
+            double const parity, std::vector<unsigned int> const &total_pop
         ) :
             RegionConstraint(a_constraint),
             parity(parity),
@@ -151,8 +151,8 @@ class PopDevConstraint : public RegionConstraint {
 
 class StatusQuoConstraint : public RegionConstraint {
     private:
-        arma::uvec const current;
-        arma::uvec const pop;
+        std::vector<unsigned int> const current;
+        std::vector<unsigned int> const pop;
         int const ndists;
         int const n_current;
         int const V;
@@ -160,7 +160,7 @@ class StatusQuoConstraint : public RegionConstraint {
     public:
         StatusQuoConstraint(
             Rcpp::List const &a_constraint, 
-            arma::uvec const &current, arma::uvec const &pop,
+            std::vector<unsigned int> const &current, std::vector<unsigned int> const &pop,
             int const ndists, int const n_current, int const V
         ) :
             RegionConstraint(a_constraint),
@@ -185,14 +185,14 @@ class StatusQuoConstraint : public RegionConstraint {
 
 class SegregationConstraint : public RegionConstraint {
     private:
-        const arma::uvec grp_pop;
-        const arma::uvec total_pop;
+        const std::vector<unsigned int> grp_pop;
+        const std::vector<unsigned int> total_pop;
         int const V;
 
     public:
         SegregationConstraint(
             Rcpp::List const &a_constraint,
-            arma::uvec const &grp_pop, arma::uvec const &total_pop,
+            std::vector<unsigned int> const &grp_pop, std::vector<unsigned int> const &total_pop,
             int const V
         ) :
             RegionConstraint(a_constraint),
@@ -214,8 +214,8 @@ class SegregationConstraint : public RegionConstraint {
 class GroupPowerConstraint : public RegionConstraint {
     private:
         int const V;
-        arma::uvec const grp_pop;
-        arma::uvec const total_pop;
+        std::vector<unsigned int> const grp_pop;
+        std::vector<unsigned int> const total_pop;
         double const tgt_grp;
         double const tgt_other;
         double const pow;
@@ -225,7 +225,7 @@ class GroupPowerConstraint : public RegionConstraint {
         GroupPowerConstraint(
             Rcpp::List const &a_constraint, 
             int const V,
-            arma::uvec const &grp_pop, arma::uvec const &total_pop,
+            std::vector<unsigned int> const &grp_pop, std::vector<unsigned int> const &total_pop,
             double const tgt_grp, double const tgt_other, double const pow
         ) :
             RegionConstraint(a_constraint),
@@ -249,15 +249,15 @@ class GroupPowerConstraint : public RegionConstraint {
 class GroupHingeConstraint : public RegionConstraint {
     private:
         int const V;
-        arma::vec const tgts_group;
-        arma::uvec const group_pop;
-        arma::uvec const total_pop;
+        std::vector<double> const tgts_group;
+        std::vector<unsigned int> const group_pop;
+        std::vector<unsigned int> const total_pop;
 
     public:
         GroupHingeConstraint(
             Rcpp::List const &a_constraint, 
-            int const V, arma::vec const &tgts_group, arma::uvec const &group_pop,
-            arma::uvec const &total_pop
+            int const V, std::vector<double> const &tgts_group, std::vector<unsigned int> const &group_pop,
+            std::vector<unsigned int> const &total_pop
         ):
             RegionConstraint(a_constraint),
             V(V), 
@@ -280,12 +280,12 @@ class GroupHingeConstraint : public RegionConstraint {
 
 class IncumbentConstraint : public RegionConstraint {
     private:
-        arma::uvec const incumbents; // NOTE: incumbents is 1-indexed
+        std::vector<unsigned int> const incumbents; // NOTE: incumbents is 1-indexed
 
     public:
         IncumbentConstraint(
             Rcpp::List const &a_constraint, 
-            const arma::uvec &incumbents
+            const std::vector<unsigned int> &incumbents
             ) :
             RegionConstraint(a_constraint),
             incumbents(incumbents) {}
@@ -305,14 +305,14 @@ class IncumbentConstraint : public RegionConstraint {
 
 class SplitsConstraint : public RegionConstraint {
     private:
-        arma::uvec const admin_units;
+        std::vector<unsigned int> const admin_units;
         int const n_admin_units;
         bool const smc;
 
     public:
         SplitsConstraint(
             Rcpp::List const &a_constraint, 
-            arma::uvec const &admin_units, int const n_admin_units, bool const smc
+            std::vector<unsigned int> const &admin_units, int const n_admin_units, bool const smc
         ) :
             RegionConstraint(a_constraint),
             admin_units(admin_units),
@@ -333,14 +333,14 @@ class SplitsConstraint : public RegionConstraint {
 
 class MultisplitsConstraint : public RegionConstraint {
     private:
-        arma::uvec const admin_units;
+        std::vector<unsigned int> const admin_units;
         int const n_admin_units;
         bool const smc;
 
     public:
         MultisplitsConstraint(
             Rcpp::List const &a_constraint, 
-            arma::uvec const &admin_units, int const n_admin_units, bool const smc
+            std::vector<unsigned int> const &admin_units, int const n_admin_units, bool const smc
         ) :
             RegionConstraint(a_constraint),
             admin_units(admin_units),
@@ -361,14 +361,14 @@ class MultisplitsConstraint : public RegionConstraint {
 
 class TotalSplitsConstraint : public RegionConstraint {
     private:
-        arma::uvec const admin_units;
+        std::vector<unsigned int> const admin_units;
         int const n_admin_units;
         bool const smc;
 
     public:
         TotalSplitsConstraint(
             Rcpp::List const &a_constraint, 
-            arma::uvec const &admin_units, int const n_admin_units, bool const smc
+            std::vector<unsigned int> const &admin_units, int const n_admin_units, bool const smc
         ) :
             RegionConstraint(a_constraint),
             admin_units(admin_units),
@@ -390,18 +390,18 @@ class TotalSplitsConstraint : public RegionConstraint {
 class PolsbyConstraint : public RegionConstraint {
     private:
         int const V;
-        arma::ivec const from;
-        arma::ivec const to;
-        arma::vec const area; 
-        arma::vec const perimeter;
+        std::vector<int> const from;
+        std::vector<int> const to;
+        std::vector<double> const area; 
+        std::vector<double> const perimeter;
         
 
     public:
         PolsbyConstraint(
             Rcpp::List const &a_constraint, 
             int const V,
-            arma::ivec const &from, arma::ivec const &to, arma::vec const &area,
-            arma::vec const &perimeter
+            std::vector<int> const &from, std::vector<int> const &to, std::vector<double> const &area,
+            std::vector<double> const &perimeter
         ) :
             RegionConstraint(a_constraint),
             V(V),
@@ -517,7 +517,7 @@ class PlanConstraint {
 // assume admin is 1 indexed and only has values 1:num_admin_units
 class PlanSplitsConstraint : public PlanConstraint {
     private:
-        arma::uvec const admin_units;
+        std::vector<unsigned int> const admin_units;
         int const num_admin_units;
         std::vector<std::vector<int>> const admin_vertex_lists;
         mutable std::vector<int> region_reindex_vec;
@@ -525,13 +525,13 @@ class PlanSplitsConstraint : public PlanConstraint {
     public:
         PlanSplitsConstraint(
             double const strength, int const ndists,
-            arma::uvec const admin_units, 
+            std::vector<unsigned int> const admin_units, 
             std::vector<std::vector<int>> const &admin_vertex_lists,
             std::vector<bool> const &num_regions_to_score,
             bool const hard_constraint, double const hard_threshold):
             PlanConstraint(strength, num_regions_to_score, hard_constraint, hard_threshold),
             admin_units(admin_units), 
-            num_admin_units(arma::max(admin_units)),
+            num_admin_units(*std::max_element(admin_units)),
             admin_vertex_lists(admin_vertex_lists),
             region_reindex_vec(ndists)
             {};
@@ -549,7 +549,7 @@ class PlanSplitsConstraint : public PlanConstraint {
 // assume admin is 1 indexed and only has values 1:num_admin_units
 class TotalPlanSplitsConstraint : public PlanConstraint {
     private:
-        arma::uvec const admin_units;
+        std::vector<unsigned int> const admin_units;
         int const num_admin_units;
         std::vector<std::vector<int>> const admin_vertex_lists;
         mutable std::vector<int> region_reindex_vec;
@@ -558,13 +558,13 @@ class TotalPlanSplitsConstraint : public PlanConstraint {
     public:
         TotalPlanSplitsConstraint(
             double const strength, int const ndists,
-            arma::uvec const admin_units, 
+            std::vector<unsigned int> const admin_units, 
             std::vector<std::vector<int>> const &admin_vertex_lists,
             std::vector<bool> const &num_regions_to_score,
             bool const hard_constraint, double const hard_threshold):
             PlanConstraint(strength, num_regions_to_score, hard_constraint, hard_threshold),
             admin_units(admin_units), 
-            num_admin_units(arma::max(admin_units)),
+            num_admin_units(*std::max_element(admin_units)),
             admin_vertex_lists(admin_vertex_lists),
             region_reindex_vec(ndists),
             admin_unit_regions(std::vector<std::set<int>>(num_admin_units))
@@ -583,7 +583,7 @@ class TotalPlanSplitsConstraint : public PlanConstraint {
 class PlanIncumbentConstraint : public PlanConstraint {
     private:
         std::vector<bool> const is_district; // of length total_seats that says whether or not that size is a district
-        arma::uvec const incumbents;
+        std::vector<unsigned int> const incumbents;
         mutable std::vector<int> region_reindex_vec;
         mutable std::vector<int> region_incumbent_counts;
         mutable std::vector<bool> region_is_district; // for specific plan checks if region is district 
@@ -592,7 +592,7 @@ class PlanIncumbentConstraint : public PlanConstraint {
         PlanIncumbentConstraint(
             double const strength, int const ndists,
             std::vector<bool> const &is_district,
-            arma::uvec const &incumbents,
+            std::vector<unsigned int> const &incumbents,
             std::vector<bool> const &num_regions_to_score,
             bool const hard_constraint, double const hard_threshold):
             PlanConstraint(strength, num_regions_to_score, hard_constraint, hard_threshold),
@@ -620,8 +620,8 @@ class MinGroupFracConstraint : public PlanConstraint {
         mutable std::vector<std::vector<double>> plan_total_pops;
         mutable std::vector<bool> region_ids_to_count;
         mutable std::vector<int> region_reindex_vec;
-        std::vector<arma::vec> const group_pops;
-        std::vector<arma::vec> const total_pops;
+        std::vector<std::vector<double>> const group_pops;
+        std::vector<std::vector<double>> const total_pops;
         std::vector<double> const min_fracs;
         int const num_populations;
 
@@ -630,8 +630,8 @@ class MinGroupFracConstraint : public PlanConstraint {
         MinGroupFracConstraint(
             double const strength, int const ndists,
             std::vector<bool> const &is_district,
-            std::vector<arma::vec> const &group_pops, 
-            std::vector<arma::vec> const &total_pops, 
+            std::vector<std::vector<double>> const &group_pops, 
+            std::vector<std::vector<double>> const &total_pops, 
             std::vector<double> const &min_fracs,
             int const num_populations, 
             std::vector<bool> const &num_regions_to_score,

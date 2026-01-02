@@ -57,7 +57,7 @@
 //' @noRd
 // [[Rcpp::export]]
 List draw_a_tree_on_a_region(
-    List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int ndists, int num_regions, int num_districts,
     int region_id_to_draw_tree_on,
     double lower, double upper,
@@ -79,7 +79,7 @@ List draw_a_tree_on_a_region(
 //' @noRd
 // [[Rcpp::export]]
 List perform_a_valid_multidistrict_split(
-    List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int ndists, int num_regions, int num_districts,
     int region_id_to_split,
     double target, double lower, double upper,
@@ -91,11 +91,11 @@ List perform_a_valid_multidistrict_split(
 
 // FORMERLY [[Rcpp WAS ::export]]
 // List perform_merge_split_steps(
-//         List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+//         List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
 //         int k_param,
 //         double target, double lower, double upper,
 //         int ndists, int num_regions, int num_districts,
-//         arma::umat region_ids, arma::umat region_sizes,
+//         Eigen::MatrixXi region_ids, Eigen::MatrixXi region_sizes,
 //         std::vector<int> region_pops,
 //         bool split_district_only, int num_merge_split_steps,
 //         bool verbose
@@ -104,11 +104,11 @@ List perform_a_valid_multidistrict_split(
 
 // [[Rcpp::export]]
 List draw_trees_on_a_region(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int const ndists,
     int const region_id_to_draw_tree_on, int const region_size,
     double const lower, double const target, double const upper,
-    arma::uvec const &region_ids, 
+    std::vector<unsigned int> const &region_ids, 
     int const num_tree, int num_threads,
     bool const verbose
 );
@@ -116,7 +116,7 @@ List draw_trees_on_a_region(
 
 // [[Rcpp::export]]
 List attempt_splits_on_a_region(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int const ndists, int const init_num_regions,
     int const region_id_to_split, 
     double const lower, double const target, double const upper,

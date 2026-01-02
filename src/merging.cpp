@@ -33,13 +33,13 @@ constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
  *  @return A sampler where index i has probability proportional to the weight 
  *  given to that pair 
  */ 
-arma::vec get_adj_pair_unnormalized_weights(
+std::vector<double> get_adj_pair_unnormalized_weights(
     Plan const &plan,
     std::vector<std::pair<RegionID, RegionID>> const &valid_region_adj_pairs,
     std::string const &selection_type
 ){
     // make a vector for the unnormalized weights 
-    arma::vec unnormalized_sampling_weights(valid_region_adj_pairs.size());
+    std::vector<double> unnormalized_sampling_weights(valid_region_adj_pairs.size());
 
     // if uniform then just make all the weights 1 over the size 
     if(selection_type == "uniform"){
@@ -193,7 +193,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     PlanMultigraph &proposed_plan_multigraph,
     std::string const merge_prob_type, bool save_edge_selection_prob,
     std::vector<std::pair<RegionID, RegionID>> &adj_region_pairs,
-    arma::vec &unnormalized_pair_wgts,
+    std::vector<double> &unnormalized_pair_wgts,
     double const rho, bool const is_final, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache
 ){
@@ -431,7 +431,7 @@ int run_merge_split_steps(
     auto current_plan_adj_region_pairs = plan.attempt_to_get_valid_mergesplit_pairs(
         current_plan_multigraph, splitting_schedule, scoring_function, is_final
     ).second;
-    arma::vec current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
+    std::vector<double> current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
         plan,
         current_plan_adj_region_pairs,
         merge_prob_type

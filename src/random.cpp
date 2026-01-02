@@ -1,4 +1,18 @@
 #include "random.h"
+#include <numeric>
+
+// Helper function for cumulative sum
+namespace {
+    inline std::vector<double> vec_cumsum(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        if (v.empty()) return result;
+        result[0] = v[0];
+        for (size_t i = 1; i < v.size(); ++i) {
+            result[i] = result[i-1] + v[i];
+        }
+        return result;
+    }
+}
 
 
 
@@ -205,7 +219,7 @@ int RNGState::r_int_wgt(vec cum_wgts) {
  */
 int RNGState::r_int_unnormalized_wgt(const vec &unnormalized_wgts) {
     // Get the unnormalized cumulative weights 
-    arma::vec cum_wgts = arma::cumsum(unnormalized_wgts); 
+    std::vector<double> cum_wgts = vec_cumsum(unnormalized_wgts); 
     // now normalize them
     cum_wgts = cum_wgts / cum_wgts(cum_wgts.size()-1);
     return r_int_wgt(cum_wgts);
@@ -230,7 +244,7 @@ int r_int_mixstrat(int max, int stratum, double p, vec cum_wgts) {
  * Generate an integer vector of resampling indices with a low-variance resampler.
  */
 ivec resample_lowvar(vec wgts) {
-    int N = wgts.n_elem;
+    int N = wgts.size();
 
     double r = GLOBAL_RNG.r_unif() / N;
     double cuml = wgts[0];
