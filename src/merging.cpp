@@ -343,7 +343,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
             );
             Rprintf(
                 "with probability %f\n",
-                std::exp(std::log(unnormalized_pair_wgts(sampled_pair_index)) - std::log(arma::sum(unnormalized_pair_wgts)))
+                std::exp(std::log(unnormalized_pair_wgts(sampled_pair_index)) - std::log(std::accumulate(unnormalized_pair_wgts.begin(), unnormalized_pair_wgts.end(), 0.0)))
             );
             Rprintf(
                 "Proposed Plan: %d Adjacent Regions and I picked index %d ",
@@ -351,7 +351,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
             );
             Rprintf(
                 "with probability %f\n",
-                std::exp(std::log(new_valid_pair_weights(region_pair_proposal_index)) - std::log(arma::sum(new_valid_pair_weights)))
+                std::exp(std::log(new_valid_pair_weights(region_pair_proposal_index)) - std::log(std::accumulate(new_valid_pair_weights.begin(), new_valid_pair_weights.end(), 0.0)))
             );
         }
 
@@ -362,8 +362,8 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
             region1_id, region2_id,
             current_log_eff_boundary, 
             proposed_log_eff_boundary, 
-            std::log(unnormalized_pair_wgts(sampled_pair_index)) - std::log(arma::sum(unnormalized_pair_wgts)), 
-            std::log(new_valid_pair_weights(region_pair_proposal_index)) - std::log(arma::sum(new_valid_pair_weights)), 
+            std::log(unnormalized_pair_wgts(sampled_pair_index)) - std::log(std::accumulate(unnormalized_pair_wgts.begin(), unnormalized_pair_wgts.end(), 0.0)), 
+            std::log(new_valid_pair_weights(region_pair_proposal_index)) - std::log(std::accumulate(new_valid_pair_weights.begin(), new_valid_pair_weights.end(), 0.0)), 
             new_region1_log_compactness, new_region2_log_compactness,
             plan, new_plan,
             rho, is_final,

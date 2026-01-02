@@ -781,7 +781,7 @@ PlanEnsemble get_plan_ensemble(
     if(num_regions == 1){
         return PlanEnsemble(
             map_params, 
-            arma::sum(map_params.pop), nsims, 
+            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0.0), nsims, 
             sampling_space, pool, verbosity
         );
     }else{
@@ -807,7 +807,7 @@ std::unique_ptr<PlanEnsemble> get_plan_ensemble_ptr(
     if(num_regions == 1){
         return std::make_unique<PlanEnsemble>(
             map_params, 
-            arma::sum(map_params.pop), nsims, sampling_space, pool, verbosity
+            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0.0), nsims, sampling_space, pool, verbosity
         );
     }else{
         return std::make_unique<PlanEnsemble>(

@@ -11,7 +11,7 @@
 bool constexpr DEBUG_BASE_PLANS_VERBOSE = false;
 bool constexpr DEBUG_LOG_LINK_EDGE_VERBOSE = false;
 
-// Helper function for cumulative sum
+// Helper functions
 namespace {
     inline std::vector<double> vec_cumsum(const std::vector<double>& v) {
         std::vector<double> result(v.size());
@@ -21,6 +21,15 @@ namespace {
             result[i] = result[i-1] + v[i];
         }
         return result;
+    }
+    
+    // Log determinant of a symmetric positive definite matrix using Eigen
+    inline double log_det_sympd(const Eigen::MatrixXd& mat) {
+        Eigen::LLT<Eigen::MatrixXd> llt(mat);
+        if (llt.info() != Eigen::Success) {
+            throw std::runtime_error("Matrix is not positive definite");
+        }
+        return llt.matrixL().toDenseMatrix().diagonal().array().log().sum() * 2.0;
     }
 }
 
@@ -981,7 +990,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
 
     }
 
-    return arma::log_det_sympd(laplacian_minor);
+    return log_det_sympd(laplacian_minor);
 };
 
 
@@ -1070,7 +1079,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
 
     }
 
-    return arma::log_det_sympd(merged_laplacian_minor); 
+    return log_det_sympd(merged_laplacian_minor); 
 }
 
 
@@ -1662,7 +1671,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             laplacian_minor.print();
             }
             // Now add log det
-            log_tau += arma::log_det_sympd(laplacian_minor);
+            log_tau += log_det_sympd(laplacian_minor);
         }
     }
 
@@ -1760,7 +1769,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += arma::log_det_sympd(component_laplacian_minor);
+    log_tau += log_det_sympd(component_laplacian_minor);
 
     return log_tau;
 }
@@ -2593,7 +2602,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             laplacian_minor.print();
             }
             // Now add log det
-            log_tau += arma::log_det_sympd(laplacian_minor);
+            log_tau += log_det_sympd(laplacian_minor);
         }
     }
 
@@ -2736,7 +2745,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += arma::log_det_sympd(component_laplacian_minor);
+    log_tau += log_det_sympd(component_laplacian_minor);
 
     return log_tau;
 
@@ -3415,9 +3424,9 @@ std::pair<bool, EdgeCut> TreeSplitter::select_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
         // Rprintf("Save, %d valid, log prob is %f and %f\n", num_valid_edges, selected_edge_cut.log_prob, 
-        //     std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts)));
+        //     std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0)));
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -3618,7 +3627,7 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -3635,7 +3644,7 @@ double ExperimentalSplitter::get_log_selection_prob(
     
     // we want log of weight at idx / sum of all weight which is equal to
     // log(prob at idx) - log(sum of all weights)
-    return log(unnormalized_wgts(idx)) - log(arma::sum(unnormalized_wgts));
+    return log(unnormalized_wgts(idx)) - log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
 }
 
 
@@ -3663,7 +3672,7 @@ double ExperimentalSplitter::get_log_selection_prob(
 //     // compute selection probability if needed
 //     double log_selection_prob = 0.0;
 //     if(save_selection_prob){
-//         selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+//         selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
 //     }
 
 //     return std::make_pair(true, selected_edge_cut);
@@ -3719,7 +3728,7 @@ std::pair<bool, EdgeCut> ConstraintSplitter::attempt_to_find_edge_to_cut(
     // compute selection probability if needed
     double log_selection_prob = 0.0;
     if(save_selection_prob){
-        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+        selected_edge_cut.log_prob = std::log(unnormalized_wgts(idx)) - std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
         // REprintf("Selection prob %f\n", selected_edge_cut.log_prob);
     }
 

@@ -6,6 +6,17 @@
 // alias for SparseMatrix
 using SparseMat = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
 
+// Helper for log determinant
+namespace {
+    inline double log_det_sympd(const Eigen::MatrixXd& mat) {
+        Eigen::LLT<Eigen::MatrixXd> llt(mat);
+        if (llt.info() != Eigen::Success) {
+            throw std::runtime_error("Matrix is not positive definite");
+        }
+        return llt.matrixL().toDenseMatrix().diagonal().array().log().sum() * 2.0;
+    }
+}
+
 /*
  * Compute the Fryer-Holden penalty for district `distr`
  */
@@ -292,7 +303,7 @@ NumericVector max_dev(
     NumericMatrix district_pops = pop_tally(districts, pop, n_distr, num_threads);
 
     if(multimember_districts){
-        double const target_pop = arma::sum(pop) / nseats;
+        double const target_pop = std::accumulate(pop.begin(), pop.end(), 0.0) / nseats;
         RcppThread::parallelFor(0, num_plans, [&] (unsigned int i) {
             for (int j = 0; j < n_distr; j++) {
                 double target_seat_pop = target_pop * seats_matrix(j, i);
@@ -304,7 +315,7 @@ NumericVector max_dev(
             }
         }, num_threads > 0 ? num_threads : 0);
     }else{
-        double const target_pop = arma::sum(pop) / n_distr;
+        double const target_pop = std::accumulate(pop.begin(), pop.end(), 0.0) / n_distr;
         RcppThread::parallelFor(0, num_plans, [&] (unsigned int i) {
             for (int j = 0; j < n_distr; j++) {
                 double dev = std::fabs(district_pops(j, i) / target_pop - 1.0);
@@ -409,7 +420,7 @@ double compute_log_region_and_county_spanning_tree(
         adj(prec, prec) = degree;
     }
 
-    return arma::log_det_sympd(adj);
+    return log_det_sympd(adj);
 }
 
 // This assumes the matrix is stored as upper triangular one via 
@@ -673,7 +684,7 @@ double compute_log_county_level_spanning_tree(
         }
     }
 
-    return arma::log_det_sympd(adj);
+    return log_det_sympd(adj);
 }
 
 

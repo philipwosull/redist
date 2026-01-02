@@ -1002,7 +1002,7 @@ double MinGroupFracConstraint::compute_raw_plan_constraint_score(
         double pops_above = 0.0;
         for (size_t i = 0; i < num_populations; i++)
         {
-            if(arma::sum(group_pops[i])/arma::sum(total_pops[i]) >= min_fracs[i]){
+            if(std::accumulate(group_pops[i].begin(), group_pops[i].end(), 0.0)/std::accumulate(total_pops[i].begin(), total_pops[i].end(), 0.0) >= min_fracs[i]){
                 pops_above++;
             }
         }
@@ -1050,7 +1050,7 @@ double MinGroupFracConstraint::compute_raw_merged_plan_constraint_score(
         double pops_above = 0.0;
         for (size_t i = 0; i < num_populations; i++)
         {
-            if(arma::sum(group_pops[i])/arma::sum(total_pops[i]) >= min_fracs[i]){
+            if(std::accumulate(group_pops[i].begin(), group_pops[i].end(), 0.0)/std::accumulate(total_pops[i].begin(), total_pops[i].end(), 0.0) >= min_fracs[i]){
                 pops_above++;
             }
         }
