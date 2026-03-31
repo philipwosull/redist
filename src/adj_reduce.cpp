@@ -32,15 +32,15 @@ List reduce_adj(List adj_list, IntegerVector prec_map, int n_keep) {
 // [[Rcpp::export]]
 Graph collapse_adj(List graph, const std::vector<unsigned int> &idxs) {
     int V = graph.size();
-    int V_new = max(idxs) + 1;
+    int V_new = *std::max_element(idxs.begin(), idxs.end()) + 1;
     Graph collapsed = init_tree(V_new);
 
     for (int i = 0; i < V; i++) {
-        int from = idxs(i);
+        int from = idxs[i];
         std::vector<int> *nbors = &collapsed[from];
         int length = ((IntegerVector) graph[i]).size();
         for (int j = 0; j < length; j++) {
-            int to = idxs(((IntegerVector) graph[i])[j]);
+            int to = idxs[((IntegerVector) graph[i])[j]];
 
             if (from != to &&
                     std::find(nbors->begin(), nbors->end(), to) == nbors->end()) {
