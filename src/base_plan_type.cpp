@@ -232,7 +232,7 @@ Plan::Plan(int const num_regions,
     // // compute the population for each of the regions 
     for (size_t v = 0; v < region_ids.size(); v++)
     {
-        region_pops[region_ids[v]] += pop(v);
+        region_pops[region_ids[v]] += pop[v];
     }
 };
 
@@ -1668,7 +1668,6 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             }
             if(DEBUG_LOG_LINK_EDGE_VERBOSE){
             REprintf("Printing Laplacian Minor!\n");
-            laplacian_minor.print();
             }
             // Now add log det
             log_tau += log_det_sympd(laplacian_minor);
@@ -1765,7 +1764,6 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     
     if(DEBUG_LOG_LINK_EDGE_VERBOSE){
         REprintf("Printing Component Laplacian Minor\n");
-    component_laplacian_minor.print();
     }
 
     // Now add log det
@@ -2599,7 +2597,6 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             }
             if(DEBUG_LOG_LINK_EDGE_VERBOSE){
             REprintf("Printing Laplacian Minor!\n");
-            laplacian_minor.print();
             }
             // Now add log det
             log_tau += log_det_sympd(laplacian_minor);
@@ -2741,7 +2738,6 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     
     if(DEBUG_LOG_LINK_EDGE_VERBOSE){
         REprintf("Printing Component Laplacian Minor\n");
-    component_laplacian_minor.print();
     }
 
     // Now add log det
