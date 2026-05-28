@@ -7,7 +7,7 @@
 /////////////////////////////////////
 
 // Header files
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <RcppArmadilloExtensions/sample.h>
 #include <time.h>
 #include <R.h>
@@ -20,27 +20,27 @@
 
 using namespace Rcpp;
 
-List vector_to_list(arma::uvec vecname) {
+List vector_to_list(std::vector<unsigned int> vecname) {
 
-    List list_out(vecname.n_elem);
-    for(int i = 0; i < vecname.n_elem; i++) {
+    List list_out(vecname.size());
+    for(int i = 0; i < vecname.size(); i++) {
         list_out(i) = vecname(i);
     }
     return list_out;
 
 }
 
-arma::uvec get_not_in(arma::uvec vec1, arma::uvec vec2) {
-    int i; arma::uvec findtest; arma::uvec out(vec1.n_elem);
-    for(i = 0; i < vec1.n_elem; i++) {
+std::vector<unsigned int> get_not_in(std::vector<unsigned int> vec1, std::vector<unsigned int> vec2) {
+    int i; std::vector<unsigned int> findtest; std::vector<unsigned int> out(vec1.size());
+    for(i = 0; i < vec1.size(); i++) {
         findtest = find(vec2 == vec1(i));
-        if (findtest.n_elem == 0) {
+        if (findtest.size() == 0) {
             out(i) = 1;
         } else {
             out(i) = 0;
         }
     }
-    arma::uvec candidates = vec1.elem( find(out == 1) );
+    std::vector<unsigned int> candidates = vec1.elem( find(out == 1) );
 
     return candidates;
 }
@@ -232,7 +232,7 @@ List swMH(List aList,
     List boundary_partitions; List cutedge_lists; int p; List aList_con_prop;
     NumericVector boundary_prop; List boundary_partitions_prop; int decision;
     List get_constraint; List gt_out; NumericVector cdvec_prop; int i;
-    arma::uvec boundary_precincts; List boundary_partitions_list;
+    std::vector<unsigned int> boundary_precincts; List boundary_partitions_list;
 
     if (adapt_beta == "annealing") {
         Rcout << "---------------------------------" << std::endl;
@@ -273,7 +273,7 @@ List swMH(List aList,
                                                        boundary);
                 boundary_partitions_list = boundary_partitions["bsearch"];
             } else {
-                boundary_precincts = find(as<arma::vec>(boundary) == 1);
+                boundary_precincts = find(as<std::vector<double>>(boundary) == 1);
                 boundary_partitions_list = vector_to_list(boundary_precincts);
             }
 

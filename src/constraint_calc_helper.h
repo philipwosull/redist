@@ -13,7 +13,7 @@
 
 Rcpp::NumericVector findBoundary(Rcpp::List fullList,
 				 Rcpp::List conList);
-arma::uvec getIn(arma::ivec vec1, arma::ivec vec2);
+std::vector<unsigned int> getIn(std::vector<int> vec1, std::vector<int> vec2);
 Rcpp::List genAlConn(Rcpp::List aList,
 		     Rcpp::NumericVector cds);
 

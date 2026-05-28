@@ -7,7 +7,8 @@
 #include <vector>
 #include <iostream>
 #include <RcppThread.h>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
+#include <RcppEigen.h>
 #include <string>
 #include <cassert>
 #include <map>
@@ -22,8 +23,6 @@
 #include "graph_ops.h"
 #include "redist_constants.h"
 #include "tree_splitting.h"
-
-// [[Rcpp::depends(RcppArmadillo)]]
 
 
 
@@ -125,7 +124,7 @@ public:
    );
    // constructor for partial plan (more than 1 region)
     Plan(int const num_regions,
-        const arma::uvec &pop,
+        const std::vector<unsigned int> &pop,
         PlanVector &this_plan_region_ids, 
         RegionSizes &this_plan_region_sizes,
         IntPlanAttribute &this_plan_region_pops,
@@ -506,8 +505,8 @@ class PlanMultigraph{
         std::vector<int> county_component_reindex;
         std::vector<int> region_reindex_vec;
 
-        arma::mat WAIT_laplacian_minor; // Minor of laplacian used for computing log spanning trees for plan
-        arma::mat WAIT_merged_laplacian_minor; // minor of laplacian used for computing log spanning trees for merged plan
+        Eigen::MatrixXd WAIT_laplacian_minor; // Minor of laplacian used for computing log spanning trees for plan
+        Eigen::MatrixXd WAIT_merged_laplacian_minor; // minor of laplacian used for computing log spanning trees for merged plan
 
         // Resizes minor matrices if multigraph taus will need to be computed 
         void prep_for_calculations(int const num_regions);

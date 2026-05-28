@@ -2,7 +2,6 @@
 // Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 #include "redist_types.h"
-#include <RcppArmadillo.h>
 #include <RcppThread.h>
 #include <RcppEigen.h>
 #include <Rcpp.h>
@@ -28,13 +27,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // collapse_adj
-Graph collapse_adj(List graph, const arma::uvec& idxs);
+Graph collapse_adj(List graph, const std::vector<unsigned int>& idxs);
 RcppExport SEXP _redist_collapse_adj(SEXP graphSEXP, SEXP idxsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List >::type graph(graphSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type idxs(idxsSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type idxs(idxsSEXP);
     rcpp_result_gen = Rcpp::wrap(collapse_adj(graph, idxs));
     return rcpp_result_gen;
 END_RCPP
@@ -193,51 +192,51 @@ BEGIN_RCPP
 END_RCPP
 }
 // get_region_multigraph
-RegionMultigraphCount get_region_multigraph(Rcpp::List const& adj_list, arma::uvec const& region_ids);
+RegionMultigraphCount get_region_multigraph(Rcpp::List const& adj_list, std::vector<unsigned int> const& region_ids);
 RcppExport SEXP _redist_get_region_multigraph(SEXP adj_listSEXP, SEXP region_idsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type region_ids(region_idsSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type region_ids(region_idsSEXP);
     rcpp_result_gen = Rcpp::wrap(get_region_multigraph(adj_list, region_ids));
     return rcpp_result_gen;
 END_RCPP
 }
 // get_region_laplacian
-arma::mat get_region_laplacian(Rcpp::List const& adj_list, arma::uvec const& region_ids);
+Eigen::MatrixXd get_region_laplacian(Rcpp::List const& adj_list, std::vector<unsigned int> const& region_ids);
 RcppExport SEXP _redist_get_region_laplacian(SEXP adj_listSEXP, SEXP region_idsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type region_ids(region_idsSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type region_ids(region_idsSEXP);
     rcpp_result_gen = Rcpp::wrap(get_region_laplacian(adj_list, region_ids));
     return rcpp_result_gen;
 END_RCPP
 }
 // log_st_map
-NumericVector log_st_map(const Graph& g, const arma::umat& districts, const arma::uvec& counties, int n_distr);
+NumericVector log_st_map(const Graph& g, const Eigen::MatrixXi& districts, const std::vector<unsigned int>& counties, int n_distr);
 RcppExport SEXP _redist_log_st_map(SEXP gSEXP, SEXP districtsSEXP, SEXP countiesSEXP, SEXP n_distrSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Graph& >::type g(gSEXP);
-    Rcpp::traits::input_parameter< const arma::umat& >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXi& >::type districts(districtsSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
     Rcpp::traits::input_parameter< int >::type n_distr(n_distrSEXP);
     rcpp_result_gen = Rcpp::wrap(log_st_map(g, districts, counties, n_distr));
     return rcpp_result_gen;
 END_RCPP
 }
 // n_removed
-NumericVector n_removed(const Graph& g, const arma::umat& districts, int n_distr);
+NumericVector n_removed(const Graph& g, const Eigen::MatrixXi& districts, int n_distr);
 RcppExport SEXP _redist_n_removed(SEXP gSEXP, SEXP districtsSEXP, SEXP n_distrSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Graph& >::type g(gSEXP);
-    Rcpp::traits::input_parameter< const arma::umat& >::type districts(districtsSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXi& >::type districts(districtsSEXP);
     Rcpp::traits::input_parameter< int >::type n_distr(n_distrSEXP);
     rcpp_result_gen = Rcpp::wrap(n_removed(g, districts, n_distr));
     return rcpp_result_gen;
@@ -266,14 +265,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // draw_a_tree_on_a_region
-List draw_a_tree_on_a_region(List adj_list, const arma::uvec& counties, const arma::uvec& pop, int ndists, int num_regions, int num_districts, int region_id_to_draw_tree_on, double lower, double upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, bool verbose);
+List draw_a_tree_on_a_region(List adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, int ndists, int num_regions, int num_districts, int region_id_to_draw_tree_on, double lower, double upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, bool verbose);
 RcppExport SEXP _redist_draw_a_tree_on_a_region(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP ndistsSEXP, SEXP num_regionsSEXP, SEXP num_districtsSEXP, SEXP region_id_to_draw_tree_onSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int >::type num_regions(num_regionsSEXP);
     Rcpp::traits::input_parameter< int >::type num_districts(num_districtsSEXP);
@@ -288,14 +287,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // perform_a_valid_multidistrict_split
-List perform_a_valid_multidistrict_split(List adj_list, const arma::uvec& counties, const arma::uvec& pop, int ndists, int num_regions, int num_districts, int region_id_to_split, double target, double lower, double upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int split_dval_min, int split_dval_max, bool split_district_only, bool verbose, int k_param);
+List perform_a_valid_multidistrict_split(List adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, int ndists, int num_regions, int num_districts, int region_id_to_split, double target, double lower, double upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int split_dval_min, int split_dval_max, bool split_district_only, bool verbose, int k_param);
 RcppExport SEXP _redist_perform_a_valid_multidistrict_split(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP ndistsSEXP, SEXP num_regionsSEXP, SEXP num_districtsSEXP, SEXP region_id_to_splitSEXP, SEXP targetSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP split_dval_minSEXP, SEXP split_dval_maxSEXP, SEXP split_district_onlySEXP, SEXP verboseSEXP, SEXP k_paramSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int >::type num_regions(num_regionsSEXP);
     Rcpp::traits::input_parameter< int >::type num_districts(num_districtsSEXP);
@@ -315,21 +314,21 @@ BEGIN_RCPP
 END_RCPP
 }
 // draw_trees_on_a_region
-List draw_trees_on_a_region(List const& adj_list, const arma::uvec& counties, const arma::uvec& pop, int const ndists, int const region_id_to_draw_tree_on, int const region_size, double const lower, double const target, double const upper, arma::uvec const& region_ids, int const num_tree, int num_threads, bool const verbose);
+List draw_trees_on_a_region(List const& adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, int const ndists, int const region_id_to_draw_tree_on, int const region_size, double const lower, double const target, double const upper, std::vector<unsigned int> const& region_ids, int const num_tree, int num_threads, bool const verbose);
 RcppExport SEXP _redist_draw_trees_on_a_region(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP ndistsSEXP, SEXP region_id_to_draw_tree_onSEXP, SEXP region_sizeSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP num_treeSEXP, SEXP num_threadsSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int const >::type region_id_to_draw_tree_on(region_id_to_draw_tree_onSEXP);
     Rcpp::traits::input_parameter< int const >::type region_size(region_sizeSEXP);
     Rcpp::traits::input_parameter< double const >::type lower(lowerSEXP);
     Rcpp::traits::input_parameter< double const >::type target(targetSEXP);
     Rcpp::traits::input_parameter< double const >::type upper(upperSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type region_ids(region_idsSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type region_ids(region_idsSEXP);
     Rcpp::traits::input_parameter< int const >::type num_tree(num_treeSEXP);
     Rcpp::traits::input_parameter< int >::type num_threads(num_threadsSEXP);
     Rcpp::traits::input_parameter< bool const >::type verbose(verboseSEXP);
@@ -338,14 +337,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // attempt_splits_on_a_region
-List attempt_splits_on_a_region(List const& adj_list, const arma::uvec& counties, const arma::uvec& pop, int const ndists, int const init_num_regions, int const region_id_to_split, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& splitting_schedule_str, int const k_param, int const num_plans, int num_threads, bool const verbose);
+List attempt_splits_on_a_region(List const& adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, int const ndists, int const init_num_regions, int const region_id_to_split, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& splitting_schedule_str, int const k_param, int const num_plans, int num_threads, bool const verbose);
 RcppExport SEXP _redist_attempt_splits_on_a_region(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP ndistsSEXP, SEXP init_num_regionsSEXP, SEXP region_id_to_splitSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP splitting_schedule_strSEXP, SEXP k_paramSEXP, SEXP num_plansSEXP, SEXP num_threadsSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int const >::type init_num_regions(init_num_regionsSEXP);
     Rcpp::traits::input_parameter< int const >::type region_id_to_split(region_id_to_splitSEXP);
@@ -364,14 +363,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_log_unnormalized_target_density_components
-Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(List const& adj_list, const arma::uvec& counties, const arma::uvec& pop, List const& constraints, double const pop_temper, bool const compute_pop_temper, double const rho, int const ndists, int const total_seats, int const num_regions, Rcpp::IntegerVector const& district_seat_sizes, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& output_type, int const num_threads);
+Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(List const& adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, List const& constraints, double const pop_temper, bool const compute_pop_temper, double const rho, int const ndists, int const total_seats, int const num_regions, Rcpp::IntegerVector const& district_seat_sizes, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& output_type, int const num_threads);
 RcppExport SEXP _redist_compute_log_unnormalized_target_density_components(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP constraintsSEXP, SEXP pop_temperSEXP, SEXP compute_pop_temperSEXP, SEXP rhoSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP num_regionsSEXP, SEXP district_seat_sizesSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP output_typeSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< List const& >::type constraints(constraintsSEXP);
     Rcpp::traits::input_parameter< double const >::type pop_temper(pop_temperSEXP);
     Rcpp::traits::input_parameter< bool const >::type compute_pop_temper(compute_pop_temperSEXP);
@@ -392,14 +391,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_plans_log_optimal_weights
-arma::vec compute_plans_log_optimal_weights(List const& adj_list, arma::uvec const& counties, arma::uvec const& pop, List const& constraints, double const pop_temper, double const rho, std::string const& splitting_schedule_str, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, int const num_regions, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int num_threads);
+std::vector<double> compute_plans_log_optimal_weights(List const& adj_list, std::vector<unsigned int> const& counties, std::vector<unsigned int> const& pop, List const& constraints, double const pop_temper, double const rho, std::string const& splitting_schedule_str, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, int const num_regions, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int num_threads);
 RcppExport SEXP _redist_compute_plans_log_optimal_weights(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP constraintsSEXP, SEXP pop_temperSEXP, SEXP rhoSEXP, SEXP splitting_schedule_strSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP district_seat_sizesSEXP, SEXP num_regionsSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< List const& >::type constraints(constraintsSEXP);
     Rcpp::traits::input_parameter< double const >::type pop_temper(pop_temperSEXP);
     Rcpp::traits::input_parameter< double const >::type rho(rhoSEXP);
@@ -419,14 +418,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_plans_log_simple_weights
-arma::vec compute_plans_log_simple_weights(List const& adj_list, arma::uvec const& counties, arma::uvec const& pop, List const& constraints, double const pop_temper, double const rho, std::string const& splitting_schedule_str, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, int const num_regions, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int num_threads);
+std::vector<double> compute_plans_log_simple_weights(List const& adj_list, std::vector<unsigned int> const& counties, std::vector<unsigned int> const& pop, List const& constraints, double const pop_temper, double const rho, std::string const& splitting_schedule_str, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, int const num_regions, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, int num_threads);
 RcppExport SEXP _redist_compute_plans_log_simple_weights(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP constraintsSEXP, SEXP pop_temperSEXP, SEXP rhoSEXP, SEXP splitting_schedule_strSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP district_seat_sizesSEXP, SEXP num_regionsSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< List const& >::type constraints(constraintsSEXP);
     Rcpp::traits::input_parameter< double const >::type pop_temper(pop_temperSEXP);
     Rcpp::traits::input_parameter< double const >::type rho(rhoSEXP);
@@ -461,13 +460,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // proj_distr_m
-NumericMatrix proj_distr_m(IntegerMatrix districts, const arma::vec x, IntegerVector draw_idx, int n_distr);
+NumericMatrix proj_distr_m(IntegerMatrix districts, const std::vector<double> x, IntegerVector draw_idx, int n_distr);
 RcppExport SEXP _redist_proj_distr_m(SEXP districtsSEXP, SEXP xSEXP, SEXP draw_idxSEXP, SEXP n_distrSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerMatrix >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< const arma::vec >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const std::vector<double> >::type x(xSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type draw_idx(draw_idxSEXP);
     Rcpp::traits::input_parameter< int >::type n_distr(n_distrSEXP);
     rcpp_result_gen = Rcpp::wrap(proj_distr_m(districts, x, draw_idx, n_distr));
@@ -497,27 +496,27 @@ BEGIN_RCPP
 END_RCPP
 }
 // prec_cooccur
-arma::mat prec_cooccur(arma::umat m, arma::uvec idxs, int ncores);
+Eigen::MatrixXd prec_cooccur(Eigen::MatrixXi m, std::vector<unsigned int> idxs, int ncores);
 RcppExport SEXP _redist_prec_cooccur(SEXP mSEXP, SEXP idxsSEXP, SEXP ncoresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::umat >::type m(mSEXP);
-    Rcpp::traits::input_parameter< arma::uvec >::type idxs(idxsSEXP);
+    Rcpp::traits::input_parameter< Eigen::MatrixXi >::type m(mSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> >::type idxs(idxsSEXP);
     Rcpp::traits::input_parameter< int >::type ncores(ncoresSEXP);
     rcpp_result_gen = Rcpp::wrap(prec_cooccur(m, idxs, ncores));
     return rcpp_result_gen;
 END_RCPP
 }
 // group_pct
-NumericMatrix group_pct(IntegerMatrix const& plans_mat, arma::vec const& group_pop, arma::vec const& total_pop, int const n_distr, int const ncores);
+NumericMatrix group_pct(IntegerMatrix const& plans_mat, std::vector<double> const& group_pop, std::vector<double> const& total_pop, int const n_distr, int const ncores);
 RcppExport SEXP _redist_group_pct(SEXP plans_matSEXP, SEXP group_popSEXP, SEXP total_popSEXP, SEXP n_distrSEXP, SEXP ncoresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerMatrix const& >::type plans_mat(plans_matSEXP);
-    Rcpp::traits::input_parameter< arma::vec const& >::type group_pop(group_popSEXP);
-    Rcpp::traits::input_parameter< arma::vec const& >::type total_pop(total_popSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> const& >::type group_pop(group_popSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> const& >::type total_pop(total_popSEXP);
     Rcpp::traits::input_parameter< int const >::type n_distr(n_distrSEXP);
     Rcpp::traits::input_parameter< int const >::type ncores(ncoresSEXP);
     rcpp_result_gen = Rcpp::wrap(group_pct(plans_mat, group_pop, total_pop, n_distr, ncores));
@@ -525,13 +524,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // pop_tally
-NumericMatrix pop_tally(IntegerMatrix const& districts, arma::vec const& pop, int const n_distr, int const ncores);
+NumericMatrix pop_tally(IntegerMatrix const& districts, std::vector<double> const& pop, int const n_distr, int const ncores);
 RcppExport SEXP _redist_pop_tally(SEXP districtsSEXP, SEXP popSEXP, SEXP n_distrSEXP, SEXP ncoresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerMatrix const& >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< arma::vec const& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> const& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int const >::type n_distr(n_distrSEXP);
     Rcpp::traits::input_parameter< int const >::type ncores(ncoresSEXP);
     rcpp_result_gen = Rcpp::wrap(pop_tally(districts, pop, n_distr, ncores));
@@ -554,13 +553,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // max_dev
-Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix& districts, const arma::vec& pop, int const n_distr, bool const multimember_districts, int const nseats, Rcpp::IntegerMatrix const& seats_matrix, int const num_threads);
+Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix& districts, const std::vector<double>& pop, int const n_distr, bool const multimember_districts, int const nseats, Rcpp::IntegerMatrix const& seats_matrix, int const num_threads);
 RcppExport SEXP _redist_max_dev(SEXP districtsSEXP, SEXP popSEXP, SEXP n_distrSEXP, SEXP multimember_districtsSEXP, SEXP nseatsSEXP, SEXP seats_matrixSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Rcpp::IntegerMatrix& >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<double>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< int const >::type n_distr(n_distrSEXP);
     Rcpp::traits::input_parameter< bool const >::type multimember_districts(multimember_districtsSEXP);
     Rcpp::traits::input_parameter< int const >::type nseats(nseatsSEXP);
@@ -598,7 +597,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // ms_plans
-Rcpp::List ms_plans(int const nsims, int const warmup, int const thin, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, List const& adj_list, const arma::uvec& counties, const arma::uvec& pop, double const target, double const lower, double const upper, double const rho, Rcpp::IntegerMatrix const& init_plan, Rcpp::IntegerMatrix const& init_seats, std::string const& sampling_space_str, std::string const& pair_rule, List const& control, List const& constraints, int const verbosity, bool const diagnostic_mode);
+Rcpp::List ms_plans(int const nsims, int const warmup, int const thin, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, List const& adj_list, const std::vector<unsigned int>& counties, const std::vector<unsigned int>& pop, double const target, double const lower, double const upper, double const rho, Rcpp::IntegerMatrix const& init_plan, Rcpp::IntegerMatrix const& init_seats, std::string const& sampling_space_str, std::string const& pair_rule, List const& control, List const& constraints, int const verbosity, bool const diagnostic_mode);
 RcppExport SEXP _redist_ms_plans(SEXP nsimsSEXP, SEXP warmupSEXP, SEXP thinSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP district_seat_sizesSEXP, SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP targetSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP rhoSEXP, SEXP init_planSEXP, SEXP init_seatsSEXP, SEXP sampling_space_strSEXP, SEXP pair_ruleSEXP, SEXP controlSEXP, SEXP constraintsSEXP, SEXP verbositySEXP, SEXP diagnostic_modeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -610,8 +609,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int const >::type total_seats(total_seatsSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerVector const& >::type district_seat_sizes(district_seat_sizesSEXP);
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< double const >::type target(targetSEXP);
     Rcpp::traits::input_parameter< double const >::type lower(lowerSEXP);
     Rcpp::traits::input_parameter< double const >::type upper(upperSEXP);
@@ -629,12 +628,12 @@ BEGIN_RCPP
 END_RCPP
 }
 // pareto_dominated
-LogicalVector pareto_dominated(arma::mat x);
+LogicalVector pareto_dominated(Eigen::MatrixXd x);
 RcppExport SEXP _redist_pareto_dominated(SEXP xSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::mat >::type x(xSEXP);
+    Rcpp::traits::input_parameter< Eigen::MatrixXd >::type x(xSEXP);
     rcpp_result_gen = Rcpp::wrap(pareto_dominated(x));
     return rcpp_result_gen;
 END_RCPP
@@ -677,12 +676,12 @@ BEGIN_RCPP
 END_RCPP
 }
 // resample_lowvar
-arma::ivec resample_lowvar(arma::vec wgts);
+std::vector<int> resample_lowvar(std::vector<double> wgts);
 RcppExport SEXP _redist_resample_lowvar(SEXP wgtsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::vec >::type wgts(wgtsSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type wgts(wgtsSEXP);
     rcpp_result_gen = Rcpp::wrap(resample_lowvar(wgts));
     return rcpp_result_gen;
 END_RCPP
@@ -755,35 +754,35 @@ BEGIN_RCPP
 END_RCPP
 }
 // get_log_number_linking_edges
-double get_log_number_linking_edges(Rcpp::List const& adj_list, arma::uvec const& counties, Rcpp::List const& constraints, int const ndists, int const nseats, int const num_regions, arma::uvec const& region_ids);
+double get_log_number_linking_edges(Rcpp::List const& adj_list, std::vector<unsigned int> const& counties, Rcpp::List const& constraints, int const ndists, int const nseats, int const num_regions, std::vector<unsigned int> const& region_ids);
 RcppExport SEXP _redist_get_log_number_linking_edges(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP constraintsSEXP, SEXP ndistsSEXP, SEXP nseatsSEXP, SEXP num_regionsSEXP, SEXP region_idsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type counties(countiesSEXP);
     Rcpp::traits::input_parameter< Rcpp::List const& >::type constraints(constraintsSEXP);
     Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int const >::type nseats(nseatsSEXP);
     Rcpp::traits::input_parameter< int const >::type num_regions(num_regionsSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type region_ids(region_idsSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type region_ids(region_idsSEXP);
     rcpp_result_gen = Rcpp::wrap(get_log_number_linking_edges(adj_list, counties, constraints, ndists, nseats, num_regions, region_ids));
     return rcpp_result_gen;
 END_RCPP
 }
 // get_merged_log_number_linking_edges
-double get_merged_log_number_linking_edges(Rcpp::List const& adj_list, arma::uvec const& counties, Rcpp::List const& constraints, int const ndists, int const nseats, int const num_regions, arma::uvec const& region_ids, int const region1_id, int const region2_id);
+double get_merged_log_number_linking_edges(Rcpp::List const& adj_list, std::vector<unsigned int> const& counties, Rcpp::List const& constraints, int const ndists, int const nseats, int const num_regions, std::vector<unsigned int> const& region_ids, int const region1_id, int const region2_id);
 RcppExport SEXP _redist_get_merged_log_number_linking_edges(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP constraintsSEXP, SEXP ndistsSEXP, SEXP nseatsSEXP, SEXP num_regionsSEXP, SEXP region_idsSEXP, SEXP region1_idSEXP, SEXP region2_idSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type counties(countiesSEXP);
     Rcpp::traits::input_parameter< Rcpp::List const& >::type constraints(constraintsSEXP);
     Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int const >::type nseats(nseatsSEXP);
     Rcpp::traits::input_parameter< int const >::type num_regions(num_regionsSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type region_ids(region_idsSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type region_ids(region_idsSEXP);
     Rcpp::traits::input_parameter< int const >::type region1_id(region1_idSEXP);
     Rcpp::traits::input_parameter< int const >::type region2_id(region2_idSEXP);
     rcpp_result_gen = Rcpp::wrap(get_merged_log_number_linking_edges(adj_list, counties, constraints, ndists, nseats, num_regions, region_ids, region1_id, region2_id));
@@ -867,7 +866,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // run_redist_smc
-List run_redist_smc(int const nsims, int const total_seats, int const ndists, Rcpp::IntegerVector const district_seat_sizes, int const initial_num_regions, List const& adj_list, arma::uvec const& counties, const arma::uvec& pop, Rcpp::CharacterVector const& step_types, double const target, double const lower, double const upper, double const rho, std::string const& sampling_space_str, List const& control, List const& constraints, int const verbosity, int const diagnostic_level, Rcpp::IntegerMatrix const& region_id_mat, Rcpp::IntegerMatrix const& region_sizes_mat, arma::vec& log_weights);
+List run_redist_smc(int const nsims, int const total_seats, int const ndists, Rcpp::IntegerVector const district_seat_sizes, int const initial_num_regions, List const& adj_list, std::vector<unsigned int> const& counties, const std::vector<unsigned int>& pop, Rcpp::CharacterVector const& step_types, double const target, double const lower, double const upper, double const rho, std::string const& sampling_space_str, List const& control, List const& constraints, int const verbosity, int const diagnostic_level, Rcpp::IntegerMatrix const& region_id_mat, Rcpp::IntegerMatrix const& region_sizes_mat, std::vector<double>& log_weights);
 RcppExport SEXP _redist_run_redist_smc(SEXP nsimsSEXP, SEXP total_seatsSEXP, SEXP ndistsSEXP, SEXP district_seat_sizesSEXP, SEXP initial_num_regionsSEXP, SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP step_typesSEXP, SEXP targetSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP rhoSEXP, SEXP sampling_space_strSEXP, SEXP controlSEXP, SEXP constraintsSEXP, SEXP verbositySEXP, SEXP diagnostic_levelSEXP, SEXP region_id_matSEXP, SEXP region_sizes_matSEXP, SEXP log_weightsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -878,8 +877,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::IntegerVector const >::type district_seat_sizes(district_seat_sizesSEXP);
     Rcpp::traits::input_parameter< int const >::type initial_num_regions(initial_num_regionsSEXP);
     Rcpp::traits::input_parameter< List const& >::type adj_list(adj_listSEXP);
-    Rcpp::traits::input_parameter< arma::uvec const& >::type counties(countiesSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< std::vector<unsigned int> const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< Rcpp::CharacterVector const& >::type step_types(step_typesSEXP);
     Rcpp::traits::input_parameter< double const >::type target(targetSEXP);
     Rcpp::traits::input_parameter< double const >::type lower(lowerSEXP);
@@ -892,7 +891,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int const >::type diagnostic_level(diagnostic_levelSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type region_id_mat(region_id_matSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type region_sizes_mat(region_sizes_matSEXP);
-    Rcpp::traits::input_parameter< arma::vec& >::type log_weights(log_weightsSEXP);
+    Rcpp::traits::input_parameter< std::vector<double>& >::type log_weights(log_weightsSEXP);
     rcpp_result_gen = Rcpp::wrap(run_redist_smc(nsims, total_seats, ndists, district_seat_sizes, initial_num_regions, adj_list, counties, pop, step_types, target, lower, upper, rho, sampling_space_str, control, constraints, verbosity, diagnostic_level, region_id_mat, region_sizes_mat, log_weights));
     return rcpp_result_gen;
 END_RCPP
@@ -955,14 +954,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // tree_pop
-int tree_pop(Tree& ust, int vtx, const arma::uvec& pop, std::vector<int>& pop_below, std::vector<int>& parent);
+int tree_pop(Tree& ust, int vtx, const std::vector<unsigned int>& pop, std::vector<int>& pop_below, std::vector<int>& parent);
 RcppExport SEXP _redist_tree_pop(SEXP ustSEXP, SEXP vtxSEXP, SEXP popSEXP, SEXP pop_belowSEXP, SEXP parentSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Tree& >::type ust(ustSEXP);
     Rcpp::traits::input_parameter< int >::type vtx(vtxSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< std::vector<int>& >::type pop_below(pop_belowSEXP);
     Rcpp::traits::input_parameter< std::vector<int>& >::type parent(parentSEXP);
     rcpp_result_gen = Rcpp::wrap(tree_pop(ust, vtx, pop, pop_below, parent));
@@ -983,16 +982,16 @@ BEGIN_RCPP
 END_RCPP
 }
 // sample_ust
-Tree sample_ust(List l, const arma::uvec& pop, double lower, double upper, const arma::uvec& counties, const std::vector<bool> ignore);
+Tree sample_ust(List l, const std::vector<unsigned int>& pop, double lower, double upper, const std::vector<unsigned int>& counties, const std::vector<bool> ignore);
 RcppExport SEXP _redist_sample_ust(SEXP lSEXP, SEXP popSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP countiesSEXP, SEXP ignoreSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List >::type l(lSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type pop(popSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type pop(popSEXP);
     Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
     Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
-    Rcpp::traits::input_parameter< const arma::uvec& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
     Rcpp::traits::input_parameter< const std::vector<bool> >::type ignore(ignoreSEXP);
     rcpp_result_gen = Rcpp::wrap(sample_ust(l, pop, lower, upper, counties, ignore));
     return rcpp_result_gen;

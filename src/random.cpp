@@ -1,4 +1,18 @@
 #include "random.h"
+#include <numeric>
+
+// Helper function for cumulative sum
+namespace {
+    inline std::vector<double> vec_cumsum(const std::vector<double>& v) {
+        std::vector<double> result(v.size());
+        if (v.empty()) return result;
+        result[0] = v[0];
+        for (size_t i = 1; i < v.size(); ++i) {
+            result[i] = result[i-1] + v[i];
+        }
+        return result;
+    }
+}
 
 
 
@@ -161,7 +175,7 @@ Rcpp::NumericVector runif1(int n, int max) {
 
 
 // helper
-int find_u(double u, int max, vec cum_wgts) {
+int find_u(double u, int max, std::vector<double> cum_wgts) {
     int low = 0, high = max - 1;
 
     if (cum_wgts[0] > u)
@@ -181,7 +195,7 @@ int find_u(double u, int max, vec cum_wgts) {
 /*
  * Generate a random integer in [0, cum_wgts.size()) according to normalized cumulative weights.
  */
-int RNGState::r_int_wgt(vec cum_wgts) {
+int RNGState::r_int_wgt(std::vector<double> cum_wgts) {
     return find_u(r_unif(), cum_wgts.size(), cum_wgts);
 }
 
@@ -203,9 +217,9 @@ int RNGState::r_int_wgt(vec cum_wgts) {
  *  @returns An integer in [0, `unnormalized_wgts.size()`)
  * 
  */
-int RNGState::r_int_unnormalized_wgt(const vec &unnormalized_wgts) {
+int RNGState::r_int_unnormalized_wgt(const std::vector<double> &unnormalized_wgts) {
     // Get the unnormalized cumulative weights 
-    arma::vec cum_wgts = arma::cumsum(unnormalized_wgts); 
+    std::vector<double> cum_wgts = vec_cumsum(unnormalized_wgts); 
     // now normalize them
     cum_wgts = cum_wgts / cum_wgts(cum_wgts.size()-1);
     return r_int_wgt(cum_wgts);
@@ -215,7 +229,7 @@ int RNGState::r_int_unnormalized_wgt(const vec &unnormalized_wgts) {
 /*
  * Generate a random integer within a stratum
  */
-int r_int_mixstrat(int max, int stratum, double p, vec cum_wgts) {
+int r_int_mixstrat(int max, int stratum, double p, std::vector<double> cum_wgts) {
     double u;
     if (GLOBAL_RNG.r_unif() > p) {
         u = (stratum + GLOBAL_RNG.r_unif()) / max;
@@ -229,12 +243,12 @@ int r_int_mixstrat(int max, int stratum, double p, vec cum_wgts) {
 /*
  * Generate an integer vector of resampling indices with a low-variance resampler.
  */
-ivec resample_lowvar(vec wgts) {
-    int N = wgts.n_elem;
+std::vector<int> resample_lowvar(std::vector<double> wgts) {
+    int N = wgts.size();
 
     double r = GLOBAL_RNG.r_unif() / N;
     double cuml = wgts[0];
-    ivec out(N);
+    std::vector<int> out(N);
 
     int i = 0;
     for (int n = 0; n < N; n++) {

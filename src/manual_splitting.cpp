@@ -70,7 +70,7 @@ std::pair<int, int> TEMP_get_potential_region_size_for_loop_bounds(
 //'     - `uncut_tree_vertex_parents`: The parents of each vertex in the tree
 //' @export
 List draw_a_tree_on_a_region(
-    List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int ndists, int num_regions, int num_districts,
     int region_id_to_draw_tree_on,
     double lower, double upper,
@@ -133,7 +133,7 @@ List draw_a_tree_on_a_region(
     std::vector<int> tree_vertex_parents(V, -2);
     Tree county_tree = init_tree(map_params.num_counties);
     TreePopStack county_stack(map_params.num_counties);
-    arma::uvec county_pop(map_params.num_counties, arma::fill::zeros);
+    std::vector<unsigned int> county_pop(map_params.num_counties);
     std::vector<std::vector<int>> county_members(map_params.num_counties, std::vector<int>{});
     std::vector<bool> c_visited(map_params.num_counties, true);
     std::vector<int> cty_pop_below(map_params.num_counties, 0);
@@ -220,7 +220,7 @@ List draw_a_tree_on_a_region(
 //'   \item{num_attempts}{ - The number of attempts it took to draw the tree.}
 //' }
 List perform_a_valid_multidistrict_split(
-    List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int ndists, int num_regions, int num_districts,
     int region_id_to_split,
     double target, double lower, double upper,
@@ -429,11 +429,11 @@ List perform_a_valid_multidistrict_split(
 
 // // Does a preset number of merge split steps
 // List perform_merge_split_steps(
-//         List adj_list, const arma::uvec &counties, const arma::uvec &pop,
+//         List adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
 //         int k_param, 
 //         double target, double lower, double upper,
 //         int ndists, int num_regions, int num_districts,
-//         arma::umat region_ids, arma::umat region_sizes,
+//         Eigen::MatrixXi region_ids, Eigen::MatrixXi region_sizes,
 //         std::vector<int> region_pops,
 //         bool split_district_only, int num_merge_split_steps,
 //         bool verbose
@@ -519,11 +519,11 @@ List perform_a_valid_multidistrict_split(
 // TODO: Add support for multimember districts 
 // Draws num_trees number of trees on a region
 List draw_trees_on_a_region(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int const ndists,
     int const region_id_to_draw_tree_on, int const region_size,
     double const lower, double const target, double const upper,
-    arma::uvec const &region_ids, 
+    std::vector<unsigned int> const &region_ids, 
     int const num_tree, int num_threads,
     bool const verbose
 ){
@@ -581,7 +581,7 @@ List draw_trees_on_a_region(
         static thread_local std::vector<bool> ignore(map_params.V, false);
         static thread_local Tree county_tree = init_tree(map_params.num_counties);
         static thread_local TreePopStack county_stack(map_params.num_counties);
-        static thread_local arma::uvec county_pop(map_params.num_counties, arma::fill::zeros);
+        static thread_local std::vector<unsigned int> county_pop(map_params.num_counties);
         static thread_local std::vector<std::vector<int>> county_members(map_params.num_counties, std::vector<int>{});
         static thread_local std::vector<bool> c_visited(map_params.num_counties, true);
         static thread_local std::vector<int> cty_pop_below(map_params.num_counties, 0);
@@ -677,7 +677,7 @@ List draw_trees_on_a_region(
 // Draws num_plans number of plans on a region
 // if unsuccessful then just returns the unsplit plan
 List attempt_splits_on_a_region(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     int const ndists, int const init_num_regions,
     int const region_id_to_split,
     double const lower, double const target, double const upper,
@@ -736,7 +736,7 @@ List attempt_splits_on_a_region(
 
 
     PlanEnsemble thread_plan_ensemble(
-        map_params, arma::sum(pop),
+        map_params, std::accumulate(pop.begin(), pop.end(), 0.0),
         num_threads, SamplingSpace::GraphSpace,
         pool
     );

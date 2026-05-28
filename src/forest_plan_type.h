@@ -24,7 +24,7 @@ public:
 
    // constructor for partial plan (more than 1 region)
    ForestPlan(int const ndists, int const num_regions,
-        const arma::uvec &pop,
+        const std::vector<unsigned int> &pop,
         PlanVector &this_plan_region_ids, 
         RegionSizes &this_plan_region_sizes,
         IntPlanAttribute &this_plan_region_pops,

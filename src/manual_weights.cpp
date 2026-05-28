@@ -16,7 +16,7 @@ bool DEBUG_MANUAL_WEIGHTS_VERBOSE = false;
  * Has the option
  */
 Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     List const &constraints, 
     double const pop_temper, bool const compute_pop_temper,
     double const rho,
@@ -262,8 +262,8 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
 
 
 
-arma::vec compute_plans_log_optimal_weights(
-    List const &adj_list, arma::uvec const &counties, arma::uvec const &pop,
+std::vector<double> compute_plans_log_optimal_weights(
+    List const &adj_list, std::vector<unsigned int> const &counties, std::vector<unsigned int> const &pop,
     List const &constraints, double const pop_temper,  double const rho,
     std::string const &splitting_schedule_str,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,
@@ -332,7 +332,7 @@ arma::vec compute_plans_log_optimal_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    arma::vec log_weights(num_plans, arma::fill::none);
+    std::vector<double> log_weights(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -382,7 +382,7 @@ arma::vec compute_plans_log_optimal_weights(
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function, 
@@ -394,7 +394,7 @@ arma::vec compute_plans_log_optimal_weights(
 
         REprintf("%f vs %f \n", 
             1.0 / static_cast<double>(incremental_weight), 
-            std::exp(log_weights(i))
+            std::exp(log_weights[i])
         );
 
         ++bar;
@@ -409,8 +409,8 @@ arma::vec compute_plans_log_optimal_weights(
 
 
 
-arma::vec compute_plans_log_simple_weights(
-    List const &adj_list, arma::uvec const &counties, arma::uvec const &pop,
+std::vector<double> compute_plans_log_simple_weights(
+    List const &adj_list, std::vector<unsigned int> const &counties, std::vector<unsigned int> const &pop,
     List const &constraints, double const pop_temper,  double const rho,
     std::string const &splitting_schedule_str,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,
@@ -479,7 +479,7 @@ arma::vec compute_plans_log_simple_weights(
     bool const counties_on = map_params.num_counties > 1;
 
     
-    arma::vec log_weights(num_plans, arma::fill::none);
+    std::vector<double> log_weights(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -529,7 +529,7 @@ arma::vec compute_plans_log_simple_weights(
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function, 
@@ -541,7 +541,7 @@ arma::vec compute_plans_log_simple_weights(
 
         REprintf("%f vs %f \n", 
             1.0 / static_cast<double>(incremental_weight), 
-            std::exp(log_weights(i))
+            std::exp(log_weights[i])
         );
 
         ++bar;

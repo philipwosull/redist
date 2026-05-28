@@ -7,7 +7,7 @@
 ///////////////////////////////////////////////
 
 // Header files
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "constraint_calc_helper.h"
 
 using namespace Rcpp;
@@ -250,7 +250,7 @@ NumericVector update_distpop(NumericVector prop_partition,
 // Function to update the metropolis-hastings probability for a swap
 double update_mhprob(NumericVector prop_partition,
 		     List aList,
-		     arma::vec cds,
+		     std::vector<double> cds,
 		     int prop_cd,
 		     double eprob,
 		     double mh_prob)
@@ -350,11 +350,11 @@ NumericVector diff_origcds(NumericMatrix mat,
   unsigned int len_cds = cds.size();
 
   // Convert cds to arma
-  arma::uvec cds_arma = as<arma::uvec>(cds);
+  std::vector<unsigned int> cds_arma = as<std::vector<unsigned int>>(cds);
 
   // Initialize objects
-  unsigned int i; unsigned int k = mat.ncol(); arma::vec plan;
-  arma::uvec compare; NumericVector store_compare(k);
+  unsigned int i; unsigned int k = mat.ncol(); std::vector<double> plan;
+  std::vector<unsigned int> compare; NumericVector store_compare(k);
 
   // Start loop over mat columns
   for(i = 0; i < k; i++){
@@ -399,13 +399,13 @@ NumericVector distParity(NumericMatrix mat,
   for(int i = 0; i < mat.ncol(); i++){
 
     // Get plan
-    arma::vec plan = mat(_,i);
+    std::vector<double> plan = mat(_,i);
 
     // Loop through assignments
     double maxdev = 0.0;
     for(int j = 0; j < labs.size(); j++){
 
-      arma::uvec assignments = find(plan == labs(j));
+      std::vector<unsigned int> assignments = find(plan == labs(j));
 
       // Loop over precincts in plan
       int distpop = 0;

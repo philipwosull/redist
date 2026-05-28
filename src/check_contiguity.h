@@ -1,7 +1,7 @@
 #ifndef CHECK_CONTIG_H
 #define CHECK_CONTIG_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 int check_contiguity(Rcpp::List adj_list,
 					Rcpp::IntegerVector p_neighbors,

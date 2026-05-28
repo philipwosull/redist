@@ -3,7 +3,7 @@
 #define GRAPH_OP_H
 
 #include <vector>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <Rcpp.h>
 #include "redist_types.h"
 
@@ -12,13 +12,13 @@
 // [[Rcpp::export]]
 RegionMultigraphCount get_region_multigraph(
     Rcpp::List const &adj_list,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 );
 
 // [[Rcpp::export]]
-arma::mat get_region_laplacian(
+Eigen::MatrixXd get_region_laplacian(
     Rcpp::List const &adj_list,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 );
 
 

@@ -33,7 +33,7 @@ double eval_qps(const subview_col<uword> &districts, int distr,
  * Compute the log spanning tree penalty for district `distr`
  */
 double eval_log_st(const subview_col<uword> &districts, const Graph g,
-                   arma::uvec counties, int ndists);
+                   std::vector<unsigned int> counties, int ndists);
 
 /*
  * Compute the log spanning tree penalty for district `distr`
@@ -47,21 +47,21 @@ double eval_er(const subview_col<uword> &districts, const Graph g, int ndists);
  * given a collection of plans
  */
 // [[Rcpp::export]]
-arma::mat prec_cooccur(arma::umat m, arma::uvec idxs, int ncores=0);
+Eigen::MatrixXd prec_cooccur(Eigen::MatrixXi m, std::vector<unsigned int> idxs, int ncores=0);
 
 /*
  * Compute the percentage of `group` in each district. Asummes `m` is 1-indexed.
  */
 // [[Rcpp::export]]
 NumericMatrix group_pct(IntegerMatrix const &plans_mat, 
-    arma::vec const &group_pop, arma::vec const &total_pop, 
+    std::vector<double> const &group_pop, std::vector<double> const &total_pop, 
     int const n_distr, int const ncores = 0);
 
 /*
  * Tally a variable by district.
  */
 // [[Rcpp::export]]
-NumericMatrix pop_tally(IntegerMatrix const &districts, arma::vec const &pop, int const n_distr,
+NumericMatrix pop_tally(IntegerMatrix const &districts, std::vector<double> const &pop, int const n_distr,
                         int const ncores = 0);
 
 
@@ -81,7 +81,7 @@ Rcpp::IntegerMatrix infer_region_seats(
  */
 // [[Rcpp::export]]
 Rcpp::NumericVector max_dev(
-    const Rcpp::IntegerMatrix &districts, const arma::vec &pop, int const n_distr,
+    const Rcpp::IntegerMatrix &districts, const std::vector<double> &pop, int const n_distr,
     bool const multimember_districts = false, int const nseats = -1, Rcpp::IntegerMatrix const &seats_matrix = Rcpp::IntegerMatrix(1,1),
     int const num_threads = 1
 );
@@ -100,7 +100,7 @@ double compute_log_region_and_county_spanning_tree(
 );
 
 double compute_log_region_and_county_spanning_tree_eigen_tri(
-    Graph const &g, const arma::uvec &counties, int const county,
+    Graph const &g, const std::vector<unsigned int> &counties, int const county,
     PlanVector const &region_ids,
     int const region1_id, int const region2_id
 );
@@ -161,7 +161,7 @@ double compute_log_pop_temper(
 template <typename PlanID>
 double eval_pop_dev(const PlanID &region_ids, 
     int const region1, int const region2,
-    arma::uvec const &total_pop, double const parity
+    std::vector<unsigned int> const &total_pop, double const parity
 ) {
     double pop = 0.0;
 
@@ -183,7 +183,7 @@ template <typename PlanID>
 double eval_grp_pow(
     const PlanID &region_ids, int const V,
     int const region1_id, int const region2_id,
-    arma::uvec const &grp_pop, arma::uvec const &total_pop,
+    std::vector<unsigned int> const &grp_pop, std::vector<unsigned int> const &total_pop,
     double const tgt_grp, double const tgt_other, double const pow) {
     double sum_grp = 0.0;
     double sum_total = 0.0;
@@ -208,7 +208,7 @@ double eval_grp_pow(
 template <typename PlanID>
 double eval_grp_hinge(
     PlanID const &region_ids, int const V, int const region1_id, int const region2_id,
-    arma::vec const &tgts_grp, const arma::uvec &grp_pop, const arma::uvec &total_pop) {
+    std::vector<double> const &tgts_grp, const std::vector<unsigned int> &grp_pop, const std::vector<unsigned int> &total_pop) {
     double subsetted_grp_pop_sum = 0.0;
     double subsetted_total_pop_sum = 0.0;
     // get the sum of the two columns in region 1 or 2
@@ -250,7 +250,7 @@ template <typename PlanID>
 double eval_inc(
     PlanID const &region_ids, 
     int const region1_id, int const region2_id,
-    const arma::uvec &incumbents
+    const std::vector<unsigned int> &incumbents
 ){
     int n_inc = incumbents.size();
     double inc_in_distr = -1.0; // first incumbent doesn't count
@@ -273,9 +273,9 @@ double eval_inc(
 template <typename PlanID>
 double eval_sq_entropy(
     PlanID const &region_ids, 
-    arma::uvec const &current,
+    std::vector<unsigned int> const &current,
     int const region1_id, int const region2_id, 
-    arma::uvec const &pop, 
+    std::vector<unsigned int> const &pop, 
     int const ndists, int const n_current, int const V
 ){
     double accuml = 0;
@@ -303,7 +303,7 @@ double eval_sq_entropy(
 // calculates districts which appear in each county (but not zeros)
 template <typename PlanID>
 std::vector<std::set<int>> calc_county_dist(
-    PlanID const &region_ids, arma::uvec const &counties, 
+    PlanID const &region_ids, std::vector<unsigned int> const &counties, 
     int const n_cty, bool const zero_ok) {
     std::vector<std::set<int>> county_dist(n_cty);
     int V = counties.size();
@@ -327,7 +327,7 @@ std::vector<std::set<int>> calc_county_dist(
  */
 template <typename PlanID>
 double eval_splits(PlanID const &region_ids, int const region_id,
-                   arma::uvec const &admin_units, int const n_admin_units, bool const smc) {
+                   std::vector<unsigned int> const &admin_units, int const n_admin_units, bool const smc) {
     std::vector<std::set<int>> county_dist = calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
 
     int splits = 0;
@@ -362,7 +362,7 @@ double eval_splits(PlanID const &region_ids, int const region_id,
 template <typename PlanID>
 double eval_multisplits(
     PlanID const &region_ids, int const region_id,
-    const arma::uvec &admin_units, int const n_admin_units, bool const smc) {
+    const std::vector<unsigned int> &admin_units, int const n_admin_units, bool const smc) {
     std::vector<std::set<int>> county_dist = calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
 
     double splits = 0;
@@ -397,7 +397,7 @@ double eval_multisplits(
 template <typename PlanID>
 double eval_total_splits(
     PlanID const &region_ids, int const region_id,
-    arma::uvec const &admin_units, int const n_admin_units, bool const smc
+    std::vector<unsigned int> const &admin_units, int const n_admin_units, bool const smc
 ) {
     std::vector<std::set<int>> county_dist = calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
 
@@ -430,8 +430,8 @@ double eval_polsby(
     PlanID const &region_ids, 
     int const region1_id, int const region2_id,
     int const V, 
-    arma::ivec const &from, arma::ivec const &to,
-    arma::vec const &area, arma::vec const &perimeter
+    std::vector<int> const &from, std::vector<int> const &to,
+    std::vector<double> const &area, std::vector<double> const &perimeter
 ) {
     double tot_area = 0.0;
     double tot_perim = 0.0;
@@ -445,7 +445,7 @@ double eval_polsby(
     }
 
     // Sum perimeter contributions from boundary edges
-    int E = to.n_elem;
+    int E = to.size();
     for (int e = 0; e < E; ++e) {
         auto out_vertex = to[e] - 1;
         if (region_ids[out_vertex] == region1_id || region_ids[out_vertex] == region2_id) {
@@ -475,7 +475,7 @@ double eval_segregation(
     const PlanID &region_ids, 
     int const region1_id, int const region2_id,
     int const V, 
-    const arma::uvec &grp_pop, const arma::uvec &total_pop) {
+    const std::vector<unsigned int> &grp_pop, const std::vector<unsigned int> &total_pop) {
     // Step 1: compute overall group share (pAll) and total population
     double total_grp = arma::sum(grp_pop);
     double total_pop_sum = arma::sum(total_pop);

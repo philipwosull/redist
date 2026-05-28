@@ -11,7 +11,7 @@
 
 // Function to generate initial vector of populations
 NumericVector init_pop(NumericVector popvec,
-                       arma::vec cds)
+                       std::vector<double> cds)
 {
 
   /* Inputs to function:
@@ -27,7 +27,7 @@ NumericVector init_pop(NumericVector popvec,
   NumericVector distpop(ncds);
 
   // Initialize
-  int i; int pop; arma::uvec cd_i_ind; int j;
+  int i; int pop; std::vector<unsigned int> cd_i_ind; int j;
 
   // Loop through cd assignments
   for(i = 0; i < ncds; i++){
@@ -39,7 +39,7 @@ NumericVector init_pop(NumericVector popvec,
     cd_i_ind = find(cds == i);
 
     // Loop through cd_i_ind, get population values
-    for(j = 0; j < cd_i_ind.n_elem; j++){
+    for(j = 0; j < cd_i_ind.size(); j++){
       pop += popvec(cd_i_ind(j));
     }
 
@@ -109,7 +109,7 @@ List cut_edges(List aList_con,
 
   // Initialize inside loop
   int i; NumericVector cc_vec_i_all; NumericVector cc_vec_i;
-  arma::vec draws;
+  std::vector<double> draws;
 
   // Define list to store output of both lists
 
@@ -167,7 +167,7 @@ List cut_edges(List aList_con,
 /* Function to run breadth-first search, returning only sets of connected
  components that reside on the boundary of the districts */
 List bsearch_boundary(List aList,
-                      arma::vec boundary)
+                      std::vector<double> boundary)
 {
 
   /* Inputs to function:
@@ -177,7 +177,7 @@ List bsearch_boundary(List aList,
    */
 
   // Get indices of boundary units
-  arma::uvec boundary_indices = find(boundary == 1);
+  std::vector<unsigned int> boundary_indices = find(boundary == 1);
 
   // Container - outputted of breadth search, a list
   List bsearch;
@@ -251,7 +251,7 @@ List bsearch_boundary(List aList,
 
       /* First, find boundary units that are in the reached partition and
        remove them from boundary_units vector */
-      for(i = boundary_indices.n_elem - 1; i >= 0; i--){
+      for(i = boundary_indices.size() - 1; i >= 0; i--){
         if(is_true(any(partition == boundary_indices(i))) == TRUE){
           boundary_indices.shed_row(i);
         }
@@ -262,7 +262,7 @@ List bsearch_boundary(List aList,
       partition.erase(partition.begin(), partition.end());
 
       // Re-initialize breadth search from new starting value if nonempty
-      if(boundary_indices.n_elem > 0){
+      if(boundary_indices.size() > 0){
         q = aList(boundary_indices(0));
         mark(boundary_indices(0)) = boundary_indices(0);
         partition.push_back(boundary_indices(0));
@@ -270,7 +270,7 @@ List bsearch_boundary(List aList,
 
     }
 
-  }while(boundary_indices.n_elem > 0);
+  }while(boundary_indices.size() > 0);
 
   // Get breadth search size
   int bsearch_size = bsearch.size();
@@ -290,23 +290,23 @@ List bsearch_boundary(List aList,
 /* Function to count number of valid partitions to swap */
 int count_valid(List aList, List boundarypart, NumericVector cdvec){
 
-  int cd_boundary; arma::vec part; int j; int i;
-  arma::uvec find_cds; int counter = 0;
+  int cd_boundary; std::vector<double> part; int j; int i;
+  std::vector<unsigned int> find_cds; int counter = 0;
 
   for(i = 0; i < boundarypart.size(); i++){
 
     // Get the partition
-    part = as<arma::vec>(boundarypart(i));
+    part = as<std::vector<double>>(boundarypart(i));
 
     // Get the congressional district of the boundary
     cd_boundary = cdvec(part(0));
 
     // Find indices within that congressional district
-    find_cds = find(as<arma::vec>(cdvec) == cd_boundary);
+    find_cds = find(as<std::vector<double>>(cdvec) == cd_boundary);
 
     // Remove elements in the partition from that cd
     NumericVector cd_less_boundary;
-    for(j = 0; j < find_cds.n_elem; j++){
+    for(j = 0; j < find_cds.size(); j++){
       if(any(part == find_cds(j)) == false){
         cd_less_boundary.push_back(find_cds(j));
       }
@@ -328,7 +328,7 @@ int count_valid(List aList, List boundarypart, NumericVector cdvec){
       // Subset down to elements in cd_less_boundary
       NumericVector getadjvec_sub;
       for(int k = 0; k < getadjvec.size(); k++){
-        if(any(as<arma::vec>(cd_less_boundary) == getadjvec(k))){
+        if(any(as<std::vector<double>>(cd_less_boundary) == getadjvec(k))){
           getadjvec_sub.push_back(getadjvec(k));
         }
       }
@@ -336,7 +336,7 @@ int count_valid(List aList, List boundarypart, NumericVector cdvec){
       // Change indices
       NumericVector getadjvec_new;
       for(int k = 0; k < getadjvec_sub.size(); k++){
-        arma::uvec ind = find(as<arma::vec>(cd_less_boundary) ==
+        std::vector<unsigned int> ind = find(as<std::vector<double>>(cd_less_boundary) ==
           getadjvec_sub(k));
         getadjvec_new.push_back(ind(0));
       }
@@ -477,7 +477,7 @@ List make_swaps(List boundary_cc,
       Rcpp::checkUserInterrupt();
 
       // (1) - select a connected component from boundary_cc randomly
-      arma::vec rand_sample_index = runif(1, 0, 1000000000);
+      std::vector<double> rand_sample_index = runif(1, 0, 1000000000);
       int sample_index = fmod(rand_sample_index(0), boundary_cc.size());
 
       prop_partitions = boundary_cc(sample_index);
@@ -530,7 +530,7 @@ List make_swaps(List boundary_cc,
 
         // Draw an element from possible_cds_swaps
         if(possible_cd_swaps.size() > 1){
-          arma::vec rand_test_cd_ind = runif(1, 0, 1000000000);
+          std::vector<double> rand_test_cd_ind = runif(1, 0, 1000000000);
           int test_cd_ind = fmod(rand_test_cd_ind(0), possible_cd_swaps.size());
 
           prop_cd = possible_cd_swaps(test_cd_ind);
@@ -647,8 +647,8 @@ List make_swaps(List boundary_cc,
       districts(r, 0) = cds_prop(r) + 1;
       districts(r, 1) = cds_old(r) + 1;
   }
-  arma::umat udistricts = conv_to<umat>::from(districts);
-  arma::uvec pops = conv_to<arma::uvec>::from(as<arma::vec>(pop_vec));
+  Eigen::MatrixXi udistricts = conv_to<umat>::from(districts);
+  std::vector<unsigned int> pops = conv_to<std::vector<unsigned int>>::from(as<std::vector<double>>(pop_vec));
 
   // Multiply mh_prob by constraint values
   double energy_new = calc_gibbs_tgt(udistricts.col(0), ndists, nprec, swaps_v,
@@ -692,7 +692,7 @@ int mh_decision(double mh_prob)
   }
 
   // Draw from uniform
-  arma::vec draw_prob = runif(1);
+  std::vector<double> draw_prob = runif(1);
 
   // Make decision
   if(draw_prob(0) <= acc_prob){
@@ -704,7 +704,7 @@ int mh_decision(double mh_prob)
 }
 
 // Function that applies the Geyer Thompson algorithm for simulated tempering
-List changeBeta(arma::vec betavec,
+List changeBeta(std::vector<double> betavec,
                 double beta,
                 double constraint,
                 NumericVector weights,
@@ -724,7 +724,7 @@ List changeBeta(arma::vec betavec,
    */
 
   // Find beta in betavec
-  arma::uvec findBetaVec = find(betavec == beta);
+  std::vector<unsigned int> findBetaVec = find(betavec == beta);
   int findBeta = findBetaVec(0);
 
   // Object to test whether beta is at RHS of vector
@@ -755,7 +755,7 @@ List changeBeta(arma::vec betavec,
       qij = .5;
       qji = .5;
       wi = weights(findBeta);
-      arma::vec betaswitch = runif(1);
+      std::vector<double> betaswitch = runif(1);
       if(betaswitch(0) < .5){
         propBeta = betavec(findBeta - 1);
         wj = weights(findBeta - 1);
@@ -772,7 +772,7 @@ List changeBeta(arma::vec betavec,
     qji = 1;
 
     // Draw element from betavec
-    arma::vec rand_randindex = runif(1, 0, 1000000000);
+    std::vector<double> rand_randindex = runif(1, 0, 1000000000);
     int randindex = fmod(rand_randindex(0), betaLoc);
 
     // Weight wi
@@ -794,7 +794,7 @@ List changeBeta(arma::vec betavec,
   if(mhprobGT > 1){
     mhprobGT = 1;
   }
-  arma::vec testkeepGT = runif(1);
+  std::vector<double> testkeepGT = runif(1);
   int decision = 0;
   if(testkeepGT(0) <= mhprobGT){
     decision++;

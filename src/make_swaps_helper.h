@@ -25,7 +25,7 @@ Rcpp::NumericVector update_distpop(Rcpp::NumericVector prop_partition,
 				   Rcpp::NumericVector distpop_vec);
 double update_mhprob(Rcpp::NumericVector prop_partition,
 		     Rcpp::List aList,
-		     arma::vec cds,
+		     std::vector<double> cds,
 		     int prop_cd,
 		     double eprob,
 		     double mh_prob);

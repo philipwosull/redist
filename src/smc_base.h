@@ -7,14 +7,13 @@
 
 #include <vector>
 #include <limits>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 
-// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins("cpp11")]]
 
 using namespace Rcpp;
-using namespace arma;
+
 
 #include "random.h"
 

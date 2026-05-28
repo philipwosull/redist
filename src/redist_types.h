@@ -3,22 +3,15 @@
 #define GREDIST_TYPES_H
 
 
-
-#ifndef ARMA_NO_DEBUG
-#define ARMA_NO_DEBUG
-#endif
-
-
 #define PRINT_LN Rcout << __func__ << "(), " << __FILE__ << ":" << __LINE__ << "\n";
 #include <vector>
 #include <queue>
 #include <cstdint>
 #include <memory>
 #include <stdint.h>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <array>
-
-// [[Rcpp::depends(RcppArmadillo)]]
+#include <algorithm>
 
 typedef uint16_t VertexID; // type for trees to save space from normal int
 constexpr unsigned int MAX_SUPPORTED_NUM_VERTICES = static_cast<unsigned int>(
@@ -136,7 +129,7 @@ Multigraph init_multigraph(int V);
  * County graph is list of list of 3: <cty of nbor, index of vtx, index of nbor>
  */
 // TESTED
-Multigraph county_graph(const Graph &g, const arma::uvec &counties);
+Multigraph county_graph(const Graph &g, const std::vector<unsigned int> &counties);
 
 
 /*
@@ -152,14 +145,14 @@ Graph list_to_graph(const Rcpp::List &l);
  * search started from a vertex in one county will never leave that county
  *  
  */
-Graph build_restricted_county_graph(Graph const &g,  arma::uvec const &counties);
+Graph build_restricted_county_graph(Graph const &g,  std::vector<unsigned int> const &counties);
 
 // Essentially just a useful container for map parameters 
 
 class MapParams {
     public:
     // Constructor 
-    MapParams(Rcpp::List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    MapParams(Rcpp::List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
         int const ndists, int const total_seats, std::vector<int> const &district_seat_sizes,
         double const lower, double const target, double const upper) :
         g(list_to_graph(adj_list)), 
@@ -170,7 +163,7 @@ class MapParams {
               }
               return total / 2;
           }()),
-        counties(counties), num_counties(max(counties)),
+        counties(counties), num_counties(*std::max_element(counties.begin(), counties.end())),
         cg(county_graph(g, counties)),
         county_restricted_graph(num_counties > 1 ? build_restricted_county_graph(g, counties) : Graph(0)),
         pop(pop),
@@ -222,11 +215,11 @@ class MapParams {
 
     Graph const g; // The graph as undirected adjacency list 
     int const num_edges; // number of undirected edges in g 
-    arma::uvec const counties; // county labels
+    std::vector<unsigned int> const counties; // county labels
     int const num_counties; // The number of distinct counties
     Multigraph const cg; // county multigraph
     Graph const county_restricted_graph; // g but with all edges crossing counties removed 
-    arma::uvec const pop; // population of each vertex
+    std::vector<unsigned int> const pop; // population of each vertex
     int const V; // Number of vertices in the graph
     int const ndists; // The number of districts a final plan should have
     int const total_seats; // the total number of seats 

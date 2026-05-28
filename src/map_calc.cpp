@@ -6,6 +6,17 @@
 // alias for SparseMatrix
 using SparseMat = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
 
+// Helper for log determinant
+namespace {
+    inline double log_det_sympd(const Eigen::MatrixXd& mat) {
+        Eigen::LLT<Eigen::MatrixXd> llt(mat);
+        if (llt.info() != Eigen::Success) {
+            throw std::runtime_error("Matrix is not positive definite");
+        }
+        return llt.matrixL().toDenseMatrix().diagonal().array().log().sum() * 2.0;
+    }
+}
+
 /*
  * Compute the Fryer-Holden penalty for district `distr`
  */
@@ -61,7 +72,7 @@ double eval_qps(const subview_col<uword> &districts, int distr,
  * Compute the log spanning tree penalty for district `distr`
  */
 double eval_log_st(const subview_col<uword> &districts, const Graph g,
-                   arma::uvec counties, int ndists) {
+                   std::vector<unsigned int> counties, int ndists) {
     return (double) redistmetrics::log_st_map(g, districts, counties, ndists)[0];
 }
 
@@ -80,8 +91,8 @@ double eval_er(const subview_col<uword> &districts, const Graph g, int ndists) {
  * given a collection of plans
  */
 mat prec_cooccur(umat m, uvec idxs, int ncores) {
-    int v = m.n_rows;
-    int n = idxs.n_elem;
+    int v = m.rows();
+    int n = idxs.size();
     mat out(v, v);
 
     RcppThread::parallelFor(0, v, [&] (int i) {
@@ -262,7 +273,7 @@ Rcpp::IntegerMatrix infer_region_seats(
  * Create the projective distribution of a variable `x`
  */
 // [[Rcpp::export]]
-NumericMatrix proj_distr_m(IntegerMatrix districts, const arma::vec x,
+NumericMatrix proj_distr_m(IntegerMatrix districts, const std::vector<double> x,
                            IntegerVector draw_idx, int n_distr) {
     int n = draw_idx.size();
     int V = districts.nrow();
@@ -282,7 +293,7 @@ NumericMatrix proj_distr_m(IntegerMatrix districts, const arma::vec x,
  * Compute the maximum deviation from the equal population constraint.
  */
 NumericVector max_dev(
-    const IntegerMatrix &districts, const arma::vec &pop, int const n_distr,
+    const IntegerMatrix &districts, const std::vector<double> &pop, int const n_distr,
     bool const multimember_districts, int const nseats, Rcpp::IntegerMatrix const &seats_matrix,
     int const num_threads
 ) {
@@ -292,7 +303,7 @@ NumericVector max_dev(
     NumericMatrix district_pops = pop_tally(districts, pop, n_distr, num_threads);
 
     if(multimember_districts){
-        double const target_pop = arma::sum(pop) / nseats;
+        double const target_pop = std::accumulate(pop.begin(), pop.end(), 0.0) / nseats;
         RcppThread::parallelFor(0, num_plans, [&] (unsigned int i) {
             for (int j = 0; j < n_distr; j++) {
                 double target_seat_pop = target_pop * seats_matrix(j, i);
@@ -304,7 +315,7 @@ NumericVector max_dev(
             }
         }, num_threads > 0 ? num_threads : 0);
     }else{
-        double const target_pop = arma::sum(pop) / n_distr;
+        double const target_pop = std::accumulate(pop.begin(), pop.end(), 0.0) / n_distr;
         RcppThread::parallelFor(0, num_plans, [&] (unsigned int i) {
             for (int j = 0; j < n_distr; j++) {
                 double dev = std::fabs(district_pops(j, i) / target_pop - 1.0);
@@ -409,7 +420,7 @@ double compute_log_region_and_county_spanning_tree(
         adj(prec, prec) = degree;
     }
 
-    return arma::log_det_sympd(adj);
+    return log_det_sympd(adj);
 }
 
 // This assumes the matrix is stored as upper triangular one via 
@@ -673,7 +684,7 @@ double compute_log_county_level_spanning_tree(
         }
     }
 
-    return arma::log_det_sympd(adj);
+    return log_det_sympd(adj);
 }
 
 

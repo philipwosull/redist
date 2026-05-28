@@ -1,7 +1,7 @@
 #ifndef MCMC_GIBBS_H
 #define MCMC_GIBBS_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "make_swaps_helper.h"
 #include "map_calc.h"

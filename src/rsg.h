@@ -1,11 +1,11 @@
 #ifndef RSG_H
 #define RSG_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 Rcpp::List rsg (List adj_list,
-               arma::ivec adj_length,
-               arma::vec population,
+               std::vector<int> adj_length,
+               std::vector<double> population,
                int Ndistrict,
                double target_pop,
                double thresh,

@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <vector>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "smc_base.h"
 

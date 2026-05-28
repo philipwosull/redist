@@ -3,7 +3,6 @@
 #define SMC_ALG_HELPERS_H
 
 // [[Rcpp::depends(redistmetrics)]]
-// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins("cpp11")]]
 
 #include <vector>
@@ -282,7 +281,7 @@ class SMCDiagnostics{
     
     // Level 1
     // These are all nsims by number of smc steps 
-    arma::dmat log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of particle i AFTER split s
+    Eigen::MatrixXd log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of particle i AFTER split s
     Rcpp::IntegerMatrix draw_tries_mat; // Entry [i][s] is the number of tries it took to form particle i on split s
     Rcpp::IntegerMatrix parent_index_mat; // Entry [i][s] is the index of the parent of particle i at split s
     // This is a nsims by total_ms_steps matrix where [i][s] is the number of 
@@ -335,10 +334,10 @@ Rcpp::IntegerVector resample_plans_lowvar(
 
 // [[Rcpp::export]]
 double get_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids
+    std::vector<unsigned int> const &region_ids
 );
 
 
@@ -347,10 +346,10 @@ double get_log_number_linking_edges(
  */
 // [[Rcpp::export]]
 double get_merged_log_number_linking_edges(
-    Rcpp::List const &adj_list, arma::uvec const &counties,
+    Rcpp::List const &adj_list, std::vector<unsigned int> const &counties,
     Rcpp::List const &constraints,
     int const ndists, int const nseats, int const num_regions,
-    arma::uvec const &region_ids,
+    std::vector<unsigned int> const &region_ids,
     int const region1_id, int const region2_id
 );
 

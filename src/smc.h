@@ -56,7 +56,7 @@ List run_redist_smc(
         int const total_seats, int const ndists, Rcpp::IntegerVector const district_seat_sizes,
         int const initial_num_regions, 
         List const &adj_list,
-        arma::uvec const &counties, const arma::uvec &pop,
+        std::vector<unsigned int> const &counties, const std::vector<unsigned int> &pop,
         Rcpp::CharacterVector const &step_types,
         double const target, double const lower, double const upper,
         double const rho, // compactness 
@@ -66,7 +66,7 @@ List run_redist_smc(
         int const verbosity, int const diagnostic_level,
         Rcpp::IntegerMatrix const &region_id_mat, 
         Rcpp::IntegerMatrix const &region_sizes_mat,
-        arma::vec &log_weights
+        std::vector<double> &log_weights
 );
 
 

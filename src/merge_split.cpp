@@ -21,7 +21,7 @@ constexpr bool DEBUG_PURE_MS_VERBOSE = false; // Compile-time constant
 Rcpp::List ms_plans(
     int const nsims, int const warmup, int const thin,
     int const ndists, int const total_seats, Rcpp::IntegerVector const &district_seat_sizes,
-    List const &adj_list, const arma::uvec &counties, const arma::uvec &pop,
+    List const &adj_list, const std::vector<unsigned int> &counties, const std::vector<unsigned int> &pop,
     double const target, double const lower, double const upper,
     double const rho, // compactness
     Rcpp::IntegerMatrix const &init_plan, Rcpp::IntegerMatrix const &init_seats,
@@ -198,7 +198,7 @@ Rcpp::List ms_plans(
     ).second;
 
     // get weights
-    arma::vec current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
+    std::vector<double> current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
         *plan_ensemble.plan_ptr_vec[0],
         current_plan_adj_region_pairs,
         pair_rule

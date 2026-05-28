@@ -82,9 +82,9 @@ void print_tree(Tree const &ust){
  */
 // TESTED
 // [[Rcpp::export]]
-int tree_pop(Tree &ust, int vtx, const arma::uvec &pop,
+int tree_pop(Tree &ust, int vtx, const std::vector<unsigned int> &pop,
              std::vector<int> &pop_below, std::vector<int> &parent) {
-    int pop_at = pop(vtx);
+    int pop_at = pop[vtx];
     const std::vector<int> *nbors = &ust[vtx];
     int length = nbors->size();
     for (int j = 0; j < length; j++) {
@@ -100,7 +100,7 @@ int tree_pop(Tree &ust, int vtx, const arma::uvec &pop,
 
 void get_tree_pops_below(
     const Tree &ust, const int root, TreePopStack &stack,
-    const arma::uvec &pop, std::vector<int> &pop_below) {
+    const std::vector<unsigned int> &pop, std::vector<int> &pop_below) {
     stack.clear();
     // add the root 
     // we don't care about parent here
@@ -133,7 +133,7 @@ void get_tree_pops_below(
  * Just Count population below each node in tree 
  */
 // TESTED
-int get_tree_pops_below(const Tree &ust, const int vtx, const arma::uvec &pop,
+int get_tree_pops_below(const Tree &ust, const int vtx, const std::vector<unsigned int> &pop,
              std::vector<int> &pop_below) {
     int pop_at = pop[vtx];
     const std::vector<int> *nbors = &ust[vtx];

@@ -8,7 +8,7 @@
 
 // Header files
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "redist_types.h"
 #include "tree_op.h"
 
@@ -101,12 +101,12 @@ NumericVector findBoundary(List fullList,
 
 }
 
-arma::uvec getIn(arma::ivec vec1, arma::ivec vec2){
+std::vector<unsigned int> getIn(std::vector<int> vec1, std::vector<int> vec2){
 
-  int i; int j; bool match; arma::uvec store_in(vec1.n_elem);
-  for(i = 0; i < vec1.n_elem; i++){
+  int i; int j; bool match; std::vector<unsigned int> store_in(vec1.size());
+  for(i = 0; i < vec1.size(); i++){
     match = false;
-    for(j = 0; j < vec2.n_elem; j++){
+    for(j = 0; j < vec2.size(); j++){
       if(vec1(i) == vec2(j)){
 	match = true;
 	break;
@@ -119,11 +119,11 @@ arma::uvec getIn(arma::ivec vec1, arma::ivec vec2){
 
 }
 
-arma::uvec get_in_index(arma::vec vec1, arma::vec vec2){
+std::vector<unsigned int> get_in_index(std::vector<double> vec1, std::vector<double> vec2){
 
-  int i; int j; arma::uvec store_in(vec1.n_elem);
-  for(i = 0; i < vec1.n_elem; i++){
-    for(j = 0; j < vec2.n_elem; j++){
+  int i; int j; std::vector<unsigned int> store_in(vec1.size());
+  for(i = 0; i < vec1.size(); i++){
+    for(j = 0; j < vec2.size(); j++){
       if(vec1(i) == vec2(j)){
         break;
       }
