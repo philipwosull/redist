@@ -5,7 +5,7 @@
 
 // Important Constants
 constexpr bool DEBUG_VERBOSE = false; // Compile-time constant
-constexpr double SELECTION_ALPHA = 0.6321206;
+constexpr double SELECTION_ALPHA = 0.0;
 
 // Performance configurations. These can be turned on locally for more granular tracking
 // and to help with debugging by performing potentially onerous extra checks
