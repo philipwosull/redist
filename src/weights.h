@@ -57,7 +57,9 @@ void compute_all_plans_log_simple_incremental_weights(
     std::vector<ScoringFunction> const &scoring_functions, double rho,
     std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, bool is_final_plans,
+    bool compute_log_splitting_prob, 
+    double const multidistrict_selection_alpha,
+    bool is_final_plans,
     arma::subview_col<double> log_incremental_weights, int verbosity);
 
 double compute_log_optimal_incremental_weights(
@@ -65,7 +67,9 @@ double compute_log_optimal_incremental_weights(
     const SplittingSchedule &splitting_schedule, USTSampler &ust_sampler,
     TreeSplitter &edge_splitter, SamplingSpace const sampling_space,
     double const whole_map_compactness_term, ScoringFunction const &scoring_function,
-    double const rho, bool compute_log_splitting_prob, bool is_final_plan,
+    double const rho, bool compute_log_splitting_prob, 
+    double const multidistrict_selection_alpha,
+    bool is_final_plan,
     bool const using_caching, WeightCache *weight_cache,
     GranularWeightTimes &granular_times);
 
@@ -75,7 +79,8 @@ void compute_all_plans_log_optimal_incremental_weights(
     std::vector<ScoringFunction> const &scoring_functions, double rho,
     double const whole_map_compactness_term, std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, bool is_final_plans,
+    bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
+    bool is_final_plans,
     arma::subview_col<double> log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
     SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
     int verbosity);

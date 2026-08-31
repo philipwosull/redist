@@ -8,6 +8,7 @@
 
 
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <RcppArmadillo.h>
 
@@ -38,7 +39,7 @@ constexpr bool DEBUG_PURE_MS_VERBOSE = false; // Compile-time constant
  */
 // [[Rcpp::export]]
 Rcpp::List ms_plans(
-    int const nsims, int const warmup, int const thin, int const ndists, int const total_seats,
+    int const nsims, std::int64_t const warmup, int const thin, int const ndists, int const total_seats,
     Rcpp::IntegerVector const &district_seat_sizes, Rcpp::List const &adj_list,
     const Rcpp::IntegerVector &counties, const Rcpp::IntegerVector &pop, double const target, double const lower,
     double const upper,
@@ -131,14 +132,22 @@ Rcpp::List ms_plans(
     Rcpp::IntegerVector mh_decisions(nsims);
     double mha;
 
-    int total_post_warmup_steps = nsims * thin;
-    int total_steps = total_post_warmup_steps + warmup;
-    int start = 1 - warmup;
 
+    
     // Track the total number of successes during the warmup
-    int warmup_acceptances = 0;
+    std::int64_t warmup_acceptances = 0;
     // Track total number of successes after warmup
-    int post_warump_acceptances = 0;
+    std::int64_t post_warump_acceptances = 0;
+
+    std::int64_t const total_post_warmup_steps =
+        static_cast<std::int64_t>(nsims) *
+        static_cast<std::int64_t>(thin);
+
+    std::int64_t const total_steps =
+        total_post_warmup_steps + warmup;
+
+    std::int64_t const start = 1 - warmup;
+
     // Track timing 
     double warmup_time;
     double nonwarmup_time;
@@ -264,7 +273,7 @@ Rcpp::List ms_plans(
         auto warmup_start_time = std::chrono::steady_clock::now();
 
         Rcpp::RObject bar = cli_progress_bar(total_steps, cli_config(false));
-        for (int i = start, step_num = 0; i <= total_post_warmup_steps; i++, step_num++) {
+        for (std::int64_t i = start, step_num = 0; i <= total_post_warmup_steps; i++, step_num++) {
             if (i == 1){
                 // stop timing warmup and switch to timing runs 
                 // end timing 
@@ -350,13 +359,14 @@ Rcpp::List ms_plans(
             }
 
             if (verbosity >= 1 && CLI_SHOULD_TICK) {
-                cli_progress_set(bar, step_num);
+                
                 mha = static_cast<double>(warmup_acceptances + post_warump_acceptances) /
                       (step_num + 1);
                 cli_progress_set_format(bar,
                                         "{cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta} "
                                         "| MH Acceptance: %.2f",
                                         mha);
+                cli_progress_set(bar, step_num + 1);
             }
             Rcpp::checkUserInterrupt();
         }

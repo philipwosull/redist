@@ -199,6 +199,9 @@
 #'  extra plan. The number of attempts can be used with the weights to form an
 #'  unbiased estimator, as opposed to the biased normalizing
 #'  constant estimators that are obtained with the weights alone.
+#'  \item \code{md_alpha} What power to use for multidistrict selection
+#'  probability. When choosing a multidistrict to split, one will be chosen with
+#'  probability proportional to <size>^md_alpha.
 #' }
 #' @param adapt_k_thresh Deprecated. Pass in through the `split_params` arg.
 #' The threshold value used in the heuristic to select a
@@ -541,6 +544,14 @@ redist_smc <- function(
     mh_accept_per_smc = mh_accept_per_smc,
     pair_rule = pair_rule
   )
+
+    # add md alpha if included
+    if ("md_alpha" %in% names(control_params_list)){
+        md_alpha <- control_params_list[["md_alpha"]]
+        cpp_control_list <- c(cpp_control_list,
+                              list(md_alpha = md_alpha))
+    }
+
 
     # add the splitting parameters
     cpp_control_list <- c(cpp_control_list, forward_kernel_params)
@@ -1158,6 +1169,20 @@ extract_control_params <- function(control, compactness) {
     max_split_tries = max_split_tries,
     est_norm_unbiased = est_norm_unbiased
   )
+
+    if ("md_alpha" %in% names(control)){
+        md_alpha <- control[["md_alpha"]]
+        if(
+            !rlang::is_scalar_atomic(md_alpha) ||
+            !is.numeric(md_alpha)
+        ){
+            cli::cli_abort("{.arg md_alpha} must be a numeric scalar")
+        }
+        control_params <- c(
+            control_params,
+            list(md_alpha = md_alpha)
+        )
+    }
 
     control_params
 }

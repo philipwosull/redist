@@ -120,7 +120,7 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
                   bool const is_final_split, arma::umat &ancestors, const std::vector<int> &lags,
                   bool const estimated_unbiased_normalizing_constant,
                   RcppThread::ThreadPool &pool, int verbosity, int diagnostic_level,
-                  int const max_split_tries) {
+                  int const max_split_tries, double const multidistrict_selection_alpha) {
     // important constants
     int const num_threads = get_num_threads(pool);
     const int M = old_plan_ensemble->nsims;
@@ -264,7 +264,8 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
                 // if generalized split pick a region to try to split
                 region_id_to_split =
                     old_plan_ensemble->plan_ptr_vec[idx]->choose_multidistrict_to_split(
-                        splitting_schedule.valid_region_sizes_to_split, rng_states[thread_id]);
+                        splitting_schedule.valid_region_sizes_to_split, rng_states[thread_id],
+                        multidistrict_selection_alpha);
             }
             if constexpr (perf_config::track_granular_times){
                 add_elapsed(md_selection_times[thread_id], md_selection_time); // optional timing
@@ -462,7 +463,8 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
             // if generalized split pick a region to try to split
             region_id_to_split =
                 old_plan_ensemble->plan_ptr_vec[idx]->choose_multidistrict_to_split(
-                    splitting_schedule.valid_region_sizes_to_split, rng_states[0]);
+                    splitting_schedule.valid_region_sizes_to_split, rng_states[0],
+                    multidistrict_selection_alpha);
         }
 
         // Try to split the region
@@ -871,6 +873,15 @@ Rcpp::List run_redist_smc(
     int const max_split_tries = Rcpp::as<int>(control["max_split_tries"]);
     // unbiased normalizing estimate
     bool const estimated_unbiased_normalizing_constant = Rcpp::as<bool>(control["est_norm_unbiased"]); 
+    double tmp_multidistrict_selection_alpha;
+    // custom multidistrict selection alpha
+    if(control.containsElementNamed("md_alpha")){
+        tmp_multidistrict_selection_alpha = Rcpp::as<double>(control["md_alpha"]); 
+    }else{
+        tmp_multidistrict_selection_alpha = SELECTION_ALPHA;
+    }
+
+    double const multidistrict_selection_alpha = tmp_multidistrict_selection_alpha;
 
     if(estimated_unbiased_normalizing_constant && scoring_functions[0].any_hard_constraints){
         Rcpp::warning("Unbiased normalizing constant estimation si not support right now for hard constraints!");
@@ -1190,7 +1201,8 @@ Rcpp::List run_redist_smc(
                                  normalized_cumulative_weights, smc_diagnostics, smc_step_num,
                                  step_num, is_final_splitting_step, ancestors, lags, 
                                  estimated_unbiased_normalizing_constant, pool,
-                                 verbosity, diagnostic_mode ? 3 : 0, max_split_tries);
+                                 verbosity, diagnostic_mode ? 3 : 0, max_split_tries,
+                                 multidistrict_selection_alpha);
                     // end timing 
                     auto smc_splitting_end_time = std::chrono::steady_clock::now();
                     // add the time 
@@ -1264,7 +1276,9 @@ Rcpp::List run_redist_smc(
                             pool, map_params, *splitting_schedule_ptr, sampling_space,
                             scoring_functions, rho, entire_map_compactness,
                             plan_ensemble_ptr->plan_ptr_vec, tree_splitter_ptrs_vec,
-                            compute_log_splitting_prob, is_final_splitting_step,
+                            compute_log_splitting_prob, 
+                            multidistrict_selection_alpha,
+                            is_final_splitting_step,
                             smc_diagnostics.log_incremental_weights_mat.col(smc_step_num),
                             *cache_ensemble_ptr, 
                             smc_diagnostics, smc_step_num, step_num,
@@ -1276,6 +1290,7 @@ Rcpp::List run_redist_smc(
                             pool, map_params, *splitting_schedule_ptr, sampling_space,
                             scoring_functions, rho, plan_ensemble_ptr->plan_ptr_vec,
                             tree_splitter_ptrs_vec, compute_log_splitting_prob,
+                            multidistrict_selection_alpha,
                             is_final_splitting_step,
                             smc_diagnostics.log_incremental_weights_mat.col(smc_step_num),
                             verbosity);
@@ -1552,7 +1567,7 @@ Rcpp::List run_redist_smc(
         Rcpp::_["ancestors"] = ancestors, Rcpp::_["step_types"] = step_types,
         Rcpp::_["merge_split_steps"] = merge_split_step_vec,
         Rcpp::_["log_blank_map_target_density"] = log_blank_map_target_density,
-        Rcpp::_["multidistrict_selection_alpha"] = SELECTION_ALPHA 
+        Rcpp::_["multidistrict_selection_alpha"] = multidistrict_selection_alpha 
     );
 
     // to try to save memory kill the plan vector
