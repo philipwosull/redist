@@ -10,7 +10,7 @@ constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 
 #include <atomic>
 #include <chrono>
-
+#include <cstdint>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -557,7 +557,18 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
     
 
     // now compute acceptance rate and unique parents and original ancestors
-    double accept_rate = M / static_cast<double>(std::accumulate(draw_tries_buffer.begin(), draw_tries_buffer.end(), 0));
+    // int64 to avoid overflow
+    std::int64_t total_split_attempts =
+        std::accumulate(
+            draw_tries_buffer.begin(),
+            draw_tries_buffer.end(),
+            std::int64_t{0}
+        );
+
+    double accept_rate =
+        static_cast<double>(M) /
+        static_cast<double>(total_split_attempts);
+
     smc_diagnostics.acceptance_rates.at(step_num) = accept_rate;
 
     // Get number of unique parents
@@ -1389,8 +1400,14 @@ Rcpp::List run_redist_smc(
                         nsteps_to_run;
 
                     if (verbosity >= 3) {
-                        Rprintf("  Running %d Merge Split Steps per plan, %d in total!\n",
-                                nsteps_to_run, nsteps_to_run * nsims);
+                        std::int64_t total_ms_steps =
+                            static_cast<std::int64_t>(nsteps_to_run) * nsims;
+
+                        Rcpp::Rcout
+                            << "  Running " << nsteps_to_run
+                            << " Merge Split Steps per plan, "
+                            << total_ms_steps
+                            << " in total!" << std::endl;
                     }
 
                     splitting_schedule_ptr->update_cut_sizes_for_mergesplit_step(
@@ -1457,12 +1474,22 @@ Rcpp::List run_redist_smc(
 
 
                     // set the acceptance rate
-                    int total_ms_successes = Rcpp::sum(
-                        smc_diagnostics.merge_split_successes_mat.column(merge_split_step_num));
-                    int total_ms_attempts = nsims * nsteps_to_run;
+                    std::int64_t total_ms_successes = 0;
+
+                    for (int i = 0; i < nsims; ++i) {
+                        total_ms_successes +=
+                            smc_diagnostics.merge_split_successes_mat(
+                                i,
+                                merge_split_step_num
+                            );
+                    }
+                    // make int64 to avoid overflow 
+                    std::int64_t total_ms_attempts =
+                        static_cast<std::int64_t>(nsims) * nsteps_to_run;
 
                     smc_diagnostics.acceptance_rates.at(step_num) =
-                        total_ms_successes / static_cast<double>(total_ms_attempts);
+                        static_cast<double>(total_ms_successes) /
+                        static_cast<double>(total_ms_attempts);
 
                     // add number of unique plans
                     smc_diagnostics.nunique_plans[step_num] =
