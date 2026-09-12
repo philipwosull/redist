@@ -176,7 +176,7 @@ class Plan {
     // redist_smc related methods
     int choose_multidistrict_to_split(std::vector<bool> const &valid_region_sizes_to_split,
                                       RNGState &rng_state,
-                                      double const selection_alpha = SELECTION_ALPHA) const;
+                                      double const selection_alpha) const;
 
     std::pair<bool, int> draw_tree_on_region(USTSampler &ust_sampler, const int region_to_draw_tree_on,
                           RNGState &rng_state, int const attempts_to_make);

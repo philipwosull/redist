@@ -387,7 +387,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_log_unnormalized_target_density_components
-Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(Rcpp::List const& adj_list, const Rcpp::IntegerVector& counties, const Rcpp::IntegerVector& pop, Rcpp::List const& constraints, double const pop_temper, bool const compute_pop_temper, double const rho, int const ndists, int const total_seats, int const num_regions, Rcpp::IntegerVector const& district_seat_sizes, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& output_type, int const num_threads, int const verbosity);
+Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(Rcpp::List const& adj_list, const Rcpp::IntegerVector& counties, const Rcpp::IntegerVector& pop, Rcpp::List const& constraints, double const pop_temper, bool const compute_pop_temper, double const rho, int const ndists, int const total_seats, int const num_regions, Rcpp::IntegerVector const& district_seat_sizes, double const lower, double const target, double const upper, Rcpp::IntegerMatrix const& region_ids, Rcpp::IntegerMatrix const& region_sizes, std::string const& output_type, int num_threads, int const verbosity);
 RcppExport SEXP _redist_compute_log_unnormalized_target_density_components(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP constraintsSEXP, SEXP pop_temperSEXP, SEXP compute_pop_temperSEXP, SEXP rhoSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP num_regionsSEXP, SEXP district_seat_sizesSEXP, SEXP lowerSEXP, SEXP targetSEXP, SEXP upperSEXP, SEXP region_idsSEXP, SEXP region_sizesSEXP, SEXP output_typeSEXP, SEXP num_threadsSEXP, SEXP verbositySEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -409,7 +409,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type region_ids(region_idsSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type region_sizes(region_sizesSEXP);
     Rcpp::traits::input_parameter< std::string const& >::type output_type(output_typeSEXP);
-    Rcpp::traits::input_parameter< int const >::type num_threads(num_threadsSEXP);
+    Rcpp::traits::input_parameter< int >::type num_threads(num_threadsSEXP);
     Rcpp::traits::input_parameter< int const >::type verbosity(verbositySEXP);
     rcpp_result_gen = Rcpp::wrap(compute_log_unnormalized_target_density_components(adj_list, counties, pop, constraints, pop_temper, compute_pop_temper, rho, ndists, total_seats, num_regions, district_seat_sizes, lower, target, upper, region_ids, region_sizes, output_type, num_threads, verbosity));
     return rcpp_result_gen;
@@ -506,13 +506,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // ms_plans
-Rcpp::List ms_plans(int const nsims, int const warmup, int const thin, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, Rcpp::List const& adj_list, const Rcpp::IntegerVector& counties, const Rcpp::IntegerVector& pop, double const target, double const lower, double const upper, double const rho, Rcpp::IntegerMatrix const& init_plan, Rcpp::IntegerMatrix const& init_seats, std::string const& sampling_space_str, std::string const& pair_rule, Rcpp::List const& control, Rcpp::List const& constraints, int const verbosity, bool const diagnostic_mode);
+Rcpp::List ms_plans(int const nsims, std::int64_t const warmup, int const thin, int const ndists, int const total_seats, Rcpp::IntegerVector const& district_seat_sizes, Rcpp::List const& adj_list, const Rcpp::IntegerVector& counties, const Rcpp::IntegerVector& pop, double const target, double const lower, double const upper, double const rho, Rcpp::IntegerMatrix const& init_plan, Rcpp::IntegerMatrix const& init_seats, std::string const& sampling_space_str, std::string const& pair_rule, Rcpp::List const& control, Rcpp::List const& constraints, int const verbosity, bool const diagnostic_mode);
 RcppExport SEXP _redist_ms_plans(SEXP nsimsSEXP, SEXP warmupSEXP, SEXP thinSEXP, SEXP ndistsSEXP, SEXP total_seatsSEXP, SEXP district_seat_sizesSEXP, SEXP adj_listSEXP, SEXP countiesSEXP, SEXP popSEXP, SEXP targetSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP rhoSEXP, SEXP init_planSEXP, SEXP init_seatsSEXP, SEXP sampling_space_strSEXP, SEXP pair_ruleSEXP, SEXP controlSEXP, SEXP constraintsSEXP, SEXP verbositySEXP, SEXP diagnostic_modeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< int const >::type nsims(nsimsSEXP);
-    Rcpp::traits::input_parameter< int const >::type warmup(warmupSEXP);
+    Rcpp::traits::input_parameter< std::int64_t const >::type warmup(warmupSEXP);
     Rcpp::traits::input_parameter< int const >::type thin(thinSEXP);
     Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
     Rcpp::traits::input_parameter< int const >::type total_seats(total_seatsSEXP);

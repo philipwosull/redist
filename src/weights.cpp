@@ -76,7 +76,7 @@ double compute_n_eff(const arma::subview_col<double> log_wgt) {
 double get_log_retroactive_splitting_prob(const Plan &plan,
                                           const std::vector<bool> &valid_region_sizes_to_split,
                                           const int region1_id, const int region2_id,
-                                          double const selection_alpha = SELECTION_ALPHA) {
+                                          double const selection_alpha) {
     if constexpr (DEBUG_WEIGHTS_VERBOSE)
         Rprintf("Possible options: ");
 
@@ -124,6 +124,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
                                              SamplingSpace const sampling_space,
                                              ScoringFunction const &scoring_function,
                                              double rho, bool compute_log_splitting_prob,
+                                             double const multidistrict_selection_alpha,
                                              bool is_final_split) {
     // bool for whether we'll need to compute spanning tree count
     bool compute_log_tau = rho != 1;
@@ -225,7 +226,8 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
         // in generalized region split find probability you would have
         // picked to split the union of the the two regions
         log_splitting_prob = get_log_retroactive_splitting_prob(
-            plan, splitting_schedule.valid_region_sizes_to_split, region1_id, region2_id);
+            plan, splitting_schedule.valid_region_sizes_to_split, region1_id, region2_id,
+            multidistrict_selection_alpha);
         if constexpr (DEBUG_WEIGHTS_VERBOSE)
             Rprintf("Computed split prob %f\n", std::exp(log_splitting_prob));
     }
@@ -337,7 +339,8 @@ void compute_all_plans_log_simple_incremental_weights(
     std::vector<ScoringFunction> const &scoring_functions, double rho,
     std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, bool is_final_plans,
+    bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
+    bool is_final_plans,
     arma::subview_col<double> log_incremental_weights, int verbosity) {
     int const nsims = (int)plans_ptr_vec.size();
     const int check_int = 50; // check for interrupts every _ iterations
@@ -386,7 +389,8 @@ void compute_all_plans_log_simple_incremental_weights(
         double log_incr_weight = compute_simple_log_incremental_weight(
             *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
             ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
-            scoring_functions[thread_id], rho, compute_log_splitting_prob, is_final_plans);
+            scoring_functions[thread_id], rho, compute_log_splitting_prob, multidistrict_selection_alpha,
+            is_final_plans);
 
         log_incremental_weights[i] = log_incr_weight;
 
@@ -432,6 +436,7 @@ double compute_log_optimal_incremental_weights(
     TreeSplitter &edge_splitter, SamplingSpace const sampling_space,
     ScoringFunction const &scoring_function, double const rho,
     double const whole_map_compactness_term, bool compute_log_splitting_prob,
+    double const multidistrict_selection_alpha,
     bool is_final_split, bool const using_caching, WeightCache *weight_cache,
     GranularWeightTimes &granular_times) {
     // plan.Rprint();
@@ -499,7 +504,8 @@ double compute_log_optimal_incremental_weights(
             // picked to split the union of the the two regions
             auto time_split_prob = maybe_now(); // optional timing 
             double log_splitting_prob = get_log_retroactive_splitting_prob(
-                plan, splitting_schedule.valid_region_sizes_to_split, region1_id, region2_id);
+                plan, splitting_schedule.valid_region_sizes_to_split, region1_id, region2_id,
+                multidistrict_selection_alpha);
     
             if constexpr (perf_config::track_granular_times){
                 add_elapsed(granular_times.splitting_prob, time_split_prob); // optional timing 
@@ -663,7 +669,9 @@ void compute_all_plans_log_optimal_incremental_weights(
     std::vector<ScoringFunction> const &scoring_functions, double rho,
     double const whole_map_compactness_term, std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, bool is_final_plans,
+    bool compute_log_splitting_prob, 
+    double const multidistrict_selection_alpha,
+    bool is_final_plans, 
     arma::subview_col<double> log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
     SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
     int verbosity) {
@@ -723,7 +731,8 @@ void compute_all_plans_log_optimal_incremental_weights(
                 *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
                 scoring_functions[thread_id], rho, whole_map_compactness_term,
-                compute_log_splitting_prob, is_final_plans, cache_ensemble.using_caching,
+                compute_log_splitting_prob, multidistrict_selection_alpha,
+                is_final_plans, cache_ensemble.using_caching,
                 cache_ensemble.weight_cache_ptr_vec[i].get(), 
                 granular_weight_times[thread_id]);
         } else {
@@ -731,7 +740,8 @@ void compute_all_plans_log_optimal_incremental_weights(
                 *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
                 scoring_functions[thread_id], rho, whole_map_compactness_term,
-                compute_log_splitting_prob, is_final_plans, cache_ensemble.using_caching,
+                compute_log_splitting_prob, multidistrict_selection_alpha,
+                is_final_plans, cache_ensemble.using_caching,
                 nullptr, granular_weight_times[thread_id]);
         }
 

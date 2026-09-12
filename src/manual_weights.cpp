@@ -39,7 +39,7 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
     Rcpp::IntegerVector const &district_seat_sizes, double const lower, double const target,
     double const upper, Rcpp::IntegerMatrix const &region_ids,
     Rcpp::IntegerMatrix const &region_sizes, std::string const &output_type,
-    int const num_threads, int const verbosity = 3) {
+    int num_threads, int const verbosity = 3) {
     // create the map param object
     MapParams map_params(list_to_graph(adj_list), 
         Rcpp::as<std::vector<unsigned int>>(counties), 
@@ -47,6 +47,10 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
         ndists, total_seats,
                          Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
                         SamplingSpace::GraphSpace);
+
+    // create thread pool
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
+    num_threads = get_num_threads(pool);
 
     // Add hard constraints to scoring function
     constraints["plan_valid_district_sizes"] = true;
@@ -56,9 +60,6 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
     for (size_t thread_id = 0; thread_id < num_threads; thread_id++) {
         scoring_functions.emplace_back(map_params, constraints, pop_temper, true, thread_id);
     }
-
-    // create thread pool
-    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // Create the plan objects
     int num_plans = region_ids.ncol();
@@ -247,7 +248,7 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
                     return; // return to break the loop in the lambda
                 } else {
                     log_unnormalized_component_densities(region_id, i) = R_NegInf;
-                    region_prob_zero = 0;
+                    region_prob_zero = true;
                 }
             } else {
                 if (just_single_density) {
