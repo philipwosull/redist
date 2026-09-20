@@ -806,10 +806,10 @@ int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_si
     }
         
 
-    arma::vec region_wgts(valid_region_ids.size());
+    std::vector<double> region_wgts(valid_region_ids.size());
 
     for (size_t i = 0; i < valid_region_ids.size(); i++) {
-        region_wgts(i) = std::pow(associated_region_sizes[i], selection_alpha);
+        region_wgts[i] = std::pow(associated_region_sizes[i], selection_alpha);
     }
     int idx = rng_state.r_int_unnormalized_wgt(region_wgts);
     int region_id_to_split = valid_region_ids.at(idx);

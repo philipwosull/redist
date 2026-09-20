@@ -115,7 +115,7 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
                   std::unique_ptr<PlanEnsemble> &old_plan_ensemble,
                   std::unique_ptr<PlanEnsemble> &new_plan_ensemble,
                   std::vector<std::unique_ptr<TreeSplitter>> &tree_splitters,
-                  const arma::vec &normalized_cumulative_weights,
+                  const std::vector<double> &normalized_cumulative_weights,
                   SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
                   bool const is_final_split, arma::umat &ancestors, const std::vector<int> &lags,
                   bool const estimated_unbiased_normalizing_constant,
@@ -1026,9 +1026,13 @@ Rcpp::List run_redist_smc(
         // Start off all the unnormalized weights at at exp of log weights
         arma::vec unnormalized_sampling_weights = arma::exp(log_weights);
         // now get initial normalized weights
-        arma::vec normalized_cumulative_weights = arma::cumsum(unnormalized_sampling_weights);
-        normalized_cumulative_weights =
-            normalized_cumulative_weights / normalized_cumulative_weights[nsims - 1];
+        std::vector<double> normalized_cumulative_weights(nsims);
+        double weight_total = 0.0;
+        for (size_t i = 0; i < nsims; i++) {
+            weight_total += unnormalized_sampling_weights[i];
+            normalized_cumulative_weights[i] = weight_total;
+        }
+        for (double &w : normalized_cumulative_weights) w /= weight_total;
 
         // Create the weight cache's if needed
         std::unique_ptr<WeightCacheEnsemble> cache_ensemble_ptr =
@@ -1352,19 +1356,21 @@ Rcpp::List run_redist_smc(
                             smc_diagnostics.log_incremental_weights_mat.col(smc_step_num);
                         unnormalized_sampling_weights = arma::exp(log_weights);
                     }
-                    normalized_cumulative_weights = arma::cumsum(unnormalized_sampling_weights);
+                    weight_total = 0.0;
+                    for (size_t i = 0; i < nsims; i++) {
+                        weight_total += unnormalized_sampling_weights[i];
+                        normalized_cumulative_weights[i] = weight_total;
+                    }
 
                     // compute log weight sd
                     smc_diagnostics.log_wgt_stddevs.at(smc_step_num) =
                         arma::stddev(log_weights);
                     // compute effective sample size
                     smc_diagnostics.n_eff.at(smc_step_num) =
-                        normalized_cumulative_weights[nsims - 1] *
-                        normalized_cumulative_weights[nsims - 1] /
+                        weight_total * weight_total /
                         arma::sum(arma::square(unnormalized_sampling_weights));
                     // Now normalize the weights
-                    normalized_cumulative_weights = normalized_cumulative_weights /
-                                                    normalized_cumulative_weights[nsims - 1];
+                    for (double &w : normalized_cumulative_weights) w /= weight_total;
 
                     if (verbosity >= 3) {
                         Rcpp::Rcout << "  " << std::setprecision(2)

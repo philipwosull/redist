@@ -11,6 +11,8 @@ remove (splitting the tree)
 #include "random.h"
 #include "base_plan_type.h"
 
+#include <numeric>
+
 constexpr bool FINDING_EDGE_CUTS_VERBOSE = false;
 constexpr bool FINDING_JOINED_EDGE_CUTS_VERBOSE = false;
 
@@ -281,14 +283,14 @@ void assign_region_ids_from_uncut_tree(Tree const &ust, // FlatGraph const &ust,
 // Given a vector of edge cuts it 
 // - removes any edge cuts that don't satisfy hard constraints 
 // - Gives the remaining edge cuts an unnormalized weight equal to e^(-score)
-arma::vec compute_constraint_edge_cut_weights(
+std::vector<double> compute_constraint_edge_cut_weights(
     std::vector<EdgeCut> &valid_edges, ScoringFunction const &scoring_function, Tree const &ust, // FlatGraph const &ust,
     int const num_regions, PlanVector &region_ids, RegionSizes &region_sizes,
     IntPlanAttribute &region_pops, int const split_region_id1, int const split_region_id2,
     CircularQueue<std::pair<int, int>> &vertex_queue) {
     // Allocate enough space for every edge. We shrink this after removing
     // edges that violate a hard constraint.
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     // read_idx identifies the edge currently being evaluated.
     // write_idx identifies where the next valid edge and weight should go.
@@ -1433,11 +1435,11 @@ double compute_absolute_pop_deviance(
     return std::fabs(compute_signed_pop_deviance(target, region_pop, region_size));
 }
 
-arma::vec compute_almost_best_weights_on_smaller_dev_edges(std::vector<EdgeCut> &valid_edges,
+std::vector<double> compute_almost_best_weights_on_smaller_dev_edges(std::vector<EdgeCut> &valid_edges,
                                                            double epsilon, double target) {
 
     // get the weights vector
-    arma::vec unnormalized_wgts(valid_edges.size());
+    std::vector<double> unnormalized_wgts(valid_edges.size());
 
     // find the maximum value
     double global_min = 42.0;
@@ -1445,9 +1447,9 @@ arma::vec compute_almost_best_weights_on_smaller_dev_edges(std::vector<EdgeCut> 
     for (size_t i = 0; i < valid_edges.size(); i++) {
         std::array<double, 2> devs = valid_edges.at(i).compute_abs_pop_deviances(target);
         double smaller_dev = std::min(devs.at(0), devs.at(1));
-        unnormalized_wgts(i) = smaller_dev;
+        unnormalized_wgts[i] = smaller_dev;
         // Rprintf("Bigger abs dev = %.3f, Computed weight %.3f\n",
-        //     smaller_dev, unnormalized_wgts(i));
+        //     smaller_dev, unnormalized_wgts[i]);
 
         global_min = std::min(global_min, smaller_dev);
 
@@ -1459,9 +1461,9 @@ arma::vec compute_almost_best_weights_on_smaller_dev_edges(std::vector<EdgeCut> 
     for (size_t i = 0; i < valid_edges.size(); i++) {
         // make 1 if eqaul to the max, epsilon otherwise
         // REprintf("Set Weight %d, dev %f to %f \n",
-        //     (int) i, unnormalized_wgts(i),
-        //     (unnormalized_wgts(i) == global_min) ? 1.0 : epsilon);
-        unnormalized_wgts(i) = (unnormalized_wgts(i) == global_min) ? 1.0 : epsilon;
+        //     (int) i, unnormalized_wgts[i],
+        //     (unnormalized_wgts[i] == global_min) ? 1.0 : epsilon);
+        unnormalized_wgts[i] = (unnormalized_wgts[i] == global_min) ? 1.0 : epsilon;
     }
 
     return unnormalized_wgts;
@@ -1538,10 +1540,10 @@ TreeSplitter::select_edge_to_cut(
     }
 
     // get the weights
-    arma::vec unnormalized_wgts(num_valid_edges);
+    std::vector<double> unnormalized_wgts(num_valid_edges);
 
     for (size_t i = 0; i < num_valid_edges; i++) {
-        unnormalized_wgts(i) = compute_unnormalized_edge_cut_weight(valid_edges[i]);
+        unnormalized_wgts[i] = compute_unnormalized_edge_cut_weight(valid_edges[i]);
     }
 
     // select with prob proportional to the weights
@@ -1550,10 +1552,10 @@ TreeSplitter::select_edge_to_cut(
     // compute selection probability if needed
     if (save_selection_prob) {
         selected_edge_cut.log_prob =
-            std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+            std::log(unnormalized_wgts[idx]) -
+            std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
         // Rprintf("Save, %d valid, log prob is %f and %f\n", num_valid_edges,
-        // selected_edge_cut.log_prob,
-        //     std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts)));
+        // selected_edge_cut.log_prob, selected_edge_cut.log_prob);
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -2162,7 +2164,7 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
     }
 
     // get the weights
-    arma::vec unnormalized_wgts =
+    std::vector<double> unnormalized_wgts =
         compute_almost_best_weights_on_smaller_dev_edges(valid_edges, epsilon, target);
 
     // select with prob proportional to the weights
@@ -2171,7 +2173,8 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
     // compute selection probability if needed
     if (save_selection_prob) {
         selected_edge_cut.log_prob =
-            std::log(unnormalized_wgts(idx)) - std::log(arma::sum(unnormalized_wgts));
+            std::log(unnormalized_wgts[idx]) -
+            std::log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
     }
 
     return std::make_pair(true, selected_edge_cut);
@@ -2180,12 +2183,13 @@ std::pair<bool, EdgeCut> ExperimentalSplitter::select_edge_to_cut(
 double ExperimentalSplitter::get_log_selection_prob(std::vector<EdgeCut> &valid_edges,
                                                     int idx) const {
     // get the weights
-    arma::vec unnormalized_wgts =
+    std::vector<double> unnormalized_wgts =
         compute_almost_best_weights_on_smaller_dev_edges(valid_edges, epsilon, target);
 
     // we want log of weight at idx / sum of all weight which is equal to
     // log(prob at idx) - log(sum of all weights)
-    return log(unnormalized_wgts(idx)) - log(arma::sum(unnormalized_wgts));
+    return log(unnormalized_wgts[idx]) -
+           log(std::accumulate(unnormalized_wgts.begin(), unnormalized_wgts.end(), 0.0));
 }
 
 
@@ -2219,7 +2223,7 @@ std::pair<bool, EdgeCut> ConstraintSplitter::attempt_to_find_edge_to_cut(
     region_pops.copy(plan.region_pops);
 
     // get the weights
-    arma::vec unnormalized_wgts = compute_constraint_edge_cut_weights(
+    std::vector<double> unnormalized_wgts = compute_constraint_edge_cut_weights(
         valid_edges, scoring_function, ust, plan.num_regions + 1, region_ids, region_sizes,
         region_pops, split_region1, split_region2, vertex_queue);
 

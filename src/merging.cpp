@@ -15,6 +15,8 @@
 #include "base_plan_type.h"
 #include "splitting_schedule_types.h"
 
+#include <numeric>
+
 constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
 
 /*
@@ -39,11 +41,11 @@ constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
  *  @return A sampler where index i has probability proportional to the weight
  *  given to that pair
  */
-arma::vec get_adj_pair_unnormalized_weights(
+std::vector<double> get_adj_pair_unnormalized_weights(
     Plan const &plan, std::vector<std::pair<RegionID, RegionID>> const &valid_region_adj_pairs,
     std::string const &selection_type) {
     // make a vector for the unnormalized weights
-    arma::vec unnormalized_sampling_weights(valid_region_adj_pairs.size());
+    std::vector<double> unnormalized_sampling_weights(valid_region_adj_pairs.size());
 
     // if uniform then just make all the weights 1 over the size
     if (selection_type == "uniform") {
@@ -59,14 +61,14 @@ arma::vec get_adj_pair_unnormalized_weights(
 
             // check if both are districts
             if (region1_dval == 1 && region2_dval == 1) {
-                unnormalized_sampling_weights.at(i) = 1000.0;
+                unnormalized_sampling_weights[i] = 1000.0;
             } else if (region1_dval == 1 || region2_dval == 1) {
                 // else check if at least one is a district
-                unnormalized_sampling_weights.at(i) = 10.0;
+                unnormalized_sampling_weights[i] = 10.0;
             } else {
                 // if both multidistricts then do 1/1+(sum of two dvals)
                 // This penalizes bigger pairs
-                unnormalized_sampling_weights.at(i) =
+                unnormalized_sampling_weights[i] =
                     1 / (1 + static_cast<double>(region1_dval + region2_dval));
             }
         }
@@ -81,14 +83,14 @@ arma::vec get_adj_pair_unnormalized_weights(
 
             // check if both are districts
             if (region1_dval == 1 && region2_dval == 1) {
-                unnormalized_sampling_weights.at(i) = .5;
+                unnormalized_sampling_weights[i] = .5;
             } else if (region1_dval == 1 || region2_dval == 1) {
                 // else check if at least one is a district
-                unnormalized_sampling_weights.at(i) = 1.0;
+                unnormalized_sampling_weights[i] = 1.0;
             } else {
                 // if both multidistricts then do 1/1+(sum of two dvals)
                 // This penalizes bigger pairs
-                unnormalized_sampling_weights.at(i) = 1000.0;
+                unnormalized_sampling_weights[i] = 1000.0;
             }
         }
 
@@ -193,7 +195,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     TreeSplitter &tree_splitter, PlanMultigraph &current_plan_multigraph,
     PlanMultigraph &proposed_plan_multigraph, std::string const merge_prob_type,
     bool save_edge_selection_prob, std::vector<std::pair<RegionID, RegionID>> &adj_region_pairs,
-    arma::vec &unnormalized_pair_wgts, double const rho, bool const is_final, bool const do_mh,
+    std::vector<double> &unnormalized_pair_wgts, double const rho, bool const is_final, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times
 ) {
@@ -381,18 +383,23 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
 
         
 
+        double const current_pair_wgt_sum = std::accumulate(
+            unnormalized_pair_wgts.begin(), unnormalized_pair_wgts.end(), 0.0);
+        double const proposed_pair_wgt_sum = std::accumulate(
+            new_valid_pair_weights.begin(), new_valid_pair_weights.end(), 0.0);
+
         if constexpr (DEBUG_MERGING_VERBOSE) {
             Rprintf("Finding Adjacent regions %d, %d!\n", region1_id, region2_id);
             Rprintf("Current Plan: %d Adjacent Regions and I picked index %d ",
                     (int)adj_region_pairs.size(), sampled_pair_index);
             Rprintf("with probability %f\n",
-                    std::exp(std::log(unnormalized_pair_wgts(sampled_pair_index)) -
-                             std::log(arma::sum(unnormalized_pair_wgts))));
+                    std::exp(std::log(unnormalized_pair_wgts[sampled_pair_index]) -
+                             std::log(current_pair_wgt_sum)));
             Rprintf("Proposed Plan: %d Adjacent Regions and I picked index %d ",
                     (int)new_valid_adj_region_pairs.size(), region_pair_proposal_index);
             Rprintf("with probability %f\n",
-                    std::exp(std::log(new_valid_pair_weights(region_pair_proposal_index)) -
-                             std::log(arma::sum(new_valid_pair_weights))));
+                    std::exp(std::log(new_valid_pair_weights[region_pair_proposal_index]) -
+                             std::log(proposed_pair_wgt_sum)));
         }
 
         double new_region1_log_compactness, new_region2_log_compactness;
@@ -400,10 +407,10 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         log_mh_ratio =
             get_log_mh_ratio(map_params, scoring_function, region1_id, region2_id,
                              current_log_eff_boundary, proposed_log_eff_boundary,
-                             std::log(unnormalized_pair_wgts(sampled_pair_index)) -
-                                 std::log(arma::sum(unnormalized_pair_wgts)),
-                             std::log(new_valid_pair_weights(region_pair_proposal_index)) -
-                                 std::log(arma::sum(new_valid_pair_weights)),
+                             std::log(unnormalized_pair_wgts[sampled_pair_index]) -
+                                 std::log(current_pair_wgt_sum),
+                             std::log(new_valid_pair_weights[region_pair_proposal_index]) -
+                                 std::log(proposed_pair_wgt_sum),
                              new_region1_log_compactness, new_region2_log_compactness, plan,
                              new_plan, rho, using_caching, weight_cache,
                              granular_times);
@@ -502,15 +509,15 @@ int run_merge_split_steps(MapParams const &map_params,
     }
 
     auto pair_weight_time = maybe_now();
-    arma::vec current_plan_pair_unnoramalized_wgts =
+    std::vector<double> current_plan_pair_unnoramalized_wgts =
         get_adj_pair_unnormalized_weights(plan, current_plan_adj_region_pairs, merge_prob_type);
     if constexpr (perf_config::track_granular_times){
-        add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing 
+        add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing
     }
-    if (current_plan_pair_unnoramalized_wgts.n_elem <= 0) {
+    if (current_plan_pair_unnoramalized_wgts.empty()) {
         std::ostringstream oss;
         oss << "Getting plan multigraph weights failed.\n";
-        oss << "weights.n_elem=" << current_plan_pair_unnoramalized_wgts.n_elem << "\n";
+        oss << "weights.n_elem=" << current_plan_pair_unnoramalized_wgts.size() << "\n";
         throw std::runtime_error(oss.str());
     }
 
