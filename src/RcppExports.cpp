@@ -470,13 +470,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // proj_distr_m
-Rcpp::NumericMatrix proj_distr_m(Rcpp::IntegerMatrix districts, const arma::vec x, Rcpp::IntegerVector draw_idx, int n_distr);
+Rcpp::NumericMatrix proj_distr_m(Rcpp::IntegerMatrix districts, const Rcpp::NumericVector x, Rcpp::IntegerVector draw_idx, int n_distr);
 RcppExport SEXP _redist_proj_distr_m(SEXP districtsSEXP, SEXP xSEXP, SEXP draw_idxSEXP, SEXP n_distrSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< const arma::vec >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector >::type x(xSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type draw_idx(draw_idxSEXP);
     Rcpp::traits::input_parameter< int >::type n_distr(n_distrSEXP);
     rcpp_result_gen = Rcpp::wrap(proj_distr_m(districts, x, draw_idx, n_distr));

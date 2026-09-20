@@ -79,7 +79,8 @@ double eval_er(const arma::subview_col<arma::uword> &districts, const Graph g, i
  * Create the projective distribution of a variable `x`
  */
 // [[Rcpp::export]]
-Rcpp::NumericMatrix proj_distr_m(Rcpp::IntegerMatrix districts, const arma::vec x, Rcpp::IntegerVector draw_idx,
+Rcpp::NumericMatrix proj_distr_m(Rcpp::IntegerMatrix districts, const Rcpp::NumericVector x,
+                           Rcpp::IntegerVector draw_idx,
                            int n_distr) {
     int n = draw_idx.size();
     int V = districts.nrow();

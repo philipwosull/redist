@@ -6,6 +6,7 @@
 #include <RcppArmadillo.h>
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <set>
 #include <vector>
 #include "redist_types.h"
@@ -75,8 +76,8 @@ double eval_pop_dev(const PlanID &region_ids, int const region1, int const regio
  */
 template <typename PlanID>
 double eval_grp_pow(const PlanID &region_ids, int const V, int const region1_id,
-                    int const region2_id, arma::uvec const &grp_pop,
-                    arma::uvec const &total_pop, double const tgt_grp, double const tgt_other,
+                    int const region2_id, std::vector<unsigned int> const &grp_pop,
+                    std::vector<unsigned int> const &total_pop, double const tgt_grp, double const tgt_other,
                     double const pow) {
     double sum_grp = 0.0;
     double sum_total = 0.0;
@@ -101,8 +102,8 @@ double eval_grp_pow(const PlanID &region_ids, int const V, int const region1_id,
  */
 template <typename PlanID>
 double eval_grp_hinge(PlanID const &region_ids, int const V, int const region1_id,
-                      int const region2_id, arma::vec const &tgts_grp,
-                      const arma::uvec &grp_pop, const arma::uvec &total_pop) {
+                      int const region2_id, std::vector<double> const &tgts_grp,
+                      const std::vector<unsigned int> &grp_pop, const std::vector<unsigned int> &total_pop) {
     double subsetted_grp_pop_sum = 0.0;
     double subsetted_total_pop_sum = 0.0;
     // get the sum of the two columns in region 1 or 2
@@ -138,7 +139,7 @@ double eval_grp_hinge(PlanID const &region_ids, int const V, int const region1_i
  */
 template <typename PlanID>
 double eval_inc(PlanID const &region_ids, int const region1_id, int const region2_id,
-                const arma::uvec &incumbents) {
+                const std::vector<unsigned int> &incumbents) {
     int n_inc = incumbents.size();
     double inc_in_distr = -1.0; // first incumbent doesn't count
     for (int i = 0; i < n_inc; i++) {
@@ -185,7 +186,7 @@ double eval_sq_entropy(PlanID const &region_ids, std::vector<unsigned int> const
 // calculates districts which appear in each county (but not zeros)
 template <typename PlanID>
 std::vector<std::set<int>> calc_county_dist(PlanID const &region_ids,
-                                            arma::uvec const &counties, int const n_cty,
+                                            std::vector<unsigned int> const &counties, int const n_cty,
                                             bool const zero_ok) {
     std::vector<std::set<int>> county_dist(n_cty);
     int V = counties.size();
@@ -207,7 +208,7 @@ std::vector<std::set<int>> calc_county_dist(PlanID const &region_ids,
  * where the regions are actually merged
  */
 template <typename PlanID>
-double eval_splits(PlanID const &region_ids, int const region_id, arma::uvec const &admin_units,
+double eval_splits(PlanID const &region_ids, int const region_id, std::vector<unsigned int> const &admin_units,
                    int const n_admin_units, bool const smc) {
     std::vector<std::set<int>> county_dist =
         calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
@@ -241,7 +242,7 @@ double eval_splits(PlanID const &region_ids, int const region_id, arma::uvec con
  */
 template <typename PlanID>
 double eval_multisplits(PlanID const &region_ids, int const region_id,
-                        const arma::uvec &admin_units, int const n_admin_units,
+                        const std::vector<unsigned int> &admin_units, int const n_admin_units,
                         bool const smc) {
     std::vector<std::set<int>> county_dist =
         calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
@@ -275,7 +276,7 @@ double eval_multisplits(PlanID const &region_ids, int const region_id,
  */
 template <typename PlanID>
 double eval_total_splits(PlanID const &region_ids, int const region_id,
-                         arma::uvec const &admin_units, int const n_admin_units,
+                         std::vector<unsigned int> const &admin_units, int const n_admin_units,
                          bool const smc) {
     std::vector<std::set<int>> county_dist =
         calc_county_dist(region_ids, admin_units, n_admin_units, region_id == 0);
@@ -305,8 +306,8 @@ double eval_total_splits(PlanID const &region_ids, int const region_id,
  */
 template <typename PlanID>
 double eval_polsby(PlanID const &region_ids, int const region1_id, int const region2_id,
-                   int const V, arma::ivec const &from, arma::ivec const &to,
-                   arma::vec const &area, arma::vec const &perimeter) {
+                   int const V, std::vector<int> const &from, std::vector<int> const &to,
+                   std::vector<double> const &area, std::vector<double> const &perimeter) {
     double tot_area = 0.0;
     double tot_perim = 0.0;
     constexpr double pi4 = 4.0 * 3.14159265;
@@ -319,7 +320,7 @@ double eval_polsby(PlanID const &region_ids, int const region1_id, int const reg
     }
 
     // Sum perimeter contributions from boundary edges
-    int E = to.n_elem;
+    int E = static_cast<int>(to.size());
     for (int e = 0; e < E; ++e) {
         auto out_vertex = to[e] - 1;
         if (region_ids[out_vertex] == region1_id || region_ids[out_vertex] == region2_id) {
@@ -343,10 +344,10 @@ double eval_polsby(PlanID const &region_ids, int const region1_id, int const reg
  */
 template <typename PlanID>
 double eval_segregation(const PlanID &region_ids, int const region1_id, int const region2_id,
-                        int const V, const arma::uvec &grp_pop, const arma::uvec &total_pop) {
+                        int const V, const std::vector<unsigned int> &grp_pop, const std::vector<unsigned int> &total_pop) {
     // Step 1: compute overall group share (pAll) and total population
-    double total_grp = arma::sum(grp_pop);
-    double total_pop_sum = arma::sum(total_pop);
+    double total_grp = std::accumulate(grp_pop.begin(), grp_pop.end(), 0.0);
+    double total_pop_sum = std::accumulate(total_pop.begin(), total_pop.end(), 0.0);
 
     if (total_pop_sum == 0.0)
         return 0.0;
