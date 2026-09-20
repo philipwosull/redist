@@ -8,13 +8,16 @@
 constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include "redist_alg_helpers.h"
 #include "splitting_schedule_types.h"
@@ -30,6 +33,65 @@ constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 #include "random.h"
 #include <RcppThread.h>
 #include <cli/progress.h>
+
+/*
+ *  Fill `wgts` with `exp(scale * log_wgts)`, shifted so the largest entry is
+ *  exactly 1.
+ *
+ *  Everything these weights feed is a ratio in which a shared constant factor
+ *  cancels (the normalized cumulative weights, and n_eff = (sum w)^2 / sum w^2),
+ *  so the shift is mathematically a no-op. It matters numerically: without it
+ *  `exp` overflows once a log weight exceeds ~709, and the sum of squares
+ *  overflows at only ~355, which would silently turn n_eff into 0 or NaN. After
+ *  shifting, the largest weight is 1 so the sum lies in [1, n] and cannot
+ *  overflow or be zero.
+ *
+ *  `log_wgts` is carried across SMC steps and returned to R, so it is left
+ *  untouched; only the temporary sampling weights are shifted.
+ */
+static void fill_shifted_exp_weights(std::vector<double> const &log_wgts,
+                                     double const scale,
+                                     std::vector<double> &wgts) {
+    std::size_t const n = log_wgts.size();
+
+    // computed on the exponent itself so a negative `scale` is handled too
+    double max_exponent = -std::numeric_limits<double>::infinity();
+    for (std::size_t i = 0; i < n; i++) {
+        double const exponent = scale * log_wgts[i];
+        if (exponent > max_exponent) max_exponent = exponent;
+    }
+
+    for (std::size_t i = 0; i < n; i++) {
+        wgts[i] = std::exp(scale * log_wgts[i] - max_exponent);
+    }
+}
+
+/*
+ *  Sample standard deviation, with denominator n - 1.
+ *
+ *  This is the corrected two-pass formula `arma::stddev` used,
+ *      var = (sum (m - x)^2 - (sum (m - x))^2 / n) / (n - 1),
+ *  where the second term cancels the rounding error left in the mean.
+ */
+static double compute_stddev(std::vector<double> const &x) {
+    std::size_t const n = x.size();
+    if (n < 2) return 0.0;
+
+    double sum = 0.0;
+    for (double const v : x) sum += v;
+    double const mean = sum / static_cast<double>(n);
+
+    double sum_sq_diff = 0.0;
+    double sum_diff = 0.0;
+    for (double const v : x) {
+        double const diff = mean - v;
+        sum_sq_diff += diff * diff;
+        sum_diff += diff;
+    }
+
+    return std::sqrt((sum_sq_diff - sum_diff * sum_diff / static_cast<double>(n)) /
+                     static_cast<double>(n - 1));
+}
 
 // Wrapper object for all non-essential SMC diagnostics
 class SMCDiagnostics {
@@ -62,8 +124,8 @@ class SMCDiagnostics {
 
     // Level 1
     // These are all nsims by number of smc steps
-    arma::dmat log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of
-                                            // particle i AFTER split s
+    Rcpp::NumericMatrix log_incremental_weights_mat; // entry [i][s] is the log unnormalized
+                                                     // weight of particle i AFTER split s
     Rcpp::IntegerMatrix draw_tries_mat; // Entry [i][s] is the number of tries it took to form
                                         // particle i on split s
     Rcpp::IntegerMatrix
@@ -176,9 +238,9 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
       )
        {
     // Level 1 Diagnostics. Not too big relative to plan size
-    log_incremental_weights_mat = arma::dmat(
-        nsims, total_smc_steps, arma::fill::none); // entry [i][s] is the log unnormalized
-                                                   // weight of particle i AFTER split s
+    log_incremental_weights_mat = Rcpp::NumericMatrix(
+        nsims, total_smc_steps); // entry [i][s] is the log unnormalized
+                                 // weight of particle i AFTER split s
     draw_tries_mat =
         Rcpp::IntegerMatrix(nsims, total_steps); // Entry [i][s] is the number of tries it took
                                                  // to form particle i on split s
@@ -1118,7 +1180,7 @@ void compute_all_plans_log_optimal_incremental_weights(
     bool compute_log_splitting_prob, 
     double const multidistrict_selection_alpha,
     bool is_final_plans, 
-    arma::subview_col<double> log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
+    std::vector<double> &log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
     SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
     int verbosity) {
     const int nsims = static_cast<int>(plans_ptr_vec.size());
@@ -1233,7 +1295,7 @@ void compute_all_plans_log_simple_incremental_weights(
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
     bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
     bool is_final_plans,
-    arma::subview_col<double> log_incremental_weights, int verbosity) {
+    std::vector<double> &log_incremental_weights, int verbosity) {
     int const nsims = (int)plans_ptr_vec.size();
     const int check_int = 50; // check for interrupts every _ iterations
 
@@ -1341,7 +1403,7 @@ Rcpp::List run_redist_smc(
     Rcpp::List const &control, // control has pop temper, and k parameter value, and splitting method are allowed
     Rcpp::List const &constraints, // constraints
     int const verbosity, int const diagnostic_level, Rcpp::IntegerMatrix const &region_id_mat,
-    Rcpp::IntegerMatrix const &region_sizes_mat, arma::vec &log_weights) {
+    Rcpp::IntegerMatrix const &region_sizes_mat, std::vector<double> log_weights) {
     if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
         REprintf("Inside c++ code!\n");
     bool diagnostic_mode = diagnostic_level == 1;
@@ -1568,7 +1630,11 @@ Rcpp::List run_redist_smc(
         }
 
         // Start off all the unnormalized weights at at exp of log weights
-        arma::vec unnormalized_sampling_weights = arma::exp(log_weights);
+        std::vector<double> unnormalized_sampling_weights(nsims);
+        fill_shifted_exp_weights(log_weights, 1.0, unnormalized_sampling_weights);
+        // Reused each SMC step to collect that step's incremental weights before
+        // they are copied into the diagnostics matrix.
+        std::vector<double> log_incremental_weights(nsims);
         // now get initial normalized weights
         std::vector<double> normalized_cumulative_weights(nsims);
         double weight_total = 0.0;
@@ -1702,7 +1768,7 @@ Rcpp::List run_redist_smc(
                             if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
                                 Rprintf("About to try to estimate cut k!\n");
                             estimate_cut_k(map_params, *splitting_schedule_ptr, rng_state,
-                                           est_cut_k, last_k, unnormalized_sampling_weights,
+                                           est_cut_k, last_k,
                                            thresh, tol, plan_ensemble_ptr->plan_ptr_vec,
                                            split_district_only, verbosity);
                             // end timing 
@@ -1838,8 +1904,8 @@ Rcpp::List run_redist_smc(
                             compute_log_splitting_prob, 
                             multidistrict_selection_alpha,
                             is_final_splitting_step,
-                            smc_diagnostics.log_incremental_weights_mat.col(smc_step_num),
-                            *cache_ensemble_ptr, 
+                            log_incremental_weights,
+                            *cache_ensemble_ptr,
                             smc_diagnostics, smc_step_num, step_num,
                             verbosity);
                     } else if (wgt_type == "simple") {
@@ -1851,11 +1917,15 @@ Rcpp::List run_redist_smc(
                             tree_splitter_ptrs_vec, compute_log_splitting_prob,
                             multidistrict_selection_alpha,
                             is_final_splitting_step,
-                            smc_diagnostics.log_incremental_weights_mat.col(smc_step_num),
+                            log_incremental_weights,
                             verbosity);
                     } else {
                         throw Rcpp::exception("invalid weight type!");
                     }
+                    // save this step's incremental weights into the diagnostics
+                    std::copy(
+                        log_incremental_weights.begin(), log_incremental_weights.end(),
+                        smc_diagnostics.log_incremental_weights_mat.column(smc_step_num).begin());
                     // end timing 
                     auto smc_weight_end_time = std::chrono::steady_clock::now();
                     // add the time 
@@ -1882,23 +1952,24 @@ Rcpp::List run_redist_smc(
                         }
                         std::swap(unnormalized_sampling_weights, log_weights);
                         // add incremental weights to the current log weights
-                        log_weights =
-                            log_weights +
-                            smc_diagnostics.log_incremental_weights_mat.col(smc_step_num);
+                        for (size_t i = 0; i < nsims; i++) {
+                            log_weights[i] += log_incremental_weights[i];
+                        }
 
                         // if using seq_alpha then our sampling weights for next round are
                         // proportional to exp(alpha* (prev_log_weights + incremental_weights))
-                        unnormalized_sampling_weights = arma::exp(weights_alpha * log_weights);
+                        fill_shifted_exp_weights(log_weights, weights_alpha,
+                                                 unnormalized_sampling_weights);
                         if (!is_final_splitting_step) {
                             // if not the end then multiply by 1-alpha
-                            log_weights = (1 - weights_alpha) * log_weights;
+                            for (double &w : log_weights) w *= (1 - weights_alpha);
                         }
                     } else {
                         // if no seq alpha then log weights are just the incremental weights
                         // and sampling weights are just exp of exponential weights
-                        log_weights =
-                            smc_diagnostics.log_incremental_weights_mat.col(smc_step_num);
-                        unnormalized_sampling_weights = arma::exp(log_weights);
+                        log_weights = log_incremental_weights;
+                        fill_shifted_exp_weights(log_weights, 1.0,
+                                                 unnormalized_sampling_weights);
                     }
                     weight_total = 0.0;
                     for (size_t i = 0; i < nsims; i++) {
@@ -1908,11 +1979,15 @@ Rcpp::List run_redist_smc(
 
                     // compute log weight sd
                     smc_diagnostics.log_wgt_stddevs.at(smc_step_num) =
-                        arma::stddev(log_weights);
-                    // compute effective sample size
+                        compute_stddev(log_weights);
+                    // compute effective sample size. The sampling weights are
+                    // shifted so the largest is 1, which keeps this sum finite.
+                    double sum_sq_wgts = 0.0;
+                    for (double const w : unnormalized_sampling_weights) {
+                        sum_sq_wgts += w * w;
+                    }
                     smc_diagnostics.n_eff.at(smc_step_num) =
-                        weight_total * weight_total /
-                        arma::sum(arma::square(unnormalized_sampling_weights));
+                        weight_total * weight_total / sum_sq_wgts;
                     // Now normalize the weights
                     for (double &w : normalized_cumulative_weights) w /= weight_total;
 

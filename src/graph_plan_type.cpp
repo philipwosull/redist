@@ -336,7 +336,7 @@ int estimate_mergesplit_cut_k(const MapParams &map_params,
  */
 void estimate_cut_k(const MapParams &map_params, const SplittingSchedule &splitting_schedule,
                     RNGState &rng_state, int &k, int const last_k,
-                    const arma::vec &unnormalized_weights, double thresh, double tol,
+                    double thresh, double tol,
                     std::vector<std::unique_ptr<Plan>> const &plan_ptrs_vec,
                     bool split_district_only, int const verbosity) {
     // sample some spanning trees and compute deviances
@@ -365,11 +365,6 @@ void estimate_cut_k(const MapParams &map_params, const SplittingSchedule &splitt
         splitting_schedule.schedule_type == SplittingSizeScheduleType::AnyValidSizeSMD;
 
     for (int i = 0; i < N_max && idx < N_adapt; i++, idx++) {
-        if (unnormalized_weights.at(i) == 0) { // skip if not valid
-            idx--;
-            continue;
-        }
-
 
         // Get the index of the region with the largest dval
         int biggest_region_id;

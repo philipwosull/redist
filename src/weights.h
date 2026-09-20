@@ -7,7 +7,6 @@
 
 #include <memory>
 #include <vector>
-#include <RcppArmadillo.h>
 
 #include "advanced_types.h"
 
@@ -35,22 +34,6 @@ struct GranularWeightTimes {
     double plan_scores = 0.0;
     double tau_terms = 0.0;
 };
-
-/* Computes Compute Effective Sample Size from log incremental weights
- *
- *
- * Takes a vector of log incremental weights and computes the effective sample
- * size which is the sum of the weights squared divided by the sum of squared
- * weights
- *
- * @param log_wgt vector of log incremental weights
- *
- * @details No modifications to inputs made
- *
- * @return sum of weights squared over sum of squared weights (sum(wgt)^2 / sum(wgt^2))
- */
-double compute_n_eff(const arma::subview_col<double> log_wgt);
-
 
 double compute_log_optimal_incremental_weights(
     Plan const &plan, PlanMultigraph &plan_multigraph,

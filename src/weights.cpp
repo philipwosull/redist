@@ -29,34 +29,6 @@ constexpr bool DEBUG_WEIGHTS_VERBOSE = false; // Compile-time constant
 
 
 // Computes the effective sample size from log incremental weights
-//
-// Takes a vector of log incremental weights and computes the effective sample
-// size which is the sum of the weights squared divided by the sum of squared
-// weights
-//
-//
-// @title Compute Effective Sample Size
-//
-// @param log_wgt vector of log incremental weights
-//
-// @details No modifications to inputs made
-//
-// @return sum of weights squared over sum of squared weights (sum(wgt)^2 / sum(wgt^2))
-//
-double compute_n_eff(const arma::subview_col<double> log_wgt) {
-    double sum_wgt = 0.0;
-    double sum_wgt_squared = 0.0;
-
-    // compute sum of squares and square of sum
-    for (const double &log_w : log_wgt) {
-        double wgt = std::exp(log_w);
-        sum_wgt += wgt;
-        sum_wgt_squared += std::exp(2 * log_w);
-    }
-
-    return std::exp((2 * std::log(sum_wgt)) - std::log(sum_wgt_squared));
-}
-
 // Get the probability the union of two regions was chosen to split
 //
 // Given a plan object and two regions in the plan this returns the probability
