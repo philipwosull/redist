@@ -31,6 +31,352 @@ constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 #include <RcppThread.h>
 #include <cli/progress.h>
 
+// Wrapper object for all non-essential SMC diagnostics
+class SMCDiagnostics {
+
+  public:
+    SMCDiagnostics(SamplingSpace const sampling_space,
+                   SplittingMethodType const splitting_method_type,
+                   SplittingSizeScheduleType const splitting_schedule_type,
+                   std::vector<bool> const &merge_split_step_vec, int const V, int const nsims,
+                   int const ndists, int const total_seats, int const initial_num_regions,
+                   int const total_smc_steps, int const total_ms_steps,
+                   bool const estimated_unbiased_normalizing_constant,
+                   int const diagnostic_level, bool const splitting_all_the_way,
+                   bool const split_district_only);
+
+    int const diagnostic_level;
+    int const total_steps;
+    // Level 0
+    // Essential Diagnostics that are always created
+    std::vector<double> log_wgt_stddevs;  // log weight std devs
+    std::vector<double> acceptance_rates; // Tracks the acceptance rate - total number of tries
+                                          // over nsims - for each round
+    std::vector<int> nunique_parents;     // number of unique parents
+    std::vector<int> nunique_plans;       // number of unique plans after each step
+    std::vector<double> n_eff; // Tracks the effective sample size for the weights of each round
+    // For each merge split step this counts the number of attempts that were made
+    std::vector<int> num_merge_split_attempts_vec;
+    // Only required for graph sampling
+    std::vector<int> cut_k_values; // k value used at each step
+
+    // Level 1
+    // These are all nsims by number of smc steps
+    arma::dmat log_incremental_weights_mat; // entry [i][s] is the log unnormalized weight of
+                                            // particle i AFTER split s
+    Rcpp::IntegerMatrix draw_tries_mat; // Entry [i][s] is the number of tries it took to form
+                                        // particle i on split s
+    Rcpp::IntegerMatrix
+        parent_index_mat; // Entry [i][s] is the index of the parent of particle i at split s
+    // This is a nsims by total_ms_steps matrix where [i][s] is the number of
+    // successful merge splits performed for plan i on merge split round s
+    Rcpp::IntegerMatrix merge_split_successes_mat;
+    // counts the size of the trees
+    Rcpp::IntegerMatrix tree_sizes_mat;            // ndists by total_steps matrix
+    Rcpp::IntegerMatrix successful_tree_sizes_mat; // ndists by total_steps matrix
+    std::vector<int> tries_before_extra_particle; // length number of smc stesp 
+    // These store time info
+    std::vector<double> smc_step_parameter_estimation_times; // length number of smc steps
+    std::vector<double> smc_split_times; // length number of smc steps
+    std::vector<double> smc_weight_times; // length number of smc steps
+    std::vector<double> ms_step_parameter_estimation_times; // length number of ms rounds
+    std::vector<double> ms_step_times; // length number of ms rounds
+
+    // Level 2
+    Rcpp::IntegerMatrix parent_unsuccessful_tries_mat;
+
+    // level 3
+    std::vector<Rcpp::IntegerMatrix> all_steps_plan_region_ids_list;
+    std::vector<std::vector<Tree>> all_steps_forests_adj_list;
+    std::vector<std::vector<std::vector<std::array<double, 3>>>> all_steps_linking_edge_list;
+    std::vector<std::vector<int>> all_steps_valid_region_sizes_to_split;
+    std::vector<std::vector<int>> all_steps_valid_split_region_sizes;
+    std::vector<Rcpp::IntegerMatrix> region_sizes_mat_list;
+
+    // These are granular time stuff that is only tracked when 
+    // TRACK_GRANULAR_PERFORMANCE_TIMES (in redist_constants.h) is set to true 
+    std::vector<double> wilson_call_times; // time spent drawing spanning trees with wilson
+    std::vector<double> wilson_backfill_call_times; // time spent drawing spanning trees with wilson to replace skipped deterministic ones
+    std::vector<double> md_selection_times; // time spent picking a multidistrict to split 
+    std::vector<double> plan_updating_times; // Times spent updating a plan object after a split 
+    std::vector<double> hard_constraint_split_times; // Time spent checking hard constraints in splitting 
+    Rcpp::NumericMatrix total_plan_smc_split_times; // Time spent in smc splitting step per plan
+    std::vector<double> get_valid_smc_pairs_times; // Time spent finding adjacent pairs and effective boundary lengths for smc. Just time getting pairs for mcmc
+    std::vector<double> get_valid_mergepairs_times; // Time spent constructing the list of valid adjacent pairs to merge for mcmc
+    std::vector<double> plan_scores_times; // Time spent computing plan based scores in smc weights and mergesplit
+    std::vector<double> region_scores_times; // Time spent computing region based scores in smc weights and mergesplit
+    std::vector<double> log_tau_times; // Time spent computing log spanning trees in smc weights and mergesplit 
+    std::vector<double> retro_splitting_prob_times; // Time spent computing retroactive splitting prob in smc weights
+    Rcpp::NumericMatrix total_plan_smc_weight_times; // total time spent on smc weights 
+    std::vector<double> selecting_merge_pair_times; // Time spent related to picking pair to merge 
+    std::vector<double> eff_boundary_times; // time spent computing effective boundary lengths 
+    Rcpp::NumericMatrix total_plan_mcmc_times; // total time spent running mergesplit on a plan
+
+
+    // adds full diagnostics (takes a lot of memory)
+    void add_full_step_diagnostics(int const total_steps, bool const splitting_all_the_way,
+                                   int const step_num, int const merge_split_step_num,
+                                   int const smc_step_num, bool const is_smc_step,
+                                   SamplingSpace const sampling_space,
+                                   RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble,
+                                   PlanEnsemble &new_plans_ensemble,
+                                   SplittingSchedule const &splitting_schedule);
+
+    // Updates the out list with all the diagnostics
+    void add_diagnostics_to_out_list(Rcpp::List &out);
+};
+
+
+
+SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
+                               SplittingMethodType const splitting_method_type,
+                               SplittingSizeScheduleType const splitting_schedule_type,
+                               std::vector<bool> const &merge_split_step_vec, int const V,
+                               int const nsims, int const ndists, int const total_seats,
+                               int const initial_num_regions, int const total_smc_steps,
+                               int const total_ms_steps, 
+                               bool const estimated_unbiased_normalizing_constant,
+                               int const diagnostic_level,
+                               bool const splitting_all_the_way, bool const split_district_only)
+    : diagnostic_level(diagnostic_level), total_steps(total_smc_steps + total_ms_steps),
+      log_wgt_stddevs(total_smc_steps), acceptance_rates(total_steps),
+      nunique_parents(total_smc_steps), nunique_plans(total_steps), n_eff(total_smc_steps),
+      num_merge_split_attempts_vec(total_ms_steps),
+      cut_k_values(sampling_space == SamplingSpace::GraphSpace ? total_steps : 0),
+      tries_before_extra_particle(estimated_unbiased_normalizing_constant ? total_smc_steps : 0),
+      smc_step_parameter_estimation_times(total_smc_steps),
+      smc_split_times(total_smc_steps),
+      smc_weight_times(total_smc_steps),
+      ms_step_parameter_estimation_times(total_ms_steps),
+      ms_step_times(total_ms_steps),
+      wilson_call_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      wilson_backfill_call_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      md_selection_times(perf_config::track_granular_times ? total_smc_steps : 0),
+      plan_updating_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      hard_constraint_split_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      total_plan_smc_split_times(
+        perf_config::track_granular_times ? nsims : 0,
+        perf_config::track_granular_times ? total_smc_steps : 0
+      ),
+      get_valid_smc_pairs_times(perf_config::track_granular_times ? total_smc_steps : 0),
+      get_valid_mergepairs_times(perf_config::track_granular_times ? total_ms_steps : 0),
+      plan_scores_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      region_scores_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      log_tau_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
+      retro_splitting_prob_times(perf_config::track_granular_times ? total_smc_steps : 0),
+      total_plan_smc_weight_times(
+        perf_config::track_granular_times ? nsims : 0,
+        perf_config::track_granular_times ? total_smc_steps : 0
+      ),
+      selecting_merge_pair_times(perf_config::track_granular_times ? total_ms_steps : 0),
+      eff_boundary_times(perf_config::track_granular_times ? total_ms_steps : 0),
+      total_plan_mcmc_times(
+        perf_config::track_granular_times ? nsims : 0,
+        perf_config::track_granular_times ? total_ms_steps : 0
+      )
+       {
+    // Level 1 Diagnostics. Not too big relative to plan size
+    log_incremental_weights_mat = arma::dmat(
+        nsims, total_smc_steps, arma::fill::none); // entry [i][s] is the log unnormalized
+                                                   // weight of particle i AFTER split s
+    draw_tries_mat =
+        Rcpp::IntegerMatrix(nsims, total_steps); // Entry [i][s] is the number of tries it took
+                                                 // to form particle i on split s
+    parent_index_mat = Rcpp::IntegerMatrix(
+        nsims,
+        total_smc_steps); // Entry [i][s] is the index of the parent of particle i at split s
+    // This is a nsims by total_ms_steps matrix where [i][s] is the number of
+    // successful merge splits performed for plan i on merge split round s
+    merge_split_successes_mat =
+        Rcpp::IntegerMatrix(total_ms_steps > 0 ? nsims : 1, total_ms_steps);
+    // counts the size of the trees
+    tree_sizes_mat = Rcpp::IntegerMatrix(total_seats, total_steps);
+    successful_tree_sizes_mat = Rcpp::IntegerMatrix(total_seats, total_steps);
+
+    // Level 2
+    parent_unsuccessful_tries_mat = Rcpp::IntegerMatrix(nsims, total_smc_steps);
+
+    bool diagnostic_mode = diagnostic_level == 1;
+    // level 3
+    all_steps_plan_region_ids_list.reserve(diagnostic_mode ? total_steps : 0);
+    all_steps_forests_adj_list.resize(
+        (diagnostic_mode && sampling_space != SamplingSpace::GraphSpace) ? total_steps : 0);
+    all_steps_linking_edge_list.resize(
+        (diagnostic_mode && sampling_space == SamplingSpace::LinkingEdgeSpace) ? total_steps
+                                                                               : 0);
+    all_steps_valid_region_sizes_to_split.resize(diagnostic_mode ? total_smc_steps : 0);
+    all_steps_valid_split_region_sizes.resize(diagnostic_mode ? total_smc_steps : 0);
+
+    // Store size at every step but last one if needed
+    int plan_dval_list_size = (diagnostic_mode & !split_district_only) ? total_steps - 1 : 0;
+    if (!splitting_all_the_way)
+        plan_dval_list_size++;
+
+    region_sizes_mat_list.reserve(plan_dval_list_size);
+
+    // If diagnostic mode track vertex region ids from every round
+    if (diagnostic_mode) {
+        // The number of regions starts at 1
+        int curr_num_regions = initial_num_regions;
+        for (size_t i = 0; i < total_steps; i++) {
+            all_steps_plan_region_ids_list.emplace_back(V, nsims);
+            // Create V by nsims matrix for the plan
+            // This is a vector where every entry is a V by nsims Rcpp::IntegerMatrix
+
+            // increase number of regions by 1 if that step is an smc one
+            if (!merge_split_step_vec.at(i))
+                curr_num_regions++;
+
+            // If not doing district only splits, and its not the final one or
+            // we're only doing partial plans then make size matrix
+            if (!split_district_only && (i < total_steps - 1 || !splitting_all_the_way)) {
+                // This is number of regions by nsims
+                region_sizes_mat_list.emplace_back(curr_num_regions, nsims);
+            }
+        }
+    }
+}
+
+void SMCDiagnostics::add_full_step_diagnostics(
+    int const total_steps, bool const splitting_all_the_way, int const step_num,
+    int const merge_split_step_num, int const smc_step_num, bool const is_smc_step,
+    SamplingSpace const sampling_space, RcppThread::ThreadPool &pool,
+    PlanEnsemble &plan_ensemble, PlanEnsemble &new_plans_ensemble,
+    SplittingSchedule const &splitting_schedule) {
+    // if(diagnostic_mode){ // record if in diagnostic mode and generalized splits
+    //  reorder the plans by oldest split if either we'vxe done any merge split or
+    //  its generalized region splits
+
+    bool const split_district_only =
+        splitting_schedule.schedule_type == SplittingSizeScheduleType::DistrictOnlySMD;
+    int const nsims = plan_ensemble.nsims;
+
+    // if smc step update splitting step info
+    if (is_smc_step) {
+        int current_num_regions = plan_ensemble.plan_ptr_vec[0]->num_regions;
+        // save the acceptable split sizes
+        for (int region_size = 1;
+             region_size <= splitting_schedule.total_seats - current_num_regions + 2;
+             region_size++) {
+            if (splitting_schedule.valid_split_region_sizes[region_size]) {
+                all_steps_valid_split_region_sizes[smc_step_num].push_back(region_size);
+            }
+            if (splitting_schedule.valid_region_sizes_to_split[region_size]) {
+
+                all_steps_valid_region_sizes_to_split[smc_step_num].push_back(region_size);
+                ;
+            }
+        }
+    }
+
+    if (merge_split_step_num > 0 || !split_district_only) {
+        reorder_all_plans(pool, plan_ensemble.plan_ptr_vec, new_plans_ensemble.plan_ptr_vec);
+    }
+
+    // Copy the vertex plan matrix
+    all_steps_plan_region_ids_list.at(step_num) = plan_ensemble.get_R_plans_matrix();
+
+    // store the
+    if (!(sampling_space == SamplingSpace::GraphSpace)) {
+        all_steps_forests_adj_list.at(step_num).reserve(nsims);
+        for (size_t i = 0; i < nsims; i++) {
+            // add the forests from each plan at this step
+            all_steps_forests_adj_list.at(step_num).push_back(
+                plan_ensemble.plan_ptr_vec[i]->get_forest_adj());
+        }
+        if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
+            for (size_t i = 0; i < nsims; i++) {
+                // add the forests from each plan at this step
+                all_steps_linking_edge_list.at(step_num).push_back(
+                    plan_ensemble.plan_ptr_vec[i]->get_linking_edges());
+            }
+        }
+    }
+
+    // Copy the sizes if neccesary
+    if (!split_district_only && (step_num < total_steps - 1 || !splitting_all_the_way)) {
+        region_sizes_mat_list.at(step_num) = plan_ensemble.get_R_sizes_matrix(pool);
+    }
+
+    return;
+}
+
+void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
+    // make parent index 1 indexed in place
+    std::transform(parent_index_mat.begin(), parent_index_mat.end(), parent_index_mat.begin(),
+                   [](int x) { return x + 1; });
+
+    // add granular time info 
+    Rcpp::List granular_timing;
+    if constexpr (perf_config::track_granular_times){
+        granular_timing = Rcpp::List::create(
+            Rcpp::_["granular_time_tracked"] = true,
+            Rcpp::_["wilson_call_times"] = wilson_call_times,
+            Rcpp::_["wilson_backfill_call_times"] = wilson_backfill_call_times,
+            Rcpp::_["multidistrict_selection_times"] = md_selection_times,
+            Rcpp::_["plan_updating_times"] = plan_updating_times,
+            Rcpp::_["hard_constraint_split_times"] = hard_constraint_split_times,
+            Rcpp::_["total_plan_smc_split_times"] = total_plan_smc_split_times,
+            Rcpp::_["get_valid_smc_pairs_times"] = get_valid_smc_pairs_times,
+            Rcpp::_["getting_valid_mergepairs_times"] = get_valid_mergepairs_times,
+            Rcpp::_["computing_plan_scores_times"] = plan_scores_times,
+            Rcpp::_["computing_region_scores_times"] = region_scores_times,
+            Rcpp::_["computing_spanning_tree_count_times"] = log_tau_times,   
+            Rcpp::_["computing_retro_splitting_prob_times"] = retro_splitting_prob_times,     
+            Rcpp::_["total_plan_smc_weight_times"] = total_plan_smc_weight_times,
+            Rcpp::_["selecting_merge_pair"] = selecting_merge_pair_times,
+            Rcpp::_["eff_boundary_times"] = eff_boundary_times,
+            Rcpp::_["total_plan_mcmc_times"] = total_plan_mcmc_times
+        );
+
+    }else{
+        granular_timing = Rcpp::List::create(
+            Rcpp::_["granular_time_tracked"] = false
+        );
+    }
+
+    // optional add special timing 
+    if constexpr (perf_config::special_timing){
+        Rcpp::List special_timing_list = Rcpp::List::create(
+        );
+
+        granular_timing["special_timing_list"] = special_timing_list;
+    }
+    
+    out["acceptance_rates"] = acceptance_rates;
+    out["draw_tries_mat"] = draw_tries_mat;
+    out["parent_index"] = parent_index_mat;
+    out["parent_unsuccessful_tries_mat"] = parent_unsuccessful_tries_mat;
+    out["step_n_eff"] = n_eff;
+    out["nunique_parent_indices"] = nunique_parents;
+    out["nunique_plans"] = nunique_plans;
+    out["tree_sizes"] = tree_sizes_mat;
+    out["successful_tree_sizes"] = successful_tree_sizes_mat;
+    out["log_weight_stddev"] = log_wgt_stddevs;
+    out["cut_k_vals"] = cut_k_values;
+    out["log_incremental_weights_mat"] = log_incremental_weights_mat;
+    out["ms_step_counts"] = num_merge_split_attempts_vec;
+    out["merge_split_success_mat"] = merge_split_successes_mat;
+    out["tries_before_extra_particle"] = tries_before_extra_particle;
+    out["smc_step_parameter_estimation_times"] = smc_step_parameter_estimation_times;
+    out["smc_split_times"] = smc_split_times;
+    out["smc_weight_times"] = smc_weight_times;
+    out["ms_step_parameter_estimation_times"] = ms_step_parameter_estimation_times;
+    out["ms_step_times"] = ms_step_times;
+    out["granular_times"] = granular_timing;
+    out["region_ids_mat_list"] = all_steps_plan_region_ids_list;
+    out["region_seats_mat_list"] = region_sizes_mat_list;
+    out["forest_adjs_list"] = all_steps_forests_adj_list;
+    out["linking_edges_list"] = all_steps_linking_edge_list;
+    out["valid_split_region_sizes_list"] = all_steps_valid_split_region_sizes;
+    out["valid_region_sizes_to_split_list"] = all_steps_valid_region_sizes_to_split;
+
+
+    return;
+}
+
+
+
 /*
  *  Use SMC Sampler method to split a multidistrict in all of the plans
  *
@@ -748,6 +1094,230 @@ void run_merge_split_step_on_all_plans(
             smc_diagnostics.plan_updating_times[step_num] += granular_weight_times[thread_id].plan_copying;
         }
     }
+
+    return;
+}
+
+
+
+
+// NEED TO UPDATE THIS IS OLD DOCUMENTATION FOR GRAPH STUFF
+// Computes log unnormalized weights for vector of plans
+//
+// Using the procedure outlined in <PAPER HERE> this function computes the log
+// incremental weights and the unnormalized weights for a vector of plans (which
+// may or may not be the same depending on the parameters).
+//
+// @title Compute Log Unnormalized Weights
+//
+// @param pool A threadpool for multithreading
+// @param g A graph (adjacency list) passed by reference
+// @param plans_ptr_vec A vector of plans to compute the log unnormalized weights
+// of
+// @param split_district_only whether or not to compute the weights under
+// the district only split scheme or not. If `split_district_only` is true
+// then uses optimal weights from one-district split scheme.
+// @param log_incremental_weights A vector of the log incremental weights
+// computed for the plans. The value of `log_incremental_weights[i]` is
+// the log incremental weight for `plans_ptr_vec[i]`
+// @param unnormalized_sampling_weights A vector of the unnormalized sampling
+// weights to be used with sampling the `plans_ptr_vec` in the next iteration of the
+// algorithm. Depending on the other hyperparameters this may or may not be the
+// same as `exp(log_incremental_weights)`
+// @param target Target population of a single district
+// @param pop_temper <DETAILS NEEDED>
+//
+// @details Modifications
+//    - The `log_incremental_weights` is updated to contain the incremental
+//    weights of the plans
+//    - The `unnormalized_sampling_weights` is updated to contain the unnormalized
+//    sampling weights of the plans for the next round
+void compute_all_plans_log_optimal_incremental_weights(
+    RcppThread::ThreadPool &pool, const MapParams &map_params,
+    const SplittingSchedule &splitting_schedule, SamplingSpace const sampling_space,
+    std::vector<ScoringFunction> const &scoring_functions, double rho,
+    double const whole_map_compactness_term, std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
+    std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
+    bool compute_log_splitting_prob, 
+    double const multidistrict_selection_alpha,
+    bool is_final_plans, 
+    arma::subview_col<double> log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
+    SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
+    int verbosity) {
+    const int nsims = static_cast<int>(plans_ptr_vec.size());
+    const int check_int = 50; // check for interrupts every _ iterations
+
+    int const num_threads = get_num_threads(pool);
+    // thread safe id counter
+    static std::atomic<int> global_generation_counter{0};
+    int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
+    std::atomic<int> thread_id_counter{0};
+    std::vector<std::atomic<int>> active_users(
+        perf_config::check_threadpool_integrity ? num_threads : 0);
+
+    // now make the vectors of important variables to be used by threads
+    std::vector<USTSampler> ust_samplers_vec;
+    ust_samplers_vec.reserve(num_threads);
+    std::vector<PlanMultigraph> plan_multigraphs_vec;
+    plan_multigraphs_vec.reserve(num_threads);
+    for (size_t i = 0; i < num_threads; i++) {
+        ust_samplers_vec.emplace_back(map_params, splitting_schedule);
+        plan_multigraphs_vec.emplace_back(map_params,
+                                          sampling_space == SamplingSpace::LinkingEdgeSpace);
+    }
+    std::vector<GranularWeightTimes> granular_weight_times(num_threads);
+
+    RcppThread::ProgressBar bar(nsims, 1);
+    // Parallel thread pool where all objects in memory shared by default
+    pool.parallelFor(0, nsims, [&](int i) {
+        static thread_local int thread_generation_counter = -1;
+        static thread_local int thread_id = -1;
+        // check if the thread id was generated this function call
+        if (thread_generation_counter != generation) {
+            // if not then give it a new id
+            thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
+            thread_generation_counter = generation;
+        }
+        if (thread_id < 0 || thread_id >= num_threads) {
+            std::ostringstream oss;
+            oss << "In `run_merge_split_step_on_all_plans` Thread id broke, thread id is " << thread_id
+                              << " but num threads is  " << num_threads << std::endl;
+            throw std::runtime_error(oss.str());
+        }
+        // UNCOMMENT FOR THREADPOOL CHECKING
+        // std::unique_ptr<ActiveUserGuard> active_guard;
+        // if constexpr (perf_config::check_threadpool_integrity) {
+        //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
+        // }
+
+        auto total_weight_time = maybe_now(); // optional timing 
+
+
+        if (cache_ensemble.using_caching) {
+            log_incremental_weights[i] = compute_log_optimal_incremental_weights(
+                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+                ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
+                scoring_functions[thread_id], rho, whole_map_compactness_term,
+                compute_log_splitting_prob, multidistrict_selection_alpha,
+                is_final_plans, cache_ensemble.using_caching,
+                cache_ensemble.weight_cache_ptr_vec[i].get(), 
+                granular_weight_times[thread_id]);
+        } else {
+            log_incremental_weights[i] = compute_log_optimal_incremental_weights(
+                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+                ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
+                scoring_functions[thread_id], rho, whole_map_compactness_term,
+                compute_log_splitting_prob, multidistrict_selection_alpha,
+                is_final_plans, cache_ensemble.using_caching,
+                nullptr, granular_weight_times[thread_id]);
+        }
+
+        
+
+        if constexpr (perf_config::track_granular_times){
+            add_elapsed(
+                smc_diagnostics.total_plan_smc_weight_times(i, smc_step_num), 
+                total_weight_time
+            ); // optional timing 
+        }
+        
+
+        if (verbosity >= 3) {
+            ++bar;
+        }
+
+        RcppThread::checkUserInterrupt(i % check_int == 0);
+
+    });
+
+    // Wait for all the threads to finish
+    pool.wait();
+
+    // add granular time if that's being tracked 
+    if constexpr (perf_config::track_granular_times){
+        for (size_t thread_id = 0; thread_id < num_threads; thread_id++)
+        {
+            smc_diagnostics.get_valid_smc_pairs_times[smc_step_num] += granular_weight_times[thread_id].get_valid_pairs;
+            smc_diagnostics.plan_scores_times[step_num] += granular_weight_times[thread_id].plan_scores;
+            smc_diagnostics.region_scores_times[step_num] += granular_weight_times[thread_id].region_scores;
+            smc_diagnostics.log_tau_times[step_num] += granular_weight_times[thread_id].tau_terms;
+        }
+    }
+
+    return;
+}
+
+
+void compute_all_plans_log_simple_incremental_weights(
+    RcppThread::ThreadPool &pool, const MapParams &map_params,
+    const SplittingSchedule &splitting_schedule, SamplingSpace const sampling_space,
+    std::vector<ScoringFunction> const &scoring_functions, double rho,
+    std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
+    std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
+    bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
+    bool is_final_plans,
+    arma::subview_col<double> log_incremental_weights, int verbosity) {
+    int const nsims = (int)plans_ptr_vec.size();
+    const int check_int = 50; // check for interrupts every _ iterations
+
+    int const num_threads = get_num_threads(pool);
+    // thread safe id counter
+    static std::atomic<int> global_generation_counter{0};
+    int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
+    std::atomic<int> thread_id_counter{0};
+    std::vector<std::atomic<int>> active_users(
+        perf_config::check_threadpool_integrity ? num_threads : 0);
+    // now make the vectors of important variables to be used by threads
+    std::vector<USTSampler> ust_samplers_vec;
+    ust_samplers_vec.reserve(num_threads);
+    std::vector<PlanMultigraph> plan_multigraphs_vec;
+    plan_multigraphs_vec.reserve(num_threads);
+    for (size_t i = 0; i < num_threads; i++) {
+        ust_samplers_vec.emplace_back(map_params, splitting_schedule);
+        plan_multigraphs_vec.emplace_back(map_params,
+                                          sampling_space == SamplingSpace::LinkingEdgeSpace);
+    }
+
+    RcppThread::ProgressBar bar(nsims, 1);
+    // Parallel thread pool where all objects in memory shared by default
+    pool.parallelFor(0, nsims, [&](int i) {
+        static thread_local int thread_generation_counter = -1;
+        static thread_local int thread_id = -1;
+        // check if the thread id was generated this function call
+        if (thread_generation_counter != generation) {
+            // if not then give it a new id
+            thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
+            thread_generation_counter = generation;
+        }
+        if (thread_id < 0 || thread_id >= num_threads) {
+            std::ostringstream oss;
+            oss << "In `run_merge_split_step_on_all_plans` Thread id broke, thread id is " << thread_id
+                              << " but num threads is  " << num_threads << std::endl;
+            throw std::runtime_error(oss.str());
+        }
+        // UNCOMMENT FOR THREADPOOL CHECKING
+        // std::unique_ptr<ActiveUserGuard> active_guard;
+        // if constexpr (perf_config::check_threadpool_integrity) {
+        //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
+        // }
+
+        double log_incr_weight = compute_simple_log_incremental_weight(
+            *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+            ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
+            scoring_functions[thread_id], rho, compute_log_splitting_prob, multidistrict_selection_alpha,
+            is_final_plans);
+
+        log_incremental_weights[i] = log_incr_weight;
+
+        if (verbosity >= 3) {
+            ++bar;
+        }
+
+        RcppThread::checkUserInterrupt(i % check_int == 0);
+    });
+
+    // Wait for all the threads to finish
+    pool.wait();
 
     return;
 }
