@@ -63,6 +63,78 @@ redist_ci <- function(plans, x, district = 1L, conf = 0.9, by_chain = FALSE) {
     }
 }
 
+#' Get the ancestor matrix used by the SMC variance estimator
+#'
+#' Entry `[i, j]` is the index of the ancestor of particle `i`, traced back to
+#' the generation corresponding to lag `j`. Particles sharing an ancestor form
+#' the groups used by the Lee-Whiteley / Olsson-Douc estimator.
+#'
+#' This is reconstructed from `parent_index_mat`, which records the parent of
+#' every particle at every SMC step. The C++ code used to build the equivalent
+#' matrix directly via
+#'
+#'     ancestors[i, j] <- if (dist_ctr <= lags[j]) i else ancestors[parent, j]
+#'
+#' so composing `parent_index_mat` lookups backwards from the final step
+#' reproduces it exactly. Older `redist_plans` objects that predate
+#' `parent_index_mat` fall back to the stored `ancestors` matrix.
+#'
+#' @param plans a `redist_plans` object from `redist_smc()`
+#' @returns an integer matrix with one row per particle and one column per lag
+#' @noRd
+get_smc_ancestors <- function(plans) {
+    parent_index_mat <- attr(plans, "internal_diagnostics")[[1]]$parent_index_mat
+
+    if (is.null(parent_index_mat)) {
+        # Pre-parent_index_mat objects; use the ancestor matrix they stored.
+        ancestors <- attr(plans, "diagnostics")[[1]]$ancestors
+        if (is.null(ancestors)) {
+            cli::cli_abort("{.arg plans} has neither {.field parent_index_mat} nor
+                            {.field ancestors} diagnostics, so standard errors
+                            cannot be computed.")
+        }
+        return(ancestors)
+    }
+
+    n <- nrow(parent_index_mat)
+    n_cols <- ncol(parent_index_mat)
+    ndists <- attr(plans, "ndists")
+
+    # When plans were resampled an extra column holding the resampling indices
+    # was appended, so only the remaining columns are SMC steps.
+    resampled <- isTRUE(attr(plans, "resampled"))
+    n_smc_steps <- n_cols - resampled
+    # each SMC step splits one region in two, so the run started here
+    init_num_regions <- ndists - n_smc_steps
+    lags <- 1 + unique(round((ndists - 1)^0.8 * seq(0, 0.7, length.out = 4)^0.9))
+
+    ancestors <- matrix(0L, nrow = n, ncol = length(lags))
+    for (j in seq_along(lags)) {
+        # `dist_ctr` at SMC step s (0-indexed) is init_num_regions + s, so the
+        # recursion resets to the identity for every step with
+        # init_num_regions + s <= lags[j]. Only the last such reset matters.
+        reset_step <- lags[j] - init_num_regions
+        # column s + 1 holds SMC step s, so compose from the last SMC column
+        # back down to the first column after the reset.
+        first_col <- max(1L, reset_step + 2L)
+
+        anc <- seq_len(n)
+        # Resampling happens after every SMC step, so it always applies,
+        # even for lags that reset past the end of the run.
+        if (resampled) {
+            anc <- parent_index_mat[anc, n_cols]
+        }
+        if (first_col <= n_smc_steps) {
+            for (s in seq(n_smc_steps, first_col)) {
+                anc <- parent_index_mat[anc, s]
+            }
+        }
+        ancestors[, j] <- anc
+    }
+
+    ancestors
+}
+
 #' @describeIn redist_ci Compute confidence intervals for SMC output.
 #' @export
 redist_smc_ci <- function(plans, x, district = 1L, conf = 0.9, by_chain = FALSE) {
@@ -103,7 +175,8 @@ redist_smc_ci <- function(plans, x, district = 1L, conf = 0.9, by_chain = FALSE)
         # OLSSON, J. and DOUC, R. (2019). Numerically stable online estimation of variance in particle filters. Bernoulli
         # 25 1504–1535.
         # LEE, A. and WHITELEY, N. (2018). Variance estimation in the particle filter. Biometrika 105 609–625.
-        std_errs <- apply(attr(plans, "diagnostics")[[1]]$ancestors, 2, function(anc) {
+        ancestors <- get_smc_ancestors(plans)
+        std_errs <- apply(ancestors, 2, function(anc) {
             sum_inner <- tapply(x - est, anc, sum)^2
             sqrt(mean(sum_inner[as.character(anc)]) / N)
         })

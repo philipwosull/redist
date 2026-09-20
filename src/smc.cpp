@@ -417,10 +417,6 @@ void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
  *  @param n_unique_parent_indices The number of unique parent indices, ie the
  *  number of previous plans that had at least one descendant amongst the new
  *  plans. This is equal to `unique(parent_index_vec)`
- *  @param ancestors Parameter from older `smc.cpp` code. I DON'T UNDERSTAND
- *  WHAT IT IS DOING
- *  @param lags Parameter from older `smc.cpp` code. I DON'T UNDERSTAND
- *  WHAT IT IS DOING
  *  @param split_district_only Whether or not to only allow for single district
  *  splits. If set to `true` will only attempt to split off one district at a
  *  time
@@ -451,8 +447,6 @@ void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
  *     - `n_unique_parent_indices` and `n_unique_original_ancestors` are updated
  *     with the unique number of parents and original ancestors for all the new
  *     plans respectively
- *     - `ancestors` is updated to something. THIS IS FROM ORIGINAL SMC CODE,
- *     I DO NOT KNOW WHAT IT MEANS
  *
  */
 void run_smc_step(const MapParams &map_params, SplittingSchedule const &splitting_schedule,
@@ -463,7 +457,7 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
                   std::vector<std::unique_ptr<TreeSplitter>> &tree_splitters,
                   const std::vector<double> &normalized_cumulative_weights,
                   SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
-                  bool const is_final_split, arma::umat &ancestors, const std::vector<int> &lags,
+                  bool const is_final_split,
                   bool const estimated_unbiased_normalizing_constant,
                   RcppThread::ThreadPool &pool, int verbosity, int diagnostic_level,
                   int const max_split_tries, double const multidistrict_selection_alpha) {
@@ -472,11 +466,6 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
     const int M = old_plan_ensemble->nsims;
     bool const smd_split_district_only =
         splitting_schedule.schedule_type == SplittingSizeScheduleType::DistrictOnlySMD;
-
-    // PREVIOUS SMC CODE I DONT KNOW WHAT IT DOES
-    const int dist_ctr = old_plan_ensemble->plan_ptr_vec.at(0)->num_regions;
-    const int n_lags = lags.size();
-    arma::umat ancestors_new(M, n_lags); // lags/ancestor thing
 
     // Because of multithreading we have to add specific checks for if the user
     // wants to quit the program
@@ -745,15 +734,6 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
             }
         }
 
-        // ORIGINAL SMC CODE I DONT KNOW WHAT THIS DOES
-        // save ancestors/lags
-        for (int j = 0; j < n_lags; j++) {
-            if (dist_ctr <= lags[j]) {
-                ancestors_new(i, j) = i;
-            } else {
-                ancestors_new(i, j) = ancestors(idx, j);
-            }
-        }
         if constexpr (perf_config::track_granular_times){
             // set the time spent successfully sampling a plan
             add_elapsed(
@@ -929,9 +909,6 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
               << "% of previous step's plans survived," << " and there are now "
               << smc_diagnostics.nunique_plans[step_num] << " unique plans." << std::endl;
     }
-
-    // ORIGINAL SMC CODE I DONT KNOW WHAT IT DOES
-    ancestors = ancestors_new;
 }
 
 void run_merge_split_step_on_all_plans(
@@ -1443,9 +1420,6 @@ Rcpp::List run_redist_smc(
         REprintf("RNG States created!\n");
 
     // unpack control params
-    // lags thing (copied from original smc code, don't understand what its doing)
-    std::vector<int> lags = Rcpp::as<std::vector<int>>(control["lags"]);
-    arma::umat ancestors(nsims, lags.size(), arma::fill::zeros);
     // weight type
     std::string wgt_type = Rcpp::as<std::string>(control["weight_type"]);
     // whether or not to cache the weights
@@ -1784,7 +1758,7 @@ Rcpp::List run_redist_smc(
                                  rng_states, sampling_space, plan_ensemble_ptr,
                                  dummy_plan_ensemble_ptr, tree_splitter_ptrs_vec,
                                  normalized_cumulative_weights, smc_diagnostics, smc_step_num,
-                                 step_num, is_final_splitting_step, ancestors, lags, 
+                                 step_num, is_final_splitting_step,
                                  estimated_unbiased_normalizing_constant, pool,
                                  verbosity, diagnostic_mode ? 3 : 0, max_split_tries,
                                  multidistrict_selection_alpha);
@@ -2167,7 +2141,7 @@ Rcpp::List run_redist_smc(
                          : Rcpp::IntegerMatrix(1, 1), // saves sizes matrix if needed
         Rcpp::_["region_pops"] = plan_ensemble_ptr->get_region_pops_matrix(pool),
         Rcpp::_["plan_seats_saved"] = plan_sizes_saved, Rcpp::_["log_weights"] = log_weights,
-        Rcpp::_["ancestors"] = ancestors, Rcpp::_["step_types"] = step_types,
+        Rcpp::_["step_types"] = step_types,
         Rcpp::_["merge_split_steps"] = merge_split_step_vec,
         Rcpp::_["log_blank_map_target_density"] = log_blank_map_target_density,
         Rcpp::_["multidistrict_selection_alpha"] = multidistrict_selection_alpha 
