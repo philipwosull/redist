@@ -99,7 +99,7 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
         if (admin_unit_visited[v_admin_unit]) {
             // sanity check can delete later
             if (!visited[v])
-                throw Rcpp::exception("Should have visitied this vertex already!\n");
+                throw std::runtime_error("Should have visitied this vertex already!\n");
             continue;
         }
 
@@ -123,7 +123,7 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
             // sanity check delete later
             if (u_admin_unit != v_admin_unit) {
                 REprintf("v county %d, u county %d", v_admin_unit, (int)admin_units(u) - 1);
-                throw Rcpp::exception("County forest went wrong!!\n");
+                throw std::runtime_error("County forest went wrong!!\n");
             }
 
             // see if any children in the same county
@@ -841,7 +841,7 @@ double MinGroupFracConstraint::compute_raw_merged_plan_constraint_score(
 
     // if just 1 region we just sum the two
     if (plan.num_regions == 1) {
-        throw Rcpp::exception("Calling MinGroupFracConstraint Merge on a 1 region plan!\n");
+        throw std::runtime_error("Calling MinGroupFracConstraint Merge on a 1 region plan!\n");
         return 0.0;
     } else if (plan.num_regions == 2) {
         double pops_above = 0.0;

@@ -18,7 +18,7 @@ ForestPlan::ForestPlan(int const ndists, int const num_regions, const std::vecto
            this_plan_region_pops, this_plan_order_added, this_plan_forest_edge_bits) {
 
     if (initial_forest_adj_list.size() > 1) {
-        throw Rcpp::exception("Input Forest list not supported right now\n");
+        throw std::runtime_error("Input Forest list not supported right now\n");
     } else {
         // else just build a forest at random
         for (size_t region_id = 0; region_id < num_regions; region_id++) {

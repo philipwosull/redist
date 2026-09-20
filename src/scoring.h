@@ -764,7 +764,7 @@ class ValidDistrictsConstraint : public PlanConstraint {
                                       IntPlanAttribute const &region_pops) const override;
     double compute_raw_merged_plan_constraint_score(const Plan &plan, int const region1_id,
                                                     int const region2_id) const override {
-        throw Rcpp::exception("ValidDistrictsConstraint Merged version Not implemented yet!\n");
+        throw std::runtime_error("ValidDistrictsConstraint Merged version Not implemented yet!\n");
     };
 };
 

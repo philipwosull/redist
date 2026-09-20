@@ -37,15 +37,15 @@ class SplittingSchedule {
               // vector where index i is true iff i seats is a district
               std::vector<bool> is_district_vec(total_seats + 1, false);
               if (ndists > total_seats) {
-                  throw Rcpp::exception("The number of distrcts must be less than or equal to "
+                  throw std::runtime_error("The number of distrcts must be less than or equal to "
                                         "the total number of seats!\n");
               } else if (ndists != total_seats) {
                   for (auto const &a_size : district_seat_sizes) {
                       if (a_size <= 0)
-                          throw Rcpp::exception(
+                          throw std::runtime_error(
                               "District Seat Sizes must be strictly positive!\n");
                       if (a_size >= total_seats)
-                          throw Rcpp::exception(
+                          throw std::runtime_error(
                               "District Seat Sizes must be less than total seats!\n");
                       // mark this as a district size
                       is_district_vec[a_size] = true;
@@ -188,7 +188,7 @@ class PureMSSplittingSchedule : public SplittingSchedule {
 
     void set_potential_cut_sizes_for_each_valid_size(int split_num,
                                                      int presplit_num_regions) override {
-        throw Rcpp::exception("Dont call this method for pure MS!");
+        throw std::runtime_error("Dont call this method for pure MS!");
     };
 };
 

@@ -2029,7 +2029,7 @@ NaiveTopKSplitter::select_edge_to_cut(RNGState &rng_state, std::vector<EdgeCut> 
     int num_valid_edges = static_cast<int>(valid_edges.size());
     // if(num_valid_edges > k_param){
     //     REprintf("k was %d but found %d valid edges\n", k_param, num_valid_edges);
-    //     // throw Rcpp::exception("K not big enough!\n");
+    //     // throw std::runtime_error("K not big enough!\n");
     // }
 
     int idx = rng_state.r_int(k_param);

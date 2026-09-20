@@ -325,7 +325,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
     if (!std::isfinite(incremental_weight)) {
         plan.Rprint(true);
         // plan_multigraph.Rprint();
-        throw Rcpp::exception(
+        throw std::runtime_error(
             "One of the plan incremental weights is not finite!"
             "Try checking if constraint strength is too large and causing overflow errors.\n");
     }
@@ -623,7 +623,7 @@ double compute_log_optimal_incremental_weights(
 
     if (!std::isfinite(incremental_weight)) {
         plan.Rprint(true);
-        throw Rcpp::exception(
+        throw std::runtime_error(
             "One of the plan incremental weights is not finite!"
             "Try checking if constraint strength is too large and causing overflow errors.\n");
     }

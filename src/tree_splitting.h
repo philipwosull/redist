@@ -2,7 +2,6 @@
 #ifndef TREE_SPLITTING_H
 #define TREE_SPLITTING_H
 
-#include <RcppArmadillo.h>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -127,12 +126,12 @@ class TreeSplitter {
 
     // used to update the k parameter for top k splitter
     virtual void update_single_int_param(int int_param) {
-        throw Rcpp::exception("Update single int param not implemented!\n");
+        throw std::runtime_error("Update single int param not implemented!\n");
     };
 
     // used to get the k parameter for top k splitter
     virtual int get_single_int_param() const {
-        throw Rcpp::exception("Update single int param not implemented!\n");
+        throw std::runtime_error("Update single int param not implemented!\n");
         return -1;
     };
 
@@ -145,7 +144,7 @@ class TreeSplitter {
     ) const;
 
     virtual double compute_unnormalized_edge_cut_weight(EdgeCut const &edge_cut) const {
-        throw Rcpp::exception("Not implemented for this class!");
+        throw std::runtime_error("Not implemented for this class!");
     };
 };
 
@@ -170,7 +169,7 @@ class NaiveTopKSplitter : public TreeSplitter {
                                                 bool save_selection_prob) const override;
 
     double get_log_selection_prob(std::vector<EdgeCut> &valid_edges, int idx) const override {
-        throw Rcpp::exception("No log selection prob implemented for naive k!\n");
+        throw std::runtime_error("No log selection prob implemented for naive k!\n");
     }
 };
 
@@ -210,7 +209,7 @@ class ExpoWeightedSplitter : public TreeSplitter {
         double alpha, double target)
         : TreeSplitter(map_graph), alpha(alpha), target(target) {
         if (alpha < 0.0)
-            throw Rcpp::exception("Alpha must be greater than zero!");
+            throw std::runtime_error("Alpha must be greater than zero!");
     }
 
     double alpha;
@@ -236,7 +235,7 @@ class ExpoWeightedSmallerDevSplitter : public TreeSplitter {
         double alpha, double target)
         : TreeSplitter(map_graph), alpha(alpha), target(target) {
         if (alpha < 0.0)
-            throw Rcpp::exception("Alpha must be greater than zero!");
+            throw std::runtime_error("Alpha must be greater than zero!");
     }
 
     double alpha;
@@ -279,7 +278,7 @@ class ExperimentalSplitter : public TreeSplitter {
         double epsilon, double target)
         : TreeSplitter(map_graph), epsilon(epsilon), target(target) {
         if (epsilon < 0.0)
-            throw Rcpp::exception("Epsilon must be greater than zero!");
+            throw std::runtime_error("Epsilon must be greater than zero!");
     }
 
     double epsilon;
@@ -306,7 +305,7 @@ class ConstraintSplitter : public TreeSplitter {
           region_ids(underlying_plans_vec, 0, V), region_sizes(underlying_sizes_vec, 0, ndists),
           region_pops(underlying_pops_vec, 0, ndists), vertex_queue(V), dummy_forest(V) {
         if (ndists < 0.0)
-            throw Rcpp::exception("Ndists must be greater than zero!");
+            throw std::runtime_error("Ndists must be greater than zero!");
     }
 
     int const V;

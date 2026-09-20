@@ -4,7 +4,6 @@
 
 #include "advanced_types.h"
 
-#include <RcppArmadillo.h>
 #include <string>
 #include <tuple>
 #include <utility>

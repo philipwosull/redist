@@ -213,22 +213,22 @@ DistrictOnlyMMDSplittingSchedule::DistrictOnlyMMDSplittingSchedule(
     int cur_index = 0;
     for (int i = smallest_district_size; i < largest_district_size; i++) {
         if (district_seat_sizes[cur_index] != i) {
-            throw Rcpp::exception("For MMD only ranges of sizes are supported!\n");
+            throw std::runtime_error("For MMD only ranges of sizes are supported!\n");
         }
         cur_index++;
     }
     if (largest_district_size - smallest_district_size + 1 != district_seat_sizes.size()) {
-        throw Rcpp::exception("For MMD only ranges of sizes are supported!\n");
+        throw std::runtime_error("For MMD only ranges of sizes are supported!\n");
     }
 
     // For a range it must be smallest_district_size <= total_seats/ndists <=
     // largest_district_size
     if (smallest_district_size > total_seats / static_cast<double>(ndists)) {
-        throw Rcpp::exception("It is not possible to split this map with the given district "
+        throw std::runtime_error("It is not possible to split this map with the given district "
                               "sizes! The district sizes are too large\n");
     }
     if (largest_district_size < total_seats / static_cast<double>(ndists)) {
-        throw Rcpp::exception("It is not possible to split this map with the given district "
+        throw std::runtime_error("It is not possible to split this map with the given district "
                               "sizes! There's not enough regions\n");
     }
 }
@@ -265,7 +265,7 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
         if (presplit_biggest_possible_size <= 0 ||
             presplit_biggest_possible_size >= total_seats) {
             REprintf("WE'RE BREAKING FREE!\n");
-            throw Rcpp::exception(
+            throw std::runtime_error(
                 "We got MMD remainder size issue with the presplit biggest possible size!\n");
         }
     }
@@ -288,7 +288,7 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
         presplit_smallest_possible_size++;
         if (presplit_smallest_possible_size >= total_seats) {
             REprintf("WE'RE BREAKING FREE!\n");
-            throw Rcpp::exception("We got MMD remainder size issue!\n");
+            throw std::runtime_error("We got MMD remainder size issue!\n");
         }
     }
     // REprintf("Smallest Remainder Size: %d\n", presplit_smallest_possible_size);
@@ -299,7 +299,7 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
         REprintf("BIG PROBLEM: Biggest remainder size is %d but that is less than largest "
                  "district %d!\n",
                  presplit_biggest_possible_size, largest_district_size);
-        throw Rcpp::exception("Error in MMD Split district only!!\n");
+        throw std::runtime_error("Error in MMD Split district only!!\n");
     }
 
     // reset all regions split and merge booleans
@@ -385,7 +385,7 @@ AnyRegionMMDSplittingSchedule::AnyRegionMMDSplittingSchedule(
     // possible to split this map.
     // For example: total_seats=6, ndists=4, district_seat_sizes = {2,3}
     if (total_seats / static_cast<double>(smallest_district_size) < ndists) {
-        throw Rcpp::exception("It is not possible to split this map with the given district "
+        throw std::runtime_error("It is not possible to split this map with the given district "
                               "sizes! There's not enough regions\n");
     }
 
@@ -461,7 +461,7 @@ AnyRegionMMDSplittingSchedule::AnyRegionMMDSplittingSchedule(
     }
     // If the whole map isn't reachable then stop
     if (!reachable_size[total_seats]) {
-        throw Rcpp::exception(
+        throw std::runtime_error(
             "It is not possible to split this map with the given district sizes!\n");
     }
     REprintf("All done!\n");
@@ -669,8 +669,8 @@ get_splitting_schedule(const int num_splits, const int ndists, const int total_s
                                                                district_seat_sizes);
     } else if (schedule_type == SplittingSizeScheduleType::CustomSizes) {
         Rprintf("Not implemented!");
-        throw Rcpp::exception("Schedule not impliemented yet!");
+        throw std::runtime_error("Schedule not impliemented yet!");
     } else {
-        throw Rcpp::exception("Schedule not implemented yet!");
+        throw std::runtime_error("Schedule not implemented yet!");
     }
 }

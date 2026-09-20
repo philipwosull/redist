@@ -5,12 +5,16 @@
  * Purpose: Functions for Merging Plans
  ********************************************************/
 
+// scoring.h pulls in RcppArmadillo (via map_calc.h). RcppArmadillo.h errors out
+// if <Rcpp.h> was included ahead of it, so it has to come before the headers
+// that include <Rcpp.h> directly (utils.h, random.h).
+#include "scoring.h"
+
 #include "merging.h"
 #include "tree_op.h"
 #include "wilson.h"
 #include "weight_caching.h"
 #include "utils.h"
-#include "scoring.h"
 #include "random.h"
 #include "base_plan_type.h"
 #include "splitting_schedule_types.h"
@@ -95,7 +99,7 @@ std::vector<double> get_adj_pair_unnormalized_weights(
         }
 
     } else {
-        throw Rcpp::exception("No valid adjacent pair sampler provided!");
+        throw std::runtime_error("No valid adjacent pair sampler provided!");
     }
     // Return weights
     return unnormalized_sampling_weights;
