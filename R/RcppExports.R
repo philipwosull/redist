@@ -125,7 +125,7 @@ pareto_dominated <- function(x) {
     .Call(`_redist_pareto_dominated`, x)
 }
 
-prec_cooccur <- function(m, idxs, ncores) {
+prec_cooccur <- function(m, idxs, ncores = 1L) {
     .Call(`_redist_prec_cooccur`, m, idxs, ncores)
 }
 
@@ -181,7 +181,7 @@ get_merged_log_number_linking_edges <- function(adj_list, counties, constraints,
     .Call(`_redist_get_merged_log_number_linking_edges`, adj_list, counties, constraints, ndists, nseats, num_regions, region_ids, region1_id, region2_id)
 }
 
-get_canonical_plan_labelling <- function(plans_mat, num_regions, ncores) {
+get_canonical_plan_labelling <- function(plans_mat, num_regions, ncores = 0L) {
     .Call(`_redist_get_canonical_plan_labelling`, plans_mat, num_regions, ncores)
 }
 

@@ -450,11 +450,6 @@ validate_population_vector <- function(V, pop_vector) {
 #'
 #' @param constr A [redist_constr()] object
 #' @param strength The strength of the constraint. Higher values mean a more restrictive constraint.
-#' @param only_districts Whether or not to apply the constraints to
-#' districts only. If constraints are only applied to districts then it will
-#' likely cause a drop in efficiency in the final round. If splitting plans all
-#' the way this does not affect the final target distribution. This is not relevant
-#' for constraints that penalize the entire plan instead of specific districts.
 #' @param only_nregions Whether or not to only apply entire-plan or region constraints
 #' when the plan has a particular number of regions. A value of `FALSE` means
 #' the constraint will applied to plans at every step.
@@ -1394,135 +1389,176 @@ add_constr_custom_plan <- function(
 #######################
 # generics
 
+# Human-readable description of each constraint type, keyed by the name used in
+# `add_to_constr()`. `unlist()` suffixes these when a type appears more than
+# once (e.g. "grp_pow1", "grp_pow2"), so they are matched with `startsWith()`.
+constr_type_labels <- c(
+    status_quo        = "A status quo constraint",
+    grp_pow           = "A (power-type) group share constraint",
+    grp_hinge         = "A (hinge-type) group share constraint",
+    grp_inv_hinge     = "An (inverse-hinge-type) group share constraint",
+    compet            = "A competitiveness constraint",
+    incumbency        = "An incumbency constraint",
+    splits            = "A splits constraint",
+    multisplits       = "A multisplits constraint",
+    total_splits      = "A total splits constraint",
+    plan_splits       = "A whole-plan splits constraint",
+    total_plan_splits = "A whole-plan total splits constraint",
+    plan_incumbency   = "A whole-plan incumbency constraint",
+    min_group_frac    = "A minimum group fraction constraint",
+    pop_dev           = "A population deviation constraint",
+    segregation       = "A dissimilarity segregation constraint",
+    edges_rem         = "An (edges-removed-type) compactness constraint",
+    log_st            = "A (log-spanning-tree-type) compactness constraint",
+    polsby            = "A (Polsby-Popper-type) compactness constraint",
+    fry_hold          = "A (Fryer-Holden-type) compactness constraint",
+    custom_plan       = "A custom plan constraint",
+    custom            = "A custom constraint"
+)
+
+# Constraints carrying large admin vectors, whose `str()` details are
+# suppressed to keep the printout readable.
+constr_skip_details <- c(
+    "splits", "multisplits", "total_splits",
+    "plan_splits", "total_plan_splits"
+)
+
+# Resolve an entry name from a `redist_constr` to its constraint type.
+# Longest names are tried first so that, e.g., "custom_plan" is not claimed by
+# "custom". Returns `NA_character_` for an unrecognized name.
+constr_type <- function(nm) {
+    types <- names(constr_type_labels)
+    types <- types[order(nchar(types), decreasing = TRUE)]
+    hit <- types[startsWith(nm, types)]
+    if (length(hit) == 0) NA_character_ else hit[1]
+}
+
+# Pluralize `unit` unless the only value listed is 1 ("1 seat", "2 seats",
+# "1 or 3 seats").
+pluralize_unit <- function(values, unit) {
+    if (length(values) == 1 && values == 1) unit else paste0(unit, "s")
+}
+
+# "1", "1 or 2", "1, 2, or 3", "1, 2, 3, 4, 5, or 2 more"
+commas_or <- function(x, trunc = 5) {
+    x <- as.character(x)
+    n <- length(x)
+    if (n == 0) {
+        return("none")
+    }
+    if (n > trunc) {
+        x <- c(x[seq_len(trunc)], paste0(n - trunc, " more"))
+        n <- trunc + 1L
+    }
+    if (n == 1) {
+        return(x)
+    }
+    paste0(paste(x[-n], collapse = ", "), if (n > 2) "," else "", " or ", x[n])
+}
+
+# Describe what a constraint is scored on, from the `nseats_to_score` and
+# `nregions_to_score` logical vectors built by
+# `get_base_region_constraint_list()` and `get_base_plan_constraint_list()`.
+# Plan-level constraints have no `nseats_to_score`.
+constr_scope_str <- function(cn) {
+    seats <- cn$nseats_to_score
+    nregions <- cn$nregions_to_score
+
+    if (is.null(seats)) {
+        target <- "the whole plan"
+    } else if (all(seats)) {
+        target <- "all regions"
+    } else if (!any(seats)) {
+        target <- "no regions"
+    } else if (identical(which(seats), 1L)) {
+        # a one-seat region is a district
+        target <- "districts only"
+    } else {
+        sizes <- which(seats)
+        target <- paste0(
+            "regions with ", commas_or(sizes), " ", pluralize_unit(sizes, "seat")
+        )
+    }
+
+    if (is.null(nregions) || all(nregions)) {
+        return(target)
+    }
+    counts <- which(nregions)
+    if (length(counts) == 0) {
+        return(paste0(target, ", but at no number of regions"))
+    }
+    paste0(
+        target, ", only when the plan has ", commas_or(counts), " ",
+        pluralize_unit(counts, "region")
+    )
+}
+
 #' Generic to print redist_constr
 #' @param x redist_constr
 #' @param header if FALSE, then suppress introduction / header line
 #' @param details if FALSE, then suppress the details of each constraint
 #' @param \dots additional arguments
 #' @method print redist_constr
-#' @return Prints to console and returns input redist_constr
+#' @return Invisibly returns the input `redist_constr`
 #' @export
 print.redist_constr <- function(x, header = TRUE, details = TRUE, ...) {
+    constr <- x
+
     if (header) {
         cli::cli_text("A {.cls redist_constr} with {length(x)} constraint{?s}")
     }
 
-    print_constr <- function(x) {
-        if (details) {
-            idx_strength <- which(names(x) == "strength")
-            str(x[-idx_strength], no.list = TRUE, comp.str = "   ", give.attr = FALSE)
+    # Reported in the bullet itself, so not repeated in the details.
+    summarised <- c(
+        "strength", "nregions_to_score", "nseats_to_score",
+        "hard_constraint", "hard_threshold"
+    )
+
+    print_constr <- function(cn) {
+        if (!details) {
+            return(invisible(NULL))
+        }
+        rest <- cn[!names(cn) %in% summarised]
+        if (length(rest) > 0) {
+            str(rest, no.list = TRUE, comp.str = "   ", give.attr = FALSE)
         }
     }
 
     x <- unlist(x, recursive = FALSE)
     for (nm in names(x)) {
-        if ("only_districts" %in% x[[nm]] && x[[nm]]$only_districts) {
-            score_str <- "districts only"
-        } else {
-            score_str <- "all regions"
-        }
+        cn <- x[[nm]]
+        score_str <- constr_scope_str(cn)
 
-        if ("hard_constraint" %in% x[[nm]] && x[[nm]]$hard_constraint) {
+        if (isTRUE(cn$hard_constraint)) {
             thresh_str <- sprintf(
                 " with a hard threshold of %.3f",
-                x[[nm]]$hard_threshold
+                cn$hard_threshold
             )
         } else {
             thresh_str <- ""
         }
 
-        if (startsWith(nm, "status_quo")) {
+        type <- constr_type(nm)
+
+        if (is.na(type)) {
             cli::cli_bullets(c(
-        "*" = "A status quo constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_pow")) {
-            cli::cli_bullets(c(
-        "*" = "A (power-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_hinge")) {
-            cli::cli_bullets(c(
-        "*" = "A (hinge-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_inv_hinge")) {
-            cli::cli_bullets(c(
-        "*" = "An (inverse-hinge-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "compet")) {
-            cli::cli_bullets(c(
-        "*" = "A competitiveness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "incumbency")) {
-            cli::cli_bullets(c(
-        "*" = "An incumbency constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "splits")) {
-            cli::cli_bullets(c(
-        "*" = "A splits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "multisplits")) {
-            cli::cli_bullets(c(
-        "*" = "A multisplits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "total_splits")) {
-            cli::cli_bullets(c(
-        "*" = "A total splits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "custom_plan")) {
-            cli::cli_bullets(c(
-        "*" = "A custom plan constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "custom")) {
-            cli::cli_bullets(c(
-        "*" = "A custom constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "edges_rem")) {
-            cli::cli_bullets(c(
-        "*" = "An (edges-removed-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "log_st")) {
-            cli::cli_bullets(c(
-        "*" = "A (log-spanning-tree-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "polsby")) {
-            cli::cli_bullets(c(
-        "*" = "A (Polsby-Popper-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "fry_hold")) {
-            cli::cli_bullets(c(
-        "*" = "A (Fryer-Holden-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "pop_dev")) {
-            cli::cli_bullets(c(
-        "*" = "A population deviation constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "segregation")) {
-            cli::cli_bullets(c(
-        "*" = "A dissimilarity segregation constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else {
-            cli::cli_bullets(c(
-        "*" = "An unknown constraint {.var {nm}} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
+                "*" = "An unknown constraint {.var {nm}} applied to {score_str}{thresh_str}"
+            ))
+            print_constr(cn)
+            next
+        }
+
+        label <- unname(constr_type_labels[[type]])
+        cli::cli_bullets(c(
+            "*" = "{label} of strength {cn$strength} applied to {score_str}{thresh_str}"
+        ))
+        if (!type %in% constr_skip_details) {
+            print_constr(cn)
         }
     }
+
+    invisible(constr)
 }
-
-
 #' Visualize constraints
 #'
 #' Plots the constraint strength versus some running variable. Currently
