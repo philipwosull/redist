@@ -2,7 +2,7 @@
 #ifndef GRAPH_PLAN_TYPE_H
 #define GRAPH_PLAN_TYPE_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "base_plan_type.h"
 
 

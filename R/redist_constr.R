@@ -53,7 +53,7 @@ validate_redist_constr <- function(constr) {
 #' You can view the exact structure of this list by calling [str()].
 #' Constraints may be added by using one of the following functions:
 #'
-#' `r paste0("* [", setdiff(ls("package:redist")[grep("add_constr_", ls("package:redist"))], "add_constr_qps"), "()]", collapse="\n")`
+#' `r paste0("* [", ls("package:redist")[grep("add_constr_", ls("package:redist"))], "()]", collapse="\n")`
 #'
 #' More information about each constraint can be found on the relevant constraint page.
 #'
@@ -1015,40 +1015,6 @@ add_constr_edges_rem <- function(
     )
 
     add_to_constr(constr, "edges_removed", new_constr)
-}
-
-#' @param cities A vector containing zero entries for non-cities and non-zero entries for each city for `qps`.
-#' @noRd
-add_constr_qps <- function(
-    constr,
-    strength,
-    cities,
-    total_pop = NULL,
-    only_nregions = FALSE,
-    only_nseats = FALSE,
-    thresh = NULL
-) {
-    new_constr <- get_base_region_constraint_list(
-        constr = constr, strength = strength,
-        only_nregions = only_nregions,
-        only_nseats = only_nseats, thresh = thresh
-    )
-
-    data <- attr(constr, "data")
-
-    new_constr <- c(new_constr,
-                    list(
-                        cities = rlang::eval_tidy(rlang::enquo(cities), data)
-                    ))
-
-    new_constr$n_cty <- max(new_constr$cities) + 1
-
-    cli::cli_inform(
-    "The QPS constraint is not officially supported and may disappear.",
-    .frequency = "once",
-    .frequency_id = "redist_qps_unsupported"
-  )
-    add_to_constr(constr, "qps", new_constr)
 }
 
 #' @param fn A function

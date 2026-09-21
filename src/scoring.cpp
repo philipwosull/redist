@@ -1041,16 +1041,6 @@ ScoringFunction::ScoringFunction(MapParams const &map_params, Rcpp::List const &
         }
     }
 
-    if (constraints.containsElementNamed("qps")) {
-        Rcpp::List constr = constraints["qps"];
-        throw std::runtime_error("QPS constraint not supported right now!\n");
-        for (int i = 0; i < constr.size(); i++) {
-            Rcpp::List constr_inst = constr[i];
-            // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(
-            //     constr_inst, map_params));
-        }
-    }
-
     if (constraints.containsElementNamed("edges_removed")) {
         Rcpp::List constr = constraints["edges_removed"];
         throw std::runtime_error("Edges Removed constraint not supported right now!\n");

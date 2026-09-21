@@ -6,7 +6,7 @@
 #include <memory>
 #include <string_view>
 #include <vector>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "advanced_types.h"
 #include "base_plan_type.h"

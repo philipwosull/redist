@@ -1,14 +1,26 @@
 
 #include "sparse_logdet.h"
 
+#include <Eigen/Sparse>
+#include <cmath>
+#include <sstream>
+#include <stdexcept>
+
 
 // alias for SparseMatrix
 using SparseMat = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
 
 // This assumes the matrix is stored as upper triangular one via
-// triplets (ie every triplet (i, j, value) we have i <= j )
-double compute_log_det_from_triplets(std::vector<Eigen::Triplet<double, int>> const &trips,
-                                     int const num_rows) {
+// coordinates (ie every entry (i, j, value) has i <= j )
+double compute_log_det_from_entries(std::vector<SparseEntry> const &entries,
+                                    int const num_rows) {
+    // rebuild Eigen triplets here so the header stays free of Eigen
+    std::vector<Eigen::Triplet<double, int>> trips;
+    trips.reserve(entries.size());
+    for (SparseEntry const &e : entries) {
+        trips.emplace_back(e.row, e.col, e.value);
+    }
+
     // now make the sparse matrix
     SparseMat sparse_adj_mat(num_rows, num_rows);
     sparse_adj_mat.setFromTriplets(trips.begin(), trips.end());
@@ -29,7 +41,7 @@ double compute_log_det_from_triplets(std::vector<Eigen::Triplet<double, int>> co
     //    Failure usually means: matrix is not SPD (singular/indefinite) or numerical breakdown.
     if (chol.info() != Eigen::Success) {
         std::ostringstream oss;
-        oss << "Sparse Matrix in compute_log_det_from_triplets ";
+        oss << "Sparse Matrix in compute_log_det_from_entries ";
         oss << "was not semi-positive definite" << "\n";
         throw std::runtime_error(oss.str());
 
@@ -50,7 +62,7 @@ double compute_log_det_from_triplets(std::vector<Eigen::Triplet<double, int>> co
                 const double d = it.value();
                 if (!(d > 0.0)) {
                     std::ostringstream oss;
-                    oss << "In compute_log_det_from_triplets d was not positive";
+                    oss << "In compute_log_det_from_entries d was not positive";
                     oss << "\n";
                     throw std::runtime_error(oss.str());
                     return -INFINITY;
@@ -66,7 +78,7 @@ double compute_log_det_from_triplets(std::vector<Eigen::Triplet<double, int>> co
 
         if (!found) {
             std::ostringstream oss;
-            oss << "In compute_log_det_from_triplets found was false";
+            oss << "In compute_log_det_from_entries found was false";
             oss << "\n";
             throw std::runtime_error(oss.str());
             return -INFINITY; // should not happen for successful LLT

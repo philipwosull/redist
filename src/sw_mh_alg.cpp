@@ -200,7 +200,7 @@ List swMH(List aList, NumericVector cdvec, NumericVector popvec, int nsims, List
     CharacterVector psi_names = CharacterVector::create(
         "pop_dev", "splits", "multisplits", "total_splits", "segregation", "grp_pow",
         "grp_hinge", "grp_inv_hinge", "compet", "status_quo", "incumbency", "polsby",
-        "fry_hold", "log_st", "edges_removed", "qps", "custom");
+        "fry_hold", "log_st", "edges_removed", "custom");
 
     NumericMatrix psi_store(psi_names.size(), nsims);
     rownames(psi_store) = psi_names;

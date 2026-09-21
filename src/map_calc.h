@@ -3,39 +3,27 @@
 #define MAP_CALC_H
 
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <set>
 #include <vector>
 #include "redist_types.h"
+#include "sparse_logdet.h"
 
 
 
 
-/*
- * Compute the Fryer-Holden penalty for district `distr`
- */
-double eval_fry_hold(const arma::subview_col<arma::uword> &districts, int distr, const arma::uvec &total_pop,
-                     arma::mat ssdmat, double denominator);
+// NOTE: eval_fry_hold is now templated and lives with the other templated
+// constraint functions at the bottom of this header.
 
-/*
- * Compute the qps penalty for district `distr`
- */
-double eval_qps(const arma::subview_col<arma::uword> &districts, int distr, const arma::uvec &total_pop,
-                const arma::uvec &cities, int n_city, int nd);
+// NOTE: eval_log_st is now templated and lives with the other templated
+// constraint functions at the bottom of this header.
 
-/*
- * Compute the log spanning tree penalty for district `distr`
- */
-double eval_log_st(const arma::subview_col<arma::uword> &districts, const Graph g, arma::uvec counties,
-                   int ndists);
-
-/*
- * Compute the log spanning tree penalty for district `distr`
- */
-double eval_er(const arma::subview_col<arma::uword> &districts, const Graph g, int ndists);
+// NOTE: eval_er is now templated and lives with the other templated constraint
+// functions at the bottom of this header.
 
 
 
@@ -337,6 +325,263 @@ double eval_polsby(PlanID const &region_ids, int const region1_id, int const reg
     double dist_peri2 = std::pow(tot_perim, 2.0);
 
     return 1.0 - (pi4 * tot_area / dist_peri2);
+}
+
+/*
+ * Compute the log number of spanning trees of the subgraph induced by the
+ * vertices that are both in region `region_id` and in county `county`.
+ *
+ * This is Kirchhoff's theorem: the number of spanning trees equals any cofactor
+ * of the Laplacian, so we build the Laplacian with its first row and column
+ * dropped and take its log determinant. Mirrors
+ * `compute_log_region_and_county_spanning_tree` in base_plan_type.cpp.
+ */
+// `check_connectivity` guards against region-and-county pieces that are not
+// connected. Such a piece has no spanning trees at all, so the count is 0 and
+// this returns -infinity. It has to be caught rather than left to the
+// factorization: the Laplacian minor is positive definite only when the
+// subgraph is connected, so compute_log_det_from_entries would throw.
+//
+// Callers that already guarantee connected pieces should pass false and skip
+// the check. Tree-based samplers are in that position: they cut a
+// county-constrained spanning tree, in which every region-and-county piece is
+// already a connected subtree, and removing one edge leaves each side
+// connected. Flip-style samplers move one precinct at a time and check only
+// whole-district contiguity, so they can fragment a district's presence inside
+// a county and must pass true.
+template <typename PlanID>
+double eval_log_region_county_st(PlanID const &region_ids, Graph const &g,
+                                 std::vector<unsigned int> const &counties,
+                                 int const region_id, int const county,
+                                 bool const check_connectivity = true) {
+    int const V = static_cast<int>(g.size());
+
+    // number of vertices in this region-and-county intersection
+    int K = 0;
+    std::vector<int> pos(V); // position of each vertex within the subgraph
+    int start = 0;           // where to start the second loop, to save time
+    for (int i = 0; i < V; i++) {
+        pos[i] = K - 1; // minus one because we drop the 1st row and column
+        if (region_ids[i] == region_id && static_cast<int>(counties[i]) == county) {
+            K++;
+            if (K == 2) start = i; // 2nd vertex
+        }
+    }
+    // a single vertex has exactly one spanning tree, and log(1) = 0
+    if (K <= 1) return 0.0;
+
+    if (check_connectivity) {
+        std::vector<bool> visited(V, false);
+        std::vector<int> to_visit;
+        for (int i = 0; i < V; i++) {
+            if (region_ids[i] == region_id && static_cast<int>(counties[i]) == county) {
+                to_visit.push_back(i);
+                visited[i] = true;
+                break;
+            }
+        }
+
+        int reached = 1;
+        while (!to_visit.empty()) {
+            int const u = to_visit.back();
+            to_visit.pop_back();
+            for (auto const nbor : g[u]) {
+                if (visited[nbor] || region_ids[nbor] != region_id ||
+                    static_cast<int>(counties[nbor]) != county) {
+                    continue;
+                }
+                visited[nbor] = true;
+                reached++;
+                to_visit.push_back(nbor);
+            }
+        }
+
+        // disconnected: no spanning trees, so log(0) = -infinity
+        if (reached < K) return -std::numeric_limits<double>::infinity();
+    }
+
+    int const minor_V = K - 1;
+    std::vector<SparseEntry> entries;
+    // degrees are accumulated first and appended at the end, since editing
+    // entries after the fact is expensive
+    std::vector<int> vertex_degrees(minor_V, 0);
+
+    for (int i = start; i < V; i++) {
+        if (region_ids[i] != region_id || static_cast<int>(counties[i]) != county) continue;
+
+        int const prec = pos[i];
+        if (prec < 0) continue; // the dropped first row
+
+        for (auto const nbor : g[i]) {
+            if (region_ids[nbor] != region_id || static_cast<int>(counties[nbor]) != county) {
+                continue;
+            }
+            vertex_degrees[prec]++;
+            if (pos[nbor] < 0) continue; // the dropped first column
+            // only the upper triangle, ie row <= column
+            if (prec <= pos[nbor]) {
+                entries.emplace_back(prec, pos[nbor], -1.0);
+            }
+        }
+    }
+
+    for (int v = 0; v < minor_V; v++) {
+        entries.emplace_back(v, v, static_cast<double>(vertex_degrees[v]));
+    }
+
+    return compute_log_det_from_entries(entries, minor_V);
+}
+
+/*
+ * Compute the log number of spanning trees of the county-level multigraph for
+ * region `region_id`, ie the graph whose vertices are the counties the region
+ * touches and whose edges are the region's edges that cross county lines.
+ *
+ * Mirrors `compute_log_county_level_spanning_tree` in base_plan_type.cpp.
+ */
+template <typename PlanID>
+double eval_log_county_level_st(PlanID const &region_ids, Graph const &g,
+                                std::vector<unsigned int> const &counties, int const n_cty,
+                                int const region_id) {
+    // with a single county there is nothing to contract, and log(1) = 0
+    if (n_cty == 1) return 0.0;
+
+    int const V = static_cast<int>(g.size());
+
+    int K = 0;
+    std::vector<int> pos(V, -2);      // position of each vertex's county in the subgraph
+    std::vector<int> seen(n_cty, -2); // county lookup
+    int start = 0;
+    for (int i = 0; i < V; i++) {
+        if (region_ids[i] != region_id) continue;
+
+        if (seen[counties[i] - 1] < 0) {
+            pos[i] = K - 1; // minus one because we drop the 1st row and column
+            seen[counties[i] - 1] = K;
+            K++;
+            if (K == 2) start = i; // 2nd vertex
+        } else {
+            pos[i] = seen[counties[i] - 1] - 1;
+        }
+    }
+    if (K <= 1) return 0.0;
+
+    int const minor_V = K - 1;
+    std::vector<SparseEntry> entries;
+    std::vector<int> vertex_degrees(minor_V, 0);
+
+    for (int i = start; i < V; i++) {
+        if (region_ids[i] != region_id) continue;
+
+        int const cty = pos[i];
+        if (cty < 0) continue; // the dropped first row
+
+        for (auto const nbor : g[i]) {
+            // skip if outside the region, or inside the same county
+            if (region_ids[nbor] != region_id || pos[nbor] == cty) continue;
+
+            vertex_degrees[cty]++;
+            if (pos[nbor] < 0) continue; // the dropped first column
+            if (cty <= pos[nbor]) {
+                entries.emplace_back(cty, pos[nbor], -1.0);
+            }
+        }
+    }
+
+    for (int v = 0; v < minor_V; v++) {
+        entries.emplace_back(v, v, static_cast<double>(vertex_degrees[v]));
+    }
+
+    return compute_log_det_from_entries(entries, minor_V);
+}
+
+/*
+ * Compute the log number of spanning trees of a whole plan.
+ *
+ * For each region this is the sum over the counties it touches of the spanning
+ * trees of the region-and-county intersection, plus the spanning trees of the
+ * region's county-level multigraph. That matches the convention used by
+ * `Plan::compute_log_region_spanning_tree` in base_plan_type.cpp.
+ *
+ * Regions are 1-indexed, as are counties.
+ *
+ * `check_connectivity` is passed through to eval_log_region_county_st; see the
+ * note there for when it can be skipped.
+ */
+template <typename PlanID>
+double eval_log_st(PlanID const &region_ids, Graph const &g,
+                   std::vector<unsigned int> const &counties, int const ndists,
+                   bool const check_connectivity = true) {
+    int const n_cty = counties.empty()
+                          ? 0
+                          : static_cast<int>(*std::max_element(counties.begin(), counties.end()));
+
+    double log_st = 0.0;
+    for (int region_id = 1; region_id <= ndists; region_id++) {
+        for (int county = 1; county <= n_cty; county++) {
+            log_st += eval_log_region_county_st(region_ids, g, counties, region_id, county,
+                                                check_connectivity);
+        }
+        log_st += eval_log_county_level_st(region_ids, g, counties, n_cty, region_id);
+    }
+
+    return log_st;
+}
+
+/*
+ * Compute the Fryer-Holden penalty for region `region_id`
+ *
+ * `ssdmat` is the V x V matrix of squared distances between vertices. It is
+ * taken as an Rcpp matrix rather than an arma one so that it is referenced in
+ * place: converting to an arma::mat copies the whole V x V matrix on every
+ * call, and this is called once per region per iteration.
+ */
+template <typename PlanID>
+double eval_fry_hold(PlanID const &region_ids, int const region_id, int const V,
+                     std::vector<unsigned int> const &total_pop,
+                     Rcpp::NumericMatrix const &ssdmat, double const denominator = 1.0) {
+    // collect the vertices belonging to this region
+    std::vector<int> idxs;
+    for (int i = 0; i < V; i++) {
+        if (region_ids[i] == region_id) idxs.push_back(i);
+    }
+
+    double ssd = 0.0;
+    // `i + 1 < size` rather than `i < size - 1` so an empty region does not
+    // underflow the unsigned bound and walk off the end
+    for (std::size_t i = 0; i + 1 < idxs.size(); i++) {
+        for (std::size_t k = i + 1; k < idxs.size(); k++) {
+            ssd += ssdmat(idxs[i], idxs[k]) *
+                   static_cast<double>(total_pop[idxs[i]]) *
+                   static_cast<double>(total_pop[idxs[k]]);
+        }
+    }
+
+    return ssd / denominator;
+}
+
+/*
+ * Compute the edges removed penalty, ie the number of edges in the graph whose
+ * two endpoints fall in different regions.
+ *
+ * Mirrors `redistmetrics::n_removed` for a single plan: the loop sees every
+ * crossing edge once from each of its endpoints, so the total is halved. The
+ * number of districts is not needed, which is why `redistmetrics::n_removed`
+ * never uses the `n_distr` it takes.
+ */
+template <typename PlanID>
+double eval_er(PlanID const &region_ids, Graph const &g) {
+    int const V = static_cast<int>(g.size());
+
+    double removed = 0.0;
+    for (int i = 0; i < V; i++) {
+        auto const region_id = region_ids[i];
+        for (int const nbor : g[i]) {
+            if (region_ids[nbor] != region_id) removed += 1.0;
+        }
+    }
+
+    return removed / 2.0;
 }
 
 /*
