@@ -603,6 +603,86 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
         ust_samplers_vec.emplace_back(map_params, splitting_schedule);
     }
 
+
+    // sample extra plan if needed
+    if(estimated_unbiased_normalizing_constant){
+        if constexpr(DEBUG_GSMC_PLANS_VERBOSE){
+            REprintf("Starting estimation: ");
+        }
+
+    // Now we sample one more plan and discard it to allow for unbiased 
+    // normalization constant estimation 
+    bool extra_plan_sampled = false;
+    int extra_particle_reject_ct = 0;
+
+    while(!extra_plan_sampled) {
+        if constexpr(DEBUG_GSMC_PLANS_VERBOSE) REprintf("%d ", extra_particle_reject_ct);
+        if (check_max_split_tries && extra_particle_reject_ct >= max_split_tries) {
+            throw Rcpp::exception(
+                "Failed to split a plan after `max_split_tries` attempts!\n");
+        }
+        // increase the number of tries for particle i by 1
+        Rcpp::checkUserInterrupt();
+        extra_particle_reject_ct++;
+        // sample previous plan
+        int idx = rng_states[0].r_int_wgt(normalized_cumulative_weights);
+        // Get region id the split
+        int region_id_to_split;
+        if (smd_split_district_only) {
+            // if just doing district splits just use remainder region
+            // which is always the highest id
+            region_id_to_split = old_plan_ensemble->plan_ptr_vec[idx]->num_regions - 1;
+        } else {
+            // if generalized split pick a region to try to split
+            region_id_to_split =
+                old_plan_ensemble->plan_ptr_vec[idx]->choose_multidistrict_to_split(
+                    splitting_schedule.valid_region_sizes_to_split, rng_states[0],
+                    multidistrict_selection_alpha);
+        }
+
+        // Try to split the region
+        std::pair<bool, EdgeCut> edge_search_result =
+            ust_samplers_vec[0].attempt_to_find_valid_tree_split(
+                rng_states[0], scoring_functions[0],
+                *tree_splitters[0], *old_plan_ensemble->plan_ptr_vec[idx],
+                region_id_to_split, new_region_id, save_edge_selection_prob);
+
+
+
+        // if successful update the new plan and check if satisfies any other hard
+        // constraints
+        if (std::get<0>(edge_search_result)) {
+            // check if there are any additional hard constraints
+            if (!scoring_functions[0].any_hard_constraints) {
+                // if not we can stop trying 
+                extra_plan_sampled = true;
+            } else {
+                // make the new plan a copy of the old one
+                // we can just use 0 since it will be overwritten later 
+                new_plan_ensemble->plan_ptr_vec[0]->shallow_copy(
+                    *old_plan_ensemble->plan_ptr_vec[idx]);
+                // // now split that region we found on the old one
+                new_plan_ensemble->plan_ptr_vec[0]->update_from_successful_split(
+                    *tree_splitters[0], ust_samplers_vec[0],
+                    std::get<1>(edge_search_result), region_id_to_split, new_region_id, true);
+
+                extra_plan_sampled = scoring_functions[0].satisfies_hard_constraints(
+                    *new_plan_ensemble->plan_ptr_vec[0], region_id_to_split, new_region_id
+                );
+            }
+        }
+        
+    }
+    if constexpr(DEBUG_GSMC_PLANS_VERBOSE){
+        REprintf("Done!\n");
+    }
+    
+
+    // now save the number of failed attempts before sampling the extra plan
+    smc_diagnostics.tries_before_extra_particle[smc_step_num] = extra_particle_reject_ct;
+
+    }
+
     if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
         Rprintf("About to start SMC Step for %d plans\n", M);
     // create a progress bar
@@ -821,86 +901,6 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
         REprintf("Done splitting!\n");
     }
 
-    if(estimated_unbiased_normalizing_constant){
-        if constexpr(DEBUG_GSMC_PLANS_VERBOSE){
-            REprintf("Starting estimation: ");
-        }
-
-    // Now we sample one more plan and discard it to allow for unbiased 
-    // normalization constant estimation 
-    bool extra_plan_sampled = false;
-    int extra_particle_reject_ct = 0;
-
-    while(!extra_plan_sampled) {
-        if constexpr(DEBUG_GSMC_PLANS_VERBOSE) REprintf("%d ", extra_particle_reject_ct);
-        if (check_max_split_tries && extra_particle_reject_ct >= max_split_tries) {
-            throw Rcpp::exception(
-                "Failed to split a single plan after `max_split_tries` attempts!\n");
-        }
-        // increase the number of tries for particle i by 1
-        extra_particle_reject_ct++;
-        // sample previous plan
-        int idx = rng_states[0].r_int_wgt(normalized_cumulative_weights);
-        // Get region id the split
-        int region_id_to_split;
-        if (smd_split_district_only) {
-            // if just doing district splits just use remainder region
-            // which is always the highest id
-            region_id_to_split = old_plan_ensemble->plan_ptr_vec[idx]->num_regions - 1;
-        } else {
-            // if generalized split pick a region to try to split
-            region_id_to_split =
-                old_plan_ensemble->plan_ptr_vec[idx]->choose_multidistrict_to_split(
-                    splitting_schedule.valid_region_sizes_to_split, rng_states[0],
-                    multidistrict_selection_alpha);
-        }
-
-        // Try to split the region
-        std::pair<bool, EdgeCut> edge_search_result =
-            ust_samplers_vec[0].attempt_to_find_valid_tree_split(
-                rng_states[0], scoring_functions[0],
-                *tree_splitters[0], *old_plan_ensemble->plan_ptr_vec[idx],
-                region_id_to_split, new_region_id, save_edge_selection_prob);
-
-
-
-        // if successful update the new plan and check if satisfies any other hard
-        // constraints
-        if (std::get<0>(edge_search_result)) {
-            // check if there are any additional hard constraints
-            if (!scoring_functions[0].any_hard_constraints) {
-                // if not we can stop trying 
-                extra_plan_sampled = true;
-            } else {
-                // If custom hard constraints are used then
-                // the thread pool can only have a single thread or else everything will
-                // break
-                // TODO: Make it possible to check this new plan without actually copying anything
-                // since this is an extra plan we discard
-                extra_plan_sampled = true;
-                // make the new plan a copy of the old one
-                // new_plan_ensemble->plan_ptr_vec[i]->shallow_copy(
-                //     *old_plan_ensemble->plan_ptr_vec[idx]);
-                // // now split that region we found on the old one
-                // new_plan_ensemble->plan_ptr_vec[i]->update_from_successful_split(
-                //     *tree_splitters[thread_id], ust_samplers_vec[thread_id],
-                //     std::get<1>(edge_search_result), region_id_to_split, new_region_id, true);
-
-                // ok = scoring_functions[thread_id].satisfies_hard_constraints(
-                //     *new_plan_ensemble->plan_ptr_vec[i], region_id_to_split, new_region_id,
-                //     is_final_split);
-            }
-        }
-    }
-    if constexpr(DEBUG_GSMC_PLANS_VERBOSE){
-        REprintf("Done!\n");
-    }
-    
-
-    // now save the number of failed attempts before sampling the extra plan
-    smc_diagnostics.tries_before_extra_particle[smc_step_num] = extra_particle_reject_ct;
-
-    }
 
     // now swap the old plans with the new ones. This avoids needing to actually copy
     std::swap(old_plan_ensemble, new_plan_ensemble);
@@ -1499,10 +1499,6 @@ Rcpp::List run_redist_smc(
     }
 
     double const multidistrict_selection_alpha = tmp_multidistrict_selection_alpha;
-
-    if(estimated_unbiased_normalizing_constant && scoring_functions[0].any_hard_constraints){
-        Rcpp::warning("Unbiased normalizing constant estimation si not support right now for hard constraints!");
-    }
 
     // total number of steps to run
     int total_steps = static_cast<int>(step_types.size());

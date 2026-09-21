@@ -70,7 +70,7 @@ test_that("Not egregiously incorrect sampling accuracy (25-prec)", {
         6000,
         compactness = 0,
         ncores = 1L,
-        control = list(weight_type = "simple"),
+        sampling_space = "linking_edge",
         split_params = list(adapt_k_thresh = 0.99999),
         seq_alpha = 1L,
         resample = FALSE,

@@ -6,12 +6,14 @@
 remove (splitting the tree)
 ********************************************************/
 
+#include <numeric>
+#include <cmath>
+
 #include "tree_splitting.h"
 #include "scoring.h"
 #include "random.h"
 #include "base_plan_type.h"
 
-#include <numeric>
 
 constexpr bool FINDING_EDGE_CUTS_VERBOSE = false;
 constexpr bool FINDING_JOINED_EDGE_CUTS_VERBOSE = false;
