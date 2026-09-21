@@ -6,6 +6,8 @@
 remove (splitting the tree)
 ********************************************************/
 
+#include <iterator>
+
 #include <numeric>
 #include <cmath>
 

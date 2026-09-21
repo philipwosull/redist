@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Rcpp.h>
 #include "redist_types.h"
 

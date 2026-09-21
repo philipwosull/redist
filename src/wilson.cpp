@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include <cstdio>
 #include <limits>
 #include <Rcpp.h>

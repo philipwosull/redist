@@ -7,7 +7,6 @@
 /////////////////////////////////////
 
 // Header files
-#include <R.h>
 #include <Rcpp.h>
 #include <cli/progress.h>
 #include <time.h>

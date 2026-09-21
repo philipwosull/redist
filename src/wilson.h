@@ -1,6 +1,8 @@
 #ifndef WILSON_H
 #define WILSON_H
 
+#include <string_view>
+
 #include "tree_op.h"
 #include "advanced_types.h"
 

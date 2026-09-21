@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

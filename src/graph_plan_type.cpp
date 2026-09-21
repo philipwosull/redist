@@ -1,3 +1,5 @@
+#include <iterator>
+
 #include "graph_plan_type.h"
 
 #include "scoring.h"

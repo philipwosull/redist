@@ -3,6 +3,8 @@
 #define GRAPH_PLAN_TYPE_H
 
 #include <Rcpp.h>
+#include <memory>
+#include <vector>
 #include "base_plan_type.h"
 
 

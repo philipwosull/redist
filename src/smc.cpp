@@ -8,6 +8,11 @@
 constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 
 
+#include <exception>
+#include <iomanip>
+#include <locale>
+#include <thread>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>

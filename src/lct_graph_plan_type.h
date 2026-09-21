@@ -2,6 +2,8 @@
 #ifndef LCT_GRAPH_PLAN_TYPE_H
 #define LCT_GRAPH_PLAN_TYPE_H
 
+#include <functional>
+
 #include "cw_lct.h"
 #include "graph_plan_type.h"
 

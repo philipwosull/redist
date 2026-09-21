@@ -1,5 +1,7 @@
 // Threading helper functions 
 
+#include <thread>
+
 #include "threading_helpers.h"
 
 

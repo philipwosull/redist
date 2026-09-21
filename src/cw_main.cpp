@@ -1,3 +1,5 @@
+#include <locale>
+
 #include <Rcpp.h>
 #include "cw_forest_walk.h"
 #include "cw_proposal.h"

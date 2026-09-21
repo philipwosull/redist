@@ -1,3 +1,5 @@
+#include <functional>
+
 #include <Rcpp.h>
 #include <algorithm>
 #include <vector>

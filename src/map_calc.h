@@ -3,6 +3,9 @@
 #define MAP_CALC_H
 
 
+#include <cstddef>
+#include <cstdlib>
+
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>

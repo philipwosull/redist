@@ -5,6 +5,9 @@
  * Purpose: Helper functions for all redist algorithm types
  ********************************************************/
 
+#include <iterator>
+#include <numeric>
+
 #include "redist_alg_helpers.h"
 
 #include <algorithm>

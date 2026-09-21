@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include "mcmc_gibbs.h"
 #include "make_swaps_helper.h"
 #include "map_calc.h"

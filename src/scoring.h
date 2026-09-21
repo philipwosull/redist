@@ -3,6 +3,9 @@
 #define SCORING_H
 
 
+#include <memory>
+#include <vector>
+
 #include "map_calc.h"
 #include "advanced_types.h"
 

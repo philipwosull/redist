@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <string_view>
+
 #include <atomic>
 #include <limits>
 #include <vector>

@@ -6,6 +6,9 @@
  ********************************************************/
 
 
+#include <atomic>
+#include <thread>
+
 #include <cmath>
 #include <functional>
 #include <string>

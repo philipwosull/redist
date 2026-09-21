@@ -5,6 +5,8 @@
  * Purpose: Implementation of Plan type for Linking Edge space
  ********************************************************/
 
+#include <functional>
+
 #include <Rcpp.h>
 #include "linking_edge_plan_type.h"
 

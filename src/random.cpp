@@ -1,3 +1,6 @@
+#include <cstddef>
+#include <utility>
+
 #include "random.h"
 
 #include <cmath>

@@ -2,6 +2,8 @@
 #ifndef TREE_SPLITTING_H
 #define TREE_SPLITTING_H
 
+#include <cmath>
+
 #include <queue>
 #include <utility>
 #include <vector>

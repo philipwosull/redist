@@ -5,6 +5,10 @@
  * Purpose: Implements Various Splitting Schedule Types
  ********************************************************/
 
+#include <cmath>
+#include <iostream>
+#include <numeric>
+
 #include "splitting_schedule_types.h"
 #include <memory>
 

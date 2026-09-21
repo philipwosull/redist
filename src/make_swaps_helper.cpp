@@ -7,6 +7,8 @@
 ///////////////////////////////////////////////
 
 // Header files
+#include <cstdlib>
+
 #include "constraint_calc_helper.h"
 #include <Rcpp.h>
 

@@ -8,6 +8,10 @@
 
 
 // #include <Rcpp.h>
+#include <atomic>
+#include <functional>
+#include <thread>
+
 #include <Rcpp.h>
 #include <vector>
 #include <algorithm>

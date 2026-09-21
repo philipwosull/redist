@@ -7,6 +7,9 @@
  ********************************************************/
 
 
+#include <iomanip>
+#include <locale>
+
 #include <cmath>
 #include <cstdint>
 #include <string>

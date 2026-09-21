@@ -7,6 +7,8 @@
  ********************************************************/
 
 
+#include <thread>
+
 #include <cmath>
 #include <functional>
 #include <memory>
