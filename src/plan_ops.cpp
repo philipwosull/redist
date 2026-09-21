@@ -31,7 +31,7 @@
  * given a collection of plans
  */
 // [[Rcpp::export]]
-Rcpp::NumericMatrix prec_cooccur(Rcpp::IntegerMatrix m, Rcpp::IntegerVector idxs, int ncores) {
+Rcpp::NumericMatrix prec_cooccur(Rcpp::IntegerMatrix m, Rcpp::IntegerVector idxs, int ncores = 1) {
     int v = m.nrow();
     int n = idxs.size();
     Rcpp::NumericMatrix out(v, v);
@@ -612,7 +612,7 @@ double get_merged_log_number_linking_edges(Rcpp::List const &adj_list,
 // @keywords internal
 // [[Rcpp::export]]
 Rcpp::IntegerMatrix get_canonical_plan_labelling(Rcpp::IntegerMatrix const &plans_mat,
-                                                 int const num_regions, int const ncores) {
+                                                 int const num_regions, int const ncores = 0) {
     int const V = plans_mat.nrow();
     int const nsims = plans_mat.ncol();
     // check the plan isn't zero indexed
