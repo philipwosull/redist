@@ -224,14 +224,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // log_st_map
-Rcpp::NumericVector log_st_map(const Graph& g, const Rcpp::IntegerMatrix& districts, const std::vector<unsigned int>& counties, int n_distr);
+Rcpp::NumericVector log_st_map(const Graph& g, const Rcpp::IntegerMatrix& districts, const Rcpp::IntegerVector& counties, int n_distr);
 RcppExport SEXP _redist_log_st_map(SEXP gSEXP, SEXP districtsSEXP, SEXP countiesSEXP, SEXP n_distrSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Graph& >::type g(gSEXP);
     Rcpp::traits::input_parameter< const Rcpp::IntegerMatrix& >::type districts(districtsSEXP);
-    Rcpp::traits::input_parameter< const std::vector<unsigned int>& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type counties(countiesSEXP);
     Rcpp::traits::input_parameter< int >::type n_distr(n_distrSEXP);
     rcpp_result_gen = Rcpp::wrap(log_st_map(g, districts, counties, n_distr));
     return rcpp_result_gen;
