@@ -170,6 +170,24 @@ get_nseats_score_vec <- function(only_nseats, nseats, ndists) {
 }
 
 # helper function
+# Evaluates a defused constraint argument, erroring clearly when the caller
+# did not supply it.
+#
+# `rlang::enquo()` on a missing argument yields an *empty* quosure, and
+# `rlang::eval_tidy()` on an empty quosure fails with the opaque
+# `object '' not found`, which names neither the function nor the argument.
+# Checking for that case first lets us say which argument is missing.
+#
+# The quosure must be defused by the caller and passed in: calling `missing()`
+# or defusing at the wrong point interferes with promise capture.
+eval_constr_arg <- function(quo, arg, data) {
+    if (rlang::quo_is_missing(quo)) {
+        cli::cli_abort("{.arg {arg}} is required but was not supplied.")
+    }
+    rlang::eval_tidy(quo, data)
+}
+
+# helper function
 # validates the common inputs to all region constraints
 # and returns the base list to add
 get_base_region_constraint_list <- function(
@@ -542,7 +560,7 @@ add_constr_grp_pow <- function(
 
     new_constr <- c(new_constr,
         list(
-            group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+            group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
             total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
             tgt_group = tgt_group,
             tgt_other = tgt_other,
@@ -584,7 +602,7 @@ add_constr_grp_hinge <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+                        group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
                         tgts_group = tgts_group
                     ))
@@ -628,7 +646,7 @@ add_constr_grp_inv_hinge <- function(
     new_constr <- c(new_constr,
                     list(
                         group_pop = rlang::eval_tidy(rlang::enquo(total_pop), data) -
-                            rlang::eval_tidy(rlang::enquo(group_pop), data),
+                            eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
                         tgts_group = tgts_group
                     ))
@@ -668,8 +686,8 @@ add_constr_compet <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        dvote = rlang::eval_tidy(rlang::enquo(dvote), data),
-                        rvote = rlang::eval_tidy(rlang::enquo(rvote), data),
+                        dvote = eval_constr_arg(rlang::enquo(dvote), "dvote", data),
+                        rvote = eval_constr_arg(rlang::enquo(rvote), "rvote", data),
                         pow = pow
                     ))
 
@@ -702,7 +720,7 @@ add_constr_incumbency <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        incumbents = rlang::eval_tidy(rlang::enquo(incumbents), data)
+                        incumbents = eval_constr_arg(rlang::enquo(incumbents), "incumbents", data)
                     ))
 
 
@@ -728,7 +746,7 @@ add_constr_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -764,7 +782,7 @@ add_constr_multisplits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -801,7 +819,7 @@ add_constr_total_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -858,7 +876,7 @@ add_constr_segregation <- function(
 
     new_constr <- c(new_constr,
                     list(
-                        group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+                        group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data)
                     ))
 
@@ -981,7 +999,7 @@ add_constr_log_st <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         admin <- rep(1, nrow(data))
     }
@@ -1132,7 +1150,7 @@ add_constr_plan_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -1169,7 +1187,7 @@ add_constr_total_plan_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -1211,7 +1229,7 @@ add_constr_plan_incumbency <- function(
 
     new_constr <- c(new_constr,
                     list(
-                        incumbents = rlang::eval_tidy(rlang::enquo(incumbents), data)
+                        incumbents = eval_constr_arg(rlang::enquo(incumbents), "incumbents", data)
                     ))
 
     add_to_constr(constr, "plan_incumbency", new_constr)
