@@ -6,7 +6,7 @@
  ********************************************************/
 
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "base_plan_type.h"
 

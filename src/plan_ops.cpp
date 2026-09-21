@@ -8,7 +8,7 @@
 
 
 // #include <Rcpp.h>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <vector>
 #include <algorithm>
 #include <limits>
@@ -27,10 +27,10 @@
  * given a collection of plans
  */
 // [[Rcpp::export]]
-arma::mat prec_cooccur(arma::umat m, arma::uvec idxs, int ncores) {
-    int v = m.n_rows;
-    int n = idxs.n_elem;
-    arma::mat out(v, v);
+Rcpp::NumericMatrix prec_cooccur(Rcpp::IntegerMatrix m, Rcpp::IntegerVector idxs, int ncores) {
+    int v = m.nrow();
+    int n = idxs.size();
+    Rcpp::NumericMatrix out(v, v);
 
     RcppThread::parallelFor(
         0, v,
@@ -57,8 +57,8 @@ arma::mat prec_cooccur(arma::umat m, arma::uvec idxs, int ncores) {
  * Compute the percentage of `group` in each district. Asummes `m` is 1-indexed.
  */
 // [[Rcpp::export]]
-Rcpp::NumericMatrix group_pct(Rcpp::IntegerMatrix const &plans_mat, arma::vec const &group_pop,
-                        arma::vec const &total_pop, int const n_distr, int const ncores = 0) {
+Rcpp::NumericMatrix group_pct(Rcpp::IntegerMatrix const &plans_mat, Rcpp::NumericVector const &group_pop,
+                        Rcpp::NumericVector const &total_pop, int const n_distr, int const ncores = 0) {
     int V = plans_mat.nrow();
     int num_plans = plans_mat.ncol();
 
@@ -194,7 +194,7 @@ Rcpp::IntegerMatrix infer_region_seats(Rcpp::IntegerMatrix const &region_pops,
 // TESTED
 // NOTE: Maybe can make parallel version of this? Not sure
 // [[Rcpp::export]]
-Rcpp::NumericMatrix pop_tally(Rcpp::IntegerMatrix const &districts, arma::vec const &pop, int const n_distr,
+Rcpp::NumericMatrix pop_tally(Rcpp::IntegerMatrix const &districts, Rcpp::NumericVector const &pop, int const n_distr,
                         int const ncores = 0) {
     int const num_plans = districts.ncol();
     int const V = districts.nrow();
@@ -219,7 +219,7 @@ Rcpp::NumericMatrix pop_tally(Rcpp::IntegerMatrix const &districts, arma::vec co
  * Compute the maximum deviation from the equal population constraint.
  */
 // [[Rcpp::export]]
-Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const arma::vec &pop,
+Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const Rcpp::NumericVector &pop,
                             int const n_distr, bool const multimember_districts = false,
                             int const nseats = -1,
                             Rcpp::IntegerMatrix const &seats_matrix = Rcpp::IntegerMatrix(1, 1),
@@ -230,7 +230,7 @@ Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const arma::ve
     Rcpp::NumericMatrix district_pops = pop_tally(districts, pop, n_distr, num_threads);
 
     if (multimember_districts) {
-        double const target_pop = arma::sum(pop) / nseats;
+        double const target_pop = Rcpp::sum(pop) / nseats;
         RcppThread::parallelFor(
             0, num_plans,
             [&](unsigned int i) {
@@ -245,7 +245,7 @@ Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const arma::ve
             },
             num_threads > 0 ? num_threads : 0);
     } else {
-        double const target_pop = arma::sum(pop) / n_distr;
+        double const target_pop = Rcpp::sum(pop) / n_distr;
         RcppThread::parallelFor(
             0, num_plans,
             [&](unsigned int i) {
@@ -378,9 +378,9 @@ RegionMultigraphCount build_region_multigraph(Graph const &g, PlanVector const &
     return region_multigraph;
 }
 
-arma::mat build_region_laplacian(RegionMultigraphCount const &region_multigraph) {
+Rcpp::NumericMatrix build_region_laplacian(RegionMultigraphCount const &region_multigraph) {
     int num_regions = region_multigraph.size();
-    arma::mat laplacian_mat(num_regions, num_regions, arma::fill::zeros);
+    Rcpp::NumericMatrix laplacian_mat(num_regions, num_regions);
     // iterate over the multigraph
     for (size_t region_id = 0; region_id < num_regions; region_id++) {
         int vertex_degree = 0;
@@ -400,7 +400,7 @@ arma::mat build_region_laplacian(RegionMultigraphCount const &region_multigraph)
 // Can call from R
 // [[Rcpp::export]]
 RegionMultigraphCount get_region_multigraph(Rcpp::List const &adj_list,
-                                            arma::uvec const &region_ids) {
+                                            Rcpp::IntegerVector const &region_ids) {
     std::unordered_set<int> uniqueElements;
     for (int element : region_ids) {
         uniqueElements.insert(element);
@@ -415,7 +415,8 @@ RegionMultigraphCount get_region_multigraph(Rcpp::List const &adj_list,
 }
 
 // [[Rcpp::export]]
-arma::mat get_region_laplacian(Rcpp::List const &adj_list, arma::uvec const &region_ids) {
+Rcpp::NumericMatrix get_region_laplacian(Rcpp::List const &adj_list,
+                                         Rcpp::IntegerVector const &region_ids) {
     return (build_region_laplacian(get_region_multigraph(adj_list, region_ids)));
 }
 
@@ -504,12 +505,12 @@ Rcpp::IntegerVector resample_plans_lowvar(Rcpp::NumericVector const &normalized_
  * Generate an integer vector of resampling indices with a low-variance resampler.
  */
 // [[Rcpp::export]]
-arma::ivec resample_lowvar(arma::vec wgts) {
-    int N = wgts.n_elem;
+Rcpp::IntegerVector resample_lowvar(Rcpp::NumericVector wgts) {
+    int N = wgts.size();
 
     double r = GLOBAL_RNG.r_unif() / N;
     double cuml = wgts[0];
-    arma::ivec out(N);
+    Rcpp::IntegerVector out(N);
 
     int i = 0;
     for (int n = 0; n < N; n++) {
@@ -528,7 +529,7 @@ arma::ivec resample_lowvar(arma::vec wgts) {
 double get_log_number_linking_edges(Rcpp::List const &adj_list, Rcpp::IntegerVector const &counties,
                                     Rcpp::List const &constraints, int const ndists,
                                     int const nseats, int const num_regions,
-                                    arma::uvec const &region_ids) {
+                                    Rcpp::IntegerVector const &region_ids) {
     int V = adj_list.size();
     Graph g;
     for (int i = 0; i < V; i++) {
@@ -557,7 +558,7 @@ double get_merged_log_number_linking_edges(Rcpp::List const &adj_list,
                                            Rcpp::IntegerVector const &counties,
                                            Rcpp::List const &constraints, int const ndists,
                                            int const nseats, int const num_regions,
-                                           arma::uvec const &region_ids, int const region1_id,
+                                           Rcpp::IntegerVector const &region_ids, int const region1_id,
                                            int const region2_id) {
     int V = adj_list.size();
     Graph g;

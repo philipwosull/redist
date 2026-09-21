@@ -1,4 +1,4 @@
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "forest_plan_type.h"
 
 #include "scoring.h"

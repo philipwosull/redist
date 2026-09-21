@@ -5,7 +5,7 @@
  * Purpose: Implementation of Plan type for Linking Edge space
  ********************************************************/
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "linking_edge_plan_type.h"
 
 #include "scoring.h"

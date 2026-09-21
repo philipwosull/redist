@@ -8,8 +8,7 @@
 
 // Header files
 #include <R.h>
-#include <RcppArmadillo.h>
-#include <RcppArmadilloExtensions/sample.h>
+#include <Rcpp.h>
 #include <cli/progress.h>
 #include <time.h>
 
@@ -38,30 +37,13 @@ Graph list_to_graph(const Rcpp::List &l) {
 
 }
 
-List vector_to_list(arma::uvec vecname) {
+List vector_to_list(std::vector<int> const &vecname) {
 
-    List list_out(vecname.n_elem);
-    for (int i = 0; i < vecname.n_elem; i++) {
-        list_out(i) = vecname(i);
+    List list_out(vecname.size());
+    for (std::size_t i = 0; i < vecname.size(); i++) {
+        list_out(i) = vecname[i];
     }
     return list_out;
-}
-
-arma::uvec get_not_in(arma::uvec vec1, arma::uvec vec2) {
-    int i;
-    arma::uvec findtest;
-    arma::uvec out(vec1.n_elem);
-    for (i = 0; i < vec1.n_elem; i++) {
-        findtest = find(vec2 == vec1(i));
-        if (findtest.n_elem == 0) {
-            out(i) = 1;
-        } else {
-            out(i) = 0;
-        }
-    }
-    arma::uvec candidates = vec1.elem(find(out == 1));
-
-    return candidates;
 }
 
 /* Primary function to run redistricting algorithm. An implementation of
@@ -245,7 +227,7 @@ List swMH(List aList, NumericVector cdvec, NumericVector popvec, int nsims, List
     List gt_out;
     NumericVector cdvec_prop;
     int i;
-    arma::uvec boundary_precincts;
+    std::vector<int> boundary_precincts;
     List boundary_partitions_list;
 
     if (adapt_beta == "annealing") {
@@ -288,7 +270,10 @@ List swMH(List aList, NumericVector cdvec, NumericVector popvec, int nsims, List
                     bsearch_boundary(cutedge_lists["connectedlist"], boundary);
                 boundary_partitions_list = boundary_partitions["bsearch"];
             } else {
-                boundary_precincts = find(as<arma::vec>(boundary) == 1);
+                boundary_precincts.clear();
+                for (int b = 0; b < boundary.size(); b++) {
+                    if (boundary(b) == 1) boundary_precincts.push_back(b);
+                }
                 boundary_partitions_list = vector_to_list(boundary_precincts);
             }
 

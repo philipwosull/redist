@@ -5,12 +5,8 @@
  * Purpose: Functions for Merging Plans
  ********************************************************/
 
-// scoring.h pulls in RcppArmadillo (via map_calc.h). RcppArmadillo.h errors out
-// if <Rcpp.h> was included ahead of it, so it has to come before the headers
-// that include <Rcpp.h> directly (utils.h, random.h).
-#include "scoring.h"
-
 #include "merging.h"
+#include "scoring.h"
 #include "tree_op.h"
 #include "wilson.h"
 #include "weight_caching.h"

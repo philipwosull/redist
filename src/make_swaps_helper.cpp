@@ -8,7 +8,7 @@
 
 // Header files
 #include "constraint_calc_helper.h"
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 
 /* Function to check adjacency of a randomly selected connected component

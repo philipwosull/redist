@@ -64,10 +64,8 @@ Suggests:
     pkgload
 LinkingTo: 
     Rcpp,
-    RcppArmadillo,
     RcppEigen,
     RcppThread,
-    redistmetrics,
     cli
 License: GPL (>= 2)
 Encoding: UTF-8
