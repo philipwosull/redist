@@ -170,7 +170,7 @@
 #' options are
 #' \itemize{
 #'  \item \code{basic} Saves the final plans and for each step the
-#'  incremental weights and ancestors.
+#'  incremental weights and parent indices.
 #'  \item \code{all} Saves everything \code{basic} does in addition to the
 #'  intermediate plan and seat matrices after each splitting and mergesplit step.
 #'  Use with caution as this can use a lot of memory very quickly.
@@ -422,9 +422,6 @@ redist_smc <- function(
     )
     }
 
-    # compute lags thing
-    lags <- 1 + unique(round((ndists - 1)^0.8 * seq(0, 0.7, length.out = 4)^0.9))
-
     # verbosity stuff
     verbosity <- 1
     if (verbose) {
@@ -533,7 +530,6 @@ redist_smc <- function(
     cache_weights = cache_weights,
     max_split_tries = max_split_tries,
     est_norm_unbiased = est_norm_unbiased,
-    lags = lags,
     seq_alpha = seq_alpha,
     pop_temper = pop_temper,
     num_threads = as.integer(ncores),
@@ -602,9 +598,6 @@ redist_smc <- function(
                 cli::cli_abort("Process Interrupted!")
             }
 
-            # Make integer since arma::umat passed back to R as double
-            storage.mode(algout$ancestors) <- "integer"
-
             diagnostic_mode <- diagnostic_level == 1
 
             if (!diagnostic_mode) {
@@ -672,9 +665,6 @@ redist_smc <- function(
                 # `rs_idx[i] = k` means you should replace plan i with plan k
                 # that means if after we've resampled then the parent of plan
                 # i was rs_idx[i]
-
-                # now adjust for the resampling
-                algout$ancestors <- algout$ancestors[rs_idx, , drop = FALSE]
 
                 # add a final column for the resampling since for the resampled plans
                 # plan[i] parent is rs_idx[i]
@@ -804,7 +794,6 @@ redist_smc <- function(
         unique_survive = nunique_parent_indices,
         nunique_plans = nunique_plans,
         ms_step_counts = algout$ms_step_counts,
-        ancestors = algout$ancestors,
         seq_alpha = seq_alpha,
         pop_temper = pop_temper,
         runtime = as.numeric(t2_run - t1_run, units = "secs")

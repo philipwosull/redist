@@ -6,7 +6,7 @@
  ********************************************************/
 
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "base_plan_type.h"
 
@@ -517,7 +517,7 @@ double compute_log_region_and_county_spanning_tree(
     int const minor_V = K - 1; // number of vertices in the matrix to build
     // we will build the sparse matrix by first creating entries
     // This stores entries as (i, j, value)
-    std::vector<Eigen::Triplet<double, int>> trips;
+    std::vector<SparseEntry> trips;
     // since modifying triplets after creation is expensive we just track degrees then
     // add at the end
     std::vector<int> vertex_degrees(minor_V, 0);
@@ -558,7 +558,7 @@ double compute_log_region_and_county_spanning_tree(
     }
 
     // now return the log determinant
-    return compute_log_det_from_triplets(trips, minor_V);
+    return compute_log_det_from_entries(trips, minor_V);
 }
 
 /*
@@ -600,7 +600,7 @@ double compute_log_county_level_spanning_tree(Graph const &g, const std::vector<
     int const minor_V = K - 1; // number of vertices in the matrix to build
     // we will build the sparse matrix by first creating entries
     // This stores entries as (i, j, value)
-    std::vector<Eigen::Triplet<double, int>> trips;
+    std::vector<SparseEntry> trips;
     // since modifying triplets after creation is expensive we just track degrees then
     // add at the end
     std::vector<int> vertex_degrees(minor_V, 0);
@@ -638,7 +638,7 @@ double compute_log_county_level_spanning_tree(Graph const &g, const std::vector<
     }
 
     // now return the log determinant
-    return compute_log_det_from_triplets(trips, minor_V);
+    return compute_log_det_from_entries(trips, minor_V);
 }
 
 
@@ -806,10 +806,10 @@ int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_si
     }
         
 
-    arma::vec region_wgts(valid_region_ids.size());
+    std::vector<double> region_wgts(valid_region_ids.size());
 
     for (size_t i = 0; i < valid_region_ids.size(); i++) {
-        region_wgts(i) = std::pow(associated_region_sizes[i], selection_alpha);
+        region_wgts[i] = std::pow(associated_region_sizes[i], selection_alpha);
     }
     int idx = rng_state.r_int_unnormalized_wgt(region_wgts);
     int region_id_to_split = valid_region_ids.at(idx);
@@ -1586,7 +1586,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
     // else go through and build the laplacian for regions 0 through num_regions-1
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+    std::vector<SparseEntry> laplacian_minor_trips;
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1644,7 +1644,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
         }
     }
 
-    return compute_log_det_from_triplets(laplacian_minor_trips, num_regions - 1);
+    return compute_log_det_from_entries(laplacian_minor_trips, num_regions - 1);
 };
 
 double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
@@ -1685,7 +1685,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
     determinant of the minor we actually have a num_regions-2 x num_regions-2 matrix
     where we delete the row and column corresponding to the merged region.
      */
-    std::vector<Eigen::Triplet<double, int>> merged_laplacian_minor_trips;
+    std::vector<SparseEntry> merged_laplacian_minor_trips;
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1757,7 +1757,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
         }
     }
 
-    return compute_log_det_from_triplets(merged_laplacian_minor_trips, num_regions - 2);
+    return compute_log_det_from_entries(merged_laplacian_minor_trips, num_regions - 2);
 }
 
 double PlanMultigraph::compute_log_multigraph_tau(int const num_regions,
@@ -1905,7 +1905,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
 
             // Now make the graph laplacian matrix
             // as a sparse upper triangle matrix
-            std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+            std::vector<SparseEntry> laplacian_minor_trips;
 
             // now we iterate through all pairs where both are in this component
             while (curr_index < all_pairs.size() &&
@@ -2011,7 +2011,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             }
             // Now add log det
             log_tau +=
-                compute_log_det_from_triplets(laplacian_minor_trips, num_component_regions - 1);
+                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
         }
     }
 
@@ -2057,7 +2057,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
 
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> component_laplacian_minor_trips;
+    std::vector<SparseEntry> component_laplacian_minor_trips;
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2130,7 +2130,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_triplets(component_laplacian_minor_trips,
+    log_tau += compute_log_det_from_entries(component_laplacian_minor_trips,
                                              num_county_connected_components - 1);
 
     return log_tau;
@@ -2392,7 +2392,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
             // Now make the graph laplacian matrix
             // as a sparse upper triangle matrix
-            std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+            std::vector<SparseEntry> laplacian_minor_trips;
 
             // now we iterate through all pairs where both are in this component
             while (
@@ -2495,7 +2495,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             }
             // Now add log det
             log_tau +=
-                compute_log_det_from_triplets(laplacian_minor_trips, num_component_regions - 1);
+                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
         }
     }
 
@@ -2565,7 +2565,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> merged_component_laplacian_minor_trips;
+    std::vector<SparseEntry> merged_component_laplacian_minor_trips;
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2663,7 +2663,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_triplets(merged_component_laplacian_minor_trips,
+    log_tau += compute_log_det_from_entries(merged_component_laplacian_minor_trips,
                                              merged_num_admin_connected_components - 1);
 
     return log_tau;

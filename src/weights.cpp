@@ -29,34 +29,6 @@ constexpr bool DEBUG_WEIGHTS_VERBOSE = false; // Compile-time constant
 
 
 // Computes the effective sample size from log incremental weights
-//
-// Takes a vector of log incremental weights and computes the effective sample
-// size which is the sum of the weights squared divided by the sum of squared
-// weights
-//
-//
-// @title Compute Effective Sample Size
-//
-// @param log_wgt vector of log incremental weights
-//
-// @details No modifications to inputs made
-//
-// @return sum of weights squared over sum of squared weights (sum(wgt)^2 / sum(wgt^2))
-//
-double compute_n_eff(const arma::subview_col<double> log_wgt) {
-    double sum_wgt = 0.0;
-    double sum_wgt_squared = 0.0;
-
-    // compute sum of squares and square of sum
-    for (const double &log_w : log_wgt) {
-        double wgt = std::exp(log_w);
-        sum_wgt += wgt;
-        sum_wgt_squared += std::exp(2 * log_w);
-    }
-
-    return std::exp((2 * std::log(sum_wgt)) - std::log(sum_wgt_squared));
-}
-
 // Get the probability the union of two regions was chosen to split
 //
 // Given a plan object and two regions in the plan this returns the probability
@@ -325,7 +297,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
     if (!std::isfinite(incremental_weight)) {
         plan.Rprint(true);
         // plan_multigraph.Rprint();
-        throw Rcpp::exception(
+        throw std::runtime_error(
             "One of the plan incremental weights is not finite!"
             "Try checking if constraint strength is too large and causing overflow errors.\n");
     }
@@ -333,79 +305,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
     return incremental_weight;
 }
 
-void compute_all_plans_log_simple_incremental_weights(
-    RcppThread::ThreadPool &pool, const MapParams &map_params,
-    const SplittingSchedule &splitting_schedule, SamplingSpace const sampling_space,
-    std::vector<ScoringFunction> const &scoring_functions, double rho,
-    std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
-    std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
-    bool is_final_plans,
-    arma::subview_col<double> log_incremental_weights, int verbosity) {
-    int const nsims = (int)plans_ptr_vec.size();
-    const int check_int = 50; // check for interrupts every _ iterations
 
-    int const num_threads = get_num_threads(pool);
-    // thread safe id counter
-    static std::atomic<int> global_generation_counter{0};
-    int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
-    std::atomic<int> thread_id_counter{0};
-    std::vector<std::atomic<int>> active_users(
-        perf_config::check_threadpool_integrity ? num_threads : 0);
-    // now make the vectors of important variables to be used by threads
-    std::vector<USTSampler> ust_samplers_vec;
-    ust_samplers_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> plan_multigraphs_vec;
-    plan_multigraphs_vec.reserve(num_threads);
-    for (size_t i = 0; i < num_threads; i++) {
-        ust_samplers_vec.emplace_back(map_params, splitting_schedule);
-        plan_multigraphs_vec.emplace_back(map_params,
-                                          sampling_space == SamplingSpace::LinkingEdgeSpace);
-    }
-
-    RcppThread::ProgressBar bar(nsims, 1);
-    // Parallel thread pool where all objects in memory shared by default
-    pool.parallelFor(0, nsims, [&](int i) {
-        static thread_local int thread_generation_counter = -1;
-        static thread_local int thread_id = -1;
-        // check if the thread id was generated this function call
-        if (thread_generation_counter != generation) {
-            // if not then give it a new id
-            thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
-            thread_generation_counter = generation;
-        }
-        if (thread_id < 0 || thread_id >= num_threads) {
-            std::ostringstream oss;
-            oss << "In `run_merge_split_step_on_all_plans` Thread id broke, thread id is " << thread_id
-                              << " but num threads is  " << num_threads << std::endl;
-            throw std::runtime_error(oss.str());
-        }
-        // UNCOMMENT FOR THREADPOOL CHECKING
-        // std::unique_ptr<ActiveUserGuard> active_guard;
-        // if constexpr (perf_config::check_threadpool_integrity) {
-        //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
-        // }
-
-        double log_incr_weight = compute_simple_log_incremental_weight(
-            *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
-            ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
-            scoring_functions[thread_id], rho, compute_log_splitting_prob, multidistrict_selection_alpha,
-            is_final_plans);
-
-        log_incremental_weights[i] = log_incr_weight;
-
-        if (verbosity >= 3) {
-            ++bar;
-        }
-
-        RcppThread::checkUserInterrupt(i % check_int == 0);
-    });
-
-    // Wait for all the threads to finish
-    pool.wait();
-
-    return;
-}
 
 // eventually need to modify to allow presaved options
 // OLD DOCUMENTATION FROM GRAPH THING NEED TO UPDATE
@@ -623,7 +523,7 @@ double compute_log_optimal_incremental_weights(
 
     if (!std::isfinite(incremental_weight)) {
         plan.Rprint(true);
-        throw Rcpp::exception(
+        throw std::runtime_error(
             "One of the plan incremental weights is not finite!"
             "Try checking if constraint strength is too large and causing overflow errors.\n");
     }
@@ -632,153 +532,7 @@ double compute_log_optimal_incremental_weights(
     return incremental_weight;
 }
 
-// NEED TO UPDATE THIS IS OLD DOCUMENTATION FOR GRAPH STUFF
-// Computes log unnormalized weights for vector of plans
-//
-// Using the procedure outlined in <PAPER HERE> this function computes the log
-// incremental weights and the unnormalized weights for a vector of plans (which
-// may or may not be the same depending on the parameters).
-//
-// @title Compute Log Unnormalized Weights
-//
-// @param pool A threadpool for multithreading
-// @param g A graph (adjacency list) passed by reference
-// @param plans_ptr_vec A vector of plans to compute the log unnormalized weights
-// of
-// @param split_district_only whether or not to compute the weights under
-// the district only split scheme or not. If `split_district_only` is true
-// then uses optimal weights from one-district split scheme.
-// @param log_incremental_weights A vector of the log incremental weights
-// computed for the plans. The value of `log_incremental_weights[i]` is
-// the log incremental weight for `plans_ptr_vec[i]`
-// @param unnormalized_sampling_weights A vector of the unnormalized sampling
-// weights to be used with sampling the `plans_ptr_vec` in the next iteration of the
-// algorithm. Depending on the other hyperparameters this may or may not be the
-// same as `exp(log_incremental_weights)`
-// @param target Target population of a single district
-// @param pop_temper <DETAILS NEEDED>
-//
-// @details Modifications
-//    - The `log_incremental_weights` is updated to contain the incremental
-//    weights of the plans
-//    - The `unnormalized_sampling_weights` is updated to contain the unnormalized
-//    sampling weights of the plans for the next round
-void compute_all_plans_log_optimal_incremental_weights(
-    RcppThread::ThreadPool &pool, const MapParams &map_params,
-    const SplittingSchedule &splitting_schedule, SamplingSpace const sampling_space,
-    std::vector<ScoringFunction> const &scoring_functions, double rho,
-    double const whole_map_compactness_term, std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
-    std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, 
-    double const multidistrict_selection_alpha,
-    bool is_final_plans, 
-    arma::subview_col<double> log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
-    SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
-    int verbosity) {
-    const int nsims = static_cast<int>(plans_ptr_vec.size());
-    const int check_int = 50; // check for interrupts every _ iterations
-    if constexpr (DEBUG_WEIGHTS_VERBOSE)
-        Rprintf("About to start computing weights!\n");
 
-    int const num_threads = get_num_threads(pool);
-    // thread safe id counter
-    static std::atomic<int> global_generation_counter{0};
-    int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
-    std::atomic<int> thread_id_counter{0};
-    std::vector<std::atomic<int>> active_users(
-        perf_config::check_threadpool_integrity ? num_threads : 0);
-
-    // now make the vectors of important variables to be used by threads
-    std::vector<USTSampler> ust_samplers_vec;
-    ust_samplers_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> plan_multigraphs_vec;
-    plan_multigraphs_vec.reserve(num_threads);
-    for (size_t i = 0; i < num_threads; i++) {
-        ust_samplers_vec.emplace_back(map_params, splitting_schedule);
-        plan_multigraphs_vec.emplace_back(map_params,
-                                          sampling_space == SamplingSpace::LinkingEdgeSpace);
-    }
-    std::vector<GranularWeightTimes> granular_weight_times(num_threads);
-
-    RcppThread::ProgressBar bar(nsims, 1);
-    // Parallel thread pool where all objects in memory shared by default
-    pool.parallelFor(0, nsims, [&](int i) {
-        static thread_local int thread_generation_counter = -1;
-        static thread_local int thread_id = -1;
-        // check if the thread id was generated this function call
-        if (thread_generation_counter != generation) {
-            // if not then give it a new id
-            thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
-            thread_generation_counter = generation;
-        }
-        if (thread_id < 0 || thread_id >= num_threads) {
-            std::ostringstream oss;
-            oss << "In `run_merge_split_step_on_all_plans` Thread id broke, thread id is " << thread_id
-                              << " but num threads is  " << num_threads << std::endl;
-            throw std::runtime_error(oss.str());
-        }
-        // UNCOMMENT FOR THREADPOOL CHECKING
-        // std::unique_ptr<ActiveUserGuard> active_guard;
-        // if constexpr (perf_config::check_threadpool_integrity) {
-        //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
-        // }
-
-        auto total_weight_time = maybe_now(); // optional timing 
-
-
-        if (cache_ensemble.using_caching) {
-            log_incremental_weights[i] = compute_log_optimal_incremental_weights(
-                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
-                ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
-                scoring_functions[thread_id], rho, whole_map_compactness_term,
-                compute_log_splitting_prob, multidistrict_selection_alpha,
-                is_final_plans, cache_ensemble.using_caching,
-                cache_ensemble.weight_cache_ptr_vec[i].get(), 
-                granular_weight_times[thread_id]);
-        } else {
-            log_incremental_weights[i] = compute_log_optimal_incremental_weights(
-                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
-                ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
-                scoring_functions[thread_id], rho, whole_map_compactness_term,
-                compute_log_splitting_prob, multidistrict_selection_alpha,
-                is_final_plans, cache_ensemble.using_caching,
-                nullptr, granular_weight_times[thread_id]);
-        }
-
-        
-
-        if constexpr (perf_config::track_granular_times){
-            add_elapsed(
-                smc_diagnostics.total_plan_smc_weight_times(i, smc_step_num), 
-                total_weight_time
-            ); // optional timing 
-        }
-        
-
-        if (verbosity >= 3) {
-            ++bar;
-        }
-
-        RcppThread::checkUserInterrupt(i % check_int == 0);
-
-    });
-
-    // Wait for all the threads to finish
-    pool.wait();
-
-    // add granular time if that's being tracked 
-    if constexpr (perf_config::track_granular_times){
-        for (size_t thread_id = 0; thread_id < num_threads; thread_id++)
-        {
-            smc_diagnostics.get_valid_smc_pairs_times[smc_step_num] += granular_weight_times[thread_id].get_valid_pairs;
-            smc_diagnostics.plan_scores_times[step_num] += granular_weight_times[thread_id].plan_scores;
-            smc_diagnostics.region_scores_times[step_num] += granular_weight_times[thread_id].region_scores;
-            smc_diagnostics.log_tau_times[step_num] += granular_weight_times[thread_id].tau_terms;
-        }
-    }
-
-    return;
-}
 
 std::pair<bool, double>
 WeightCache::attempt_to_get_region_value(RegionID const region_id,

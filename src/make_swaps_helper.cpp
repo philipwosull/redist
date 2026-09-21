@@ -8,7 +8,7 @@
 
 // Header files
 #include "constraint_calc_helper.h"
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 
 /* Function to check adjacency of a randomly selected connected component
@@ -230,7 +230,8 @@ Rcpp::NumericVector update_distpop(Rcpp::NumericVector prop_partition, Rcpp::Num
 }
 
 // Function to update the metropolis-hastings probability for a swap
-double update_mhprob(Rcpp::NumericVector prop_partition, Rcpp::List aList, arma::vec cds, int prop_cd,
+double update_mhprob(Rcpp::NumericVector prop_partition, Rcpp::List aList,
+                     Rcpp::NumericVector cds, int prop_cd,
                      double eprob, double mh_prob) {
 
     /* Inputs to function:
@@ -320,27 +321,22 @@ Rcpp::NumericVector diff_origcds(Rcpp::NumericMatrix mat, Rcpp::NumericVector cd
     // Get length of cd vector
     unsigned int len_cds = cds.size();
 
-    // Convert cds to arma
-    arma::uvec cds_arma = Rcpp::as<arma::uvec>(cds);
-
     // Initialize objects
     unsigned int i;
     unsigned int k = mat.ncol();
-    arma::vec plan;
-    arma::uvec compare;
     Rcpp::NumericVector store_compare(k);
 
     // Start loop over mat columns
     for (i = 0; i < k; i++) {
 
-        // Get the plan
-        plan = mat(Rcpp::_, i);
-
-        // Compare matrices
-        compare = (plan == cds_arma);
+        // Count the entries of this plan that match the baseline
+        unsigned int matches = 0;
+        for (unsigned int r = 0; r < len_cds; r++) {
+            if (mat(r, i) == cds(r)) matches++;
+        }
 
         // Sum up and divide by len_cds
-        store_compare(i) = (double)sum(compare) / len_cds;
+        store_compare(i) = (double)matches / len_cds;
     }
 
     return store_compare;
@@ -368,20 +364,16 @@ Rcpp::NumericVector distParity(Rcpp::NumericMatrix mat, Rcpp::NumericVector popv
     // Loop through plans
     for (int i = 0; i < mat.ncol(); i++) {
 
-        // Get plan
-        arma::vec plan = mat(Rcpp::_, i);
-
         // Loop through assignments
         double maxdev = 0.0;
         for (int j = 0; j < labs.size(); j++) {
 
-            arma::uvec assignments = find(plan == labs(j));
-
-            // Loop over precincts in plan
+            // Loop over precincts in plan, summing those in this district
             int distpop = 0;
-            for (int k = 0; k < assignments.size(); k++) {
-
-                distpop += popvec(assignments(k));
+            for (int r = 0; r < mat.nrow(); r++) {
+                if (mat(r, i) == labs(j)) {
+                    distpop += popvec(r);
+                }
             }
 
             // Get deviation from parity

@@ -5,7 +5,7 @@
  * Purpose: Implementation of Plan type for Linking Edge space
  ********************************************************/
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "linking_edge_plan_type.h"
 
 #include "scoring.h"
@@ -125,7 +125,7 @@ LinkingEdgePlan::LinkingEdgePlan(
            this_plan_region_pops, this_plan_order_added, this_plan_forest_edge_bits) {
 
     if (initial_forest_adj_list.size() > 1) {
-        throw Rcpp::exception("Input Forest list not supported right now\n");
+        throw std::runtime_error("Input Forest list not supported right now\n");
     } else {
         // else just build a forest at random
         for (size_t region_id = 0; region_id < num_regions; region_id++) {
@@ -133,7 +133,7 @@ LinkingEdgePlan::LinkingEdgePlan(
                                             rng_state, 1000000);
 
             if (!result.first) {
-                throw Rcpp::exception(
+                throw std::runtime_error(
                     "Could not draw a tree on a region after 1000000 attempts");
             }
         }
@@ -233,7 +233,7 @@ void LinkingEdgePlan::update_vertex_and_plan_specific_info_from_cut(
         } else {
             Rprint(true);
             REprintf("Error could not find old edge!!\n");
-            throw Rcpp::exception("NOOOO");
+            throw std::runtime_error("NOOOO");
         }
     }
 
@@ -307,7 +307,7 @@ double LinkingEdgePlan::get_log_eff_boundary_len(
             return edge_pair.log_prob;
         }
     }
-    throw Rcpp::exception("Linking Pair not found!\n");
+    throw std::runtime_error("Linking Pair not found!\n");
 }
 
 // - for linking edge sampling its the edge selection probability PLUS
@@ -351,12 +351,12 @@ LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens(
             if (!search_result.first) {
                 REprintf("BIG BIG ERROR: A pair of regions with linking edge is somehow "
                          "hierarchically invalid now!\n");
-                throw Rcpp::exception("A pair of regions with linking edge is somehow "
+                throw std::runtime_error("A pair of regions with linking edge is somehow "
                                       "hierarchically invalid now!\n");
             } else if (!search_result.second.merge_is_hier_valid) {
                 REprintf("ERROR: A pair of regions with linking edge is somehow hierarchically "
                          "invalid now!\n");
-                throw Rcpp::exception("A pair of regions with linking edge is somehow "
+                throw std::runtime_error("A pair of regions with linking edge is somehow "
                                       "hierarchically invalid now!\n");
             }
 
@@ -376,7 +376,7 @@ LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens(
                          edge_pair.vertex1, edge_pair.vertex2, edge_region1, edge_region2,
                          edge_region1_size, edge_region2_size, edge_pair.log_prob);
                 Rprint(true);
-                throw Rcpp::exception("INFINITE PROB!\n");
+                throw std::runtime_error("INFINITE PROB!\n");
             }
 
             if (num_regions > 2) {
@@ -428,7 +428,7 @@ LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens(
                 //     merged_tau, temp_tau,
                 //     (merged_tau == temp_tau) ? "TRUE" : "FALSE" );
                 //     Rprint(true);
-                //     throw Rcpp::exception("DIFFERENT LOG TAU VALUES!\n");
+                //     throw std::runtime_error("DIFFERENT LOG TAU VALUES!\n");
                 // }
             }
 
@@ -471,7 +471,7 @@ std::vector<std::pair<RegionID, RegionID>> LinkingEdgePlan::get_valid_smc_merge_
             if (!search_result.first) {
                 REprintf("A pair of regions with linking edge is somehow hierarchically "
                          "invalid now!\n");
-                throw Rcpp::exception("A pair of regions with linking edge is somehow "
+                throw std::runtime_error("A pair of regions with linking edge is somehow "
                                       "hierarchically invalid now!\n");
             }
 
@@ -524,7 +524,7 @@ LinkingEdgePlan::attempt_to_get_valid_mergesplit_pairs(
                 REprintf("Getting Mergesplit Pairs: the pair of regions (%d, %d) with linking "
                          "edge is somehow hierarchically invalid now!\n",
                          edge_region1, edge_region2);
-                throw Rcpp::exception("Getting Mergesplit Pairs: A pair of regions with "
+                throw std::runtime_error("Getting Mergesplit Pairs: A pair of regions with "
                                       "linking edge is somehow hierarchically invalid now!\n");
             }
 

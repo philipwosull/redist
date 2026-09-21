@@ -37,7 +37,7 @@ inline void add_elapsed(
             Clock::now() - start
         ).count();
     }else{
-        throw Rcpp::exception("Time elapsed is being called when TRACK_GRANULAR_PERFORMANCE_TIMES = false");
+        throw std::runtime_error("Time elapsed is being called when TRACK_GRANULAR_PERFORMANCE_TIMES = false");
     }
 }
 

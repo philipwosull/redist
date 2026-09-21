@@ -10,7 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "base_plan_type.h"
 #include "graph_plan_type.h"
@@ -204,7 +204,7 @@ Rcpp::List ms_plans(
                 .second;
 
         // get weights
-        arma::vec current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
+        std::vector<double> current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
             *plan_ensemble.plan_ptr_vec[0], current_plan_adj_region_pairs, pair_rule);
 
         // Set or estimate k if doing graph space sampling

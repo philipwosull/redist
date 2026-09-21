@@ -2,7 +2,7 @@
 #ifndef GRAPH_PLAN_TYPE_H
 #define GRAPH_PLAN_TYPE_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "base_plan_type.h"
 
 
@@ -44,7 +44,7 @@ class GraphPlan : public Plan {
  */
 void estimate_cut_k(const MapParams &map_params, const SplittingSchedule &splitting_schedule,
                     RNGState &rng_state, int &k, int const last_k,
-                    const arma::vec &unnormalized_weights, double thresh, double tol,
+                    double thresh, double tol,
                     std::vector<std::unique_ptr<Plan>> const &plan_ptrs_vec,
                     bool split_district_only, int const verbosity);
 

@@ -8,6 +8,8 @@
 #include "scoring.h"
 #include "base_plan_type.h"
 
+#include <numeric>
+
 constexpr bool DEBUG_SCORING_VERBOSE = false;
 
 // helpers
@@ -75,9 +77,10 @@ int count_total_admin_splits(std::vector<std::vector<int>> const &admin_vertex_l
 // Spanning forest on the counties, ie each tree is a tree on a specific county
 // roots of each county tree, so [i] is root of tree on county[i+1]
 std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
-                                                     const arma::uvec &admin_units) {
+                                                     const std::vector<unsigned int> &admin_units) {
     // we assume admin units is 1 indexed and if `k` units then values are in `1:k`
-    int const num_counties = arma::max(admin_units);
+    int const num_counties =
+        static_cast<int>(*std::max_element(admin_units.begin(), admin_units.end()));
     // nothing if only 1 county
     if (num_counties == 1)
         return make_pair(Tree(0), std::vector<int>());
@@ -99,7 +102,7 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
         if (admin_unit_visited[v_admin_unit]) {
             // sanity check can delete later
             if (!visited[v])
-                throw Rcpp::exception("Should have visitied this vertex already!\n");
+                throw std::runtime_error("Should have visitied this vertex already!\n");
             continue;
         }
 
@@ -122,8 +125,8 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
             int u_admin_unit = admin_units[u] - 1;
             // sanity check delete later
             if (u_admin_unit != v_admin_unit) {
-                REprintf("v county %d, u county %d", v_admin_unit, (int)admin_units(u) - 1);
-                throw Rcpp::exception("County forest went wrong!!\n");
+                REprintf("v county %d, u county %d", v_admin_unit, (int)admin_units[u] - 1);
+                throw std::runtime_error("County forest went wrong!!\n");
             }
 
             // see if any children in the same county
@@ -147,7 +150,7 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
 
 // Counts how many districts have more than 1 incumbent in them
 // NOTE: incumbents is 1-indexed
-int count_plan_incumbent_pairings(arma::uvec const &incumbents,
+int count_plan_incumbent_pairings(std::vector<unsigned int> const &incumbents,
                                   std::vector<int> &region_incumbent_counts,
                                   PlanVector const &region_ids,
                                   std::vector<int> const &region_reindex_vec,
@@ -188,8 +191,8 @@ int count_plan_incumbent_pairings(arma::uvec const &incumbents,
 }
 
 int count_min_threshold_regions(int const num_populations,
-                                std::vector<arma::vec> const &group_pop,
-                                std::vector<arma::vec> const &total_pop,
+                                std::vector<std::vector<double>> const &group_pop,
+                                std::vector<std::vector<double>> const &total_pop,
                                 std::vector<double> const &min_fracs,
                                 std::vector<bool> const &region_ids_to_count,
                                 PlanVector const &region_ids,
@@ -807,7 +810,9 @@ double MinGroupFracConstraint::compute_raw_plan_constraint_score(
     if (num_regions == 1) {
         double pops_above = 0.0;
         for (size_t i = 0; i < num_populations; i++) {
-            if (arma::sum(group_pops[i]) / arma::sum(total_pops[i]) >= min_fracs[i]) {
+            if (std::accumulate(group_pops[i].begin(), group_pops[i].end(), 0.0) /
+                    std::accumulate(total_pops[i].begin(), total_pops[i].end(), 0.0) >=
+                min_fracs[i]) {
                 pops_above++;
             }
         }
@@ -841,12 +846,14 @@ double MinGroupFracConstraint::compute_raw_merged_plan_constraint_score(
 
     // if just 1 region we just sum the two
     if (plan.num_regions == 1) {
-        throw Rcpp::exception("Calling MinGroupFracConstraint Merge on a 1 region plan!\n");
+        throw std::runtime_error("Calling MinGroupFracConstraint Merge on a 1 region plan!\n");
         return 0.0;
     } else if (plan.num_regions == 2) {
         double pops_above = 0.0;
         for (size_t i = 0; i < num_populations; i++) {
-            if (arma::sum(group_pops[i]) / arma::sum(total_pops[i]) >= min_fracs[i]) {
+            if (std::accumulate(group_pops[i].begin(), group_pops[i].end(), 0.0) /
+                    std::accumulate(total_pops[i].begin(), total_pops[i].end(), 0.0) >=
+                min_fracs[i]) {
                 pops_above++;
             }
         }
@@ -1027,16 +1034,6 @@ ScoringFunction::ScoringFunction(MapParams const &map_params, Rcpp::List const &
     if (constraints.containsElementNamed("fry_hold")) {
         Rcpp::List constr = constraints["fry_hold"];
         throw std::runtime_error("Fry hold constraint not supported right now!\n");
-        for (int i = 0; i < constr.size(); i++) {
-            Rcpp::List constr_inst = constr[i];
-            // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(
-            //     constr_inst, map_params));
-        }
-    }
-
-    if (constraints.containsElementNamed("qps")) {
-        Rcpp::List constr = constraints["qps"];
-        throw std::runtime_error("QPS constraint not supported right now!\n");
         for (int i = 0; i < constr.size(); i++) {
             Rcpp::List constr_inst = constr[i];
             // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(

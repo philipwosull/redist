@@ -1,4 +1,4 @@
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "cw_forest_walk.h"
 #include "cw_proposal.h"
 #include "lct_graph_plan_type.h"
@@ -19,7 +19,6 @@
 #include <string>
 
 using namespace Rcpp;
-using namespace arma;
 
 /*
  * Cyclewalk MCMC sampler. Mirrors the modular shape used by ms_plans /

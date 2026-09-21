@@ -9,7 +9,7 @@
 // Header files
 
 #include "redist_types.h"
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 /* Function to modify adjacency list to reflect adjacency only within
    a particular congressional district */
@@ -94,36 +94,3 @@ Rcpp::NumericVector findBoundary(Rcpp::List fullList, Rcpp::List conList) {
     return isBoundary;
 }
 
-arma::uvec getIn(arma::ivec vec1, arma::ivec vec2) {
-
-    int i;
-    int j;
-    arma::uvec store_in(vec1.n_elem);
-    for (i = 0; i < vec1.n_elem; i++) {
-        for (j = 0; j < vec2.n_elem; j++) {
-            if (vec1(i) == vec2(j)) {
-                break;
-            }
-        }
-        store_in(i) = (j < vec2.n_elem) ? 1 : 0;
-    }
-
-    return store_in;
-}
-
-arma::uvec get_in_index(arma::vec vec1, arma::vec vec2) {
-
-    int i;
-    int j;
-    arma::uvec store_in(vec1.n_elem);
-    for (i = 0; i < vec1.n_elem; i++) {
-        for (j = 0; j < vec2.n_elem; j++) {
-            if (vec1(i) == vec2(j)) {
-                break;
-            }
-        }
-        store_in(i) = j;
-    }
-
-    return store_in;
-}

@@ -1,9 +1,10 @@
 #ifndef RANDOM_H
 #define RANDOM_H
 
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include <cstdint>
 #include <random>
+#include <stdexcept>
 #include <vector>
 #include "redist_constants.h"
 
@@ -67,11 +68,11 @@ class RNGState {
 
     // Generate a random integer in [0, cum_wgts.size()) according
     // to cumulative normalized weights.
-    int r_int_wgt(const arma::vec &cum_wgts);
+    int r_int_wgt(const std::vector<double> &cum_wgts);
 
     // Generate random integer with probability proporitional
     // to weights
-    int r_int_unnormalized_wgt(const arma::vec &unnormalized_wgts);
+    int r_int_unnormalized_wgt(const std::vector<double> &unnormalized_wgts);
 
     // Delete copy operator
     RNGState(const RNGState &) = delete;
@@ -88,11 +89,6 @@ class RNGState {
  * Set global RNGState seed
  */
 void global_seed_rng(int seed, int num_jumps = 1);
-
-/*
- * Generate a random integer within a stratum with some probability p
- */
-int r_int_mixstrat(int max, int stratum, double p, arma::vec cum_wgts);
 
 /*
  * Get the index of the k-th smallest element of x using global state

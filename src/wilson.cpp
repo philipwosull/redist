@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <limits>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 #include "wilson.h"
 
 #include "splitting_schedule_types.h"
