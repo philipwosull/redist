@@ -300,3 +300,105 @@ test_that("Parallel runs are reproducible", {
 
     expect_identical(pl1, pl2)
 })
+
+
+# Normalizing constant estimation -----------------------------------------
+#
+# `fl25_enum` holds every 3-district plan of `fl25` along with its population
+# deviation, so the exact number of valid plans at a given tolerance is known.
+# With `compactness = 0` the SMC target is uniform over those plans, which
+# makes that count the true normalizing constant to check estimates against.
+
+exact_log_norm <- function(pop_tol) {
+    log(sum(fl25_enum$pop_dev <= pop_tol))
+}
+
+test_that("est_norm_unbiased recovers the known normalizing constant", {
+    skip_on_cran()
+    set.seed(1935)
+
+    map <- suppressMessages(
+        redist_map(fl25, ndists = 3, pop_tol = 0.2, total_pop = pop)
+    )
+    # low resampling efficiency is expected on a map this small and does not
+    # affect the estimate
+    plans <- suppressWarnings(
+        redist_smc(map, 2000, runs = 5, compactness = 0,
+                   ncores = 1, silent = TRUE)
+    )
+
+    est <- est_norm_unbiased(map, plans)
+
+    # one estimate per run
+    expect_length(est, 5)
+    expect_true(all(is.finite(est)))
+
+    # the estimator is unbiased on the natural scale, so average there rather
+    # than averaging the logs
+    pooled <- log(mean(exp(est)))
+    expect_equal(pooled, exact_log_norm(0.2), tolerance = 0.05)
+})
+
+test_that("est_norm_unbiased tracks the constant across population tolerances", {
+    skip_on_cran()
+
+    # A looser tolerance admits strictly more plans, so the normalizing
+    # constant must rise with it. This checks the estimator follows a change in
+    # the target rather than happening to land on one value.
+    pooled <- vapply(c(0.1, 0.2), function(tol) {
+        set.seed(1935)
+        map <- suppressMessages(
+            redist_map(fl25, ndists = 3, pop_tol = tol, total_pop = pop)
+        )
+        # the tighter tolerance warns about low resampling efficiency, which is
+        # expected on a map this small and does not affect the estimate
+        plans <- suppressWarnings(
+            redist_smc(map, 2000, runs = 5, compactness = 0,
+                       ncores = 1, silent = TRUE)
+        )
+        log(mean(exp(est_norm_unbiased(map, plans))))
+    }, numeric(1))
+
+    expect_equal(pooled[1], exact_log_norm(0.1), tolerance = 0.05)
+    expect_equal(pooled[2], exact_log_norm(0.2), tolerance = 0.05)
+    expect_lt(pooled[1], pooled[2])
+})
+
+test_that("est_norm_unbiased accounts for rejected draws", {
+    skip_on_cran()
+    set.seed(1935)
+
+    map <- suppressMessages(
+        redist_map(fl25, ndists = 3, pop_tol = 0.2, total_pop = pop)
+    )
+    plans <- suppressWarnings(
+        redist_smc(map, 1000, runs = 3, compactness = 0,
+                   ncores = 1, silent = TRUE)
+    )
+
+    diags <- attr(plans, "internal_diagnostics")
+
+    # the rejection bookkeeping the estimator relies on is recorded
+    for (d in diags) {
+        expect_true("draw_tries_mat" %in% names(d))
+        expect_true(is.numeric(d$tries_before_extra_particle))
+
+        # more spanning trees were drawn than particles kept, i.e. draws were
+        # actually rejected on the way to a valid plan
+        expect_gt(sum(d$draw_tries_mat), 1000 * ncol(d$draw_tries_mat))
+    }
+
+    truth <- exact_log_norm(0.2)
+    pooled <- log(mean(exp(est_norm_unbiased(map, plans))))
+    expect_equal(pooled, truth, tolerance = 0.05)
+
+    # Dropping the attempt counts is not a small correction: without dividing
+    # by the number of tries the estimate is off by orders of magnitude. This
+    # pins down that the rejection accounting is doing real work.
+    ignoring_tries <- vapply(diags, function(d) {
+        d$log_blank_map_target_density +
+            sum(log(colSums(exp(d$log_incremental_weights_mat))))
+    }, numeric(1))
+
+    expect_gt(log(mean(exp(ignoring_tries))) - truth, 5)
+})
