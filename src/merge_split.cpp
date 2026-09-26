@@ -80,8 +80,8 @@ Rcpp::List ms_plans(
         Rcpp::as<std::vector<unsigned int>>(counties), 
         Rcpp::as<std::vector<unsigned int>>(pop), 
         ndists, total_seats,
-                               Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
-                            sampling_space);
+        Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
+        sampling_space, !enforce_hierarchical);
     int V = map_params.g.size();
 
     int initial_num_regions = static_cast<int>(ndists);
@@ -163,11 +163,11 @@ Rcpp::List ms_plans(
     {
         USTSampler ust_sampler(map_params, *splitting_schedule_ptr);
         PlanMultigraph current_plan_multigraph(map_params, sampling_space ==
-                                                               SamplingSpace::LinkingEdgeSpace,
-                                                enforce_hierarchical);
+                                                               SamplingSpace::LinkingEdgeSpace
+                                                );
         PlanMultigraph proposed_plan_multigraph(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace,
-            enforce_hierarchical);
+            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace
+            );
 
         RcppThread::ThreadPool pool(0);
         // underlying vector from plan

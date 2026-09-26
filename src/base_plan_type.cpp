@@ -2683,12 +2683,12 @@ void swap_pair_maps(RegionPairHash &a, RegionPairHash &b) {
 };
 
 PlanMultigraph::PlanMultigraph(MapParams const &map_params,
-                               bool const need_to_compute_multigraph_taus,
-                               bool const force_nonhierarchical)
+                               bool const need_to_compute_multigraph_taus
+                            )
     : map_params(map_params), 
       // we only say counties are on if more than 1 county and we're not forcing 
       // non-hierarchicalness
-      counties_on(map_params.num_counties > 1 && !force_nonhierarchical),
+      counties_on(map_params.num_counties > 1 && !map_params.plans_may_be_non_hierarchical),
       vertices_visited(map_params.V), county_component(map_params.ndists, 0),
       component_split_counts(counties_on ? map_params.ndists : 0, 0),
       component_region_counts(counties_on ? map_params.ndists : 0, 0),

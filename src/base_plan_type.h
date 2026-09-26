@@ -433,8 +433,8 @@ void swap_pair_maps(RegionPairHash &a, RegionPairHash &b);
 class PlanMultigraph {
   public:
     PlanMultigraph(MapParams const &map_params,
-                   bool const need_to_compute_multigraph_taus = false,
-                   bool const force_nonhierarchical = false);
+                   bool const need_to_compute_multigraph_taus = false
+                );
 
     MapParams const &map_params;
     bool const counties_on;

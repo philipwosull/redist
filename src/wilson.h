@@ -45,29 +45,52 @@ class WilsonGraphScratch {
 };
 
 
+// The number of admin units the Wilson scratch objects must be able to hold.
+//
+// When plans are guaranteed hierarchically valid the admin units are exactly
+// the counties. Otherwise a county's active portion can break into several
+// disconnected pieces, each of which becomes its own fake county, so in the
+// worst case every vertex is its own admin unit.
+inline int admin_unit_capacity(MapParams const &map_params) {
+    return map_params.plans_may_be_non_hierarchical
+        ? map_params.V
+        : map_params.num_counties;
+}
+
+
 class WilsonMultiGraphScratch {
   public:
     explicit WilsonMultiGraphScratch(
-        int const num_admin_units
+        int const admin_capacity
     )
-        : num_admin_units(num_admin_units),
+        : admin_capacity(admin_capacity),
+          num_admin_units(0),
           total_pop(0),
           smallest_county_seen(-1),
           c_remaining(0),
-          county_stack(num_admin_units + 1),
-          county_pop(num_admin_units, 0),
-          c_visited(num_admin_units, true),
-          admin_ignore(num_admin_units, true),
-          cty_pop_below(num_admin_units, 0),
+          county_stack(admin_capacity + 1),
+          county_pop(admin_capacity, 0),
+          c_visited(admin_capacity, true),
+          admin_ignore(admin_capacity, true),
+          cty_pop_below(admin_capacity, 0),
           next_admin_edge(
-              num_admin_units,
+              admin_capacity,
               AdminEdge{-1, -1, -1}
           ),
-          admin_roots(num_admin_units, -1),
+          admin_roots(admin_capacity, -1),
           deterministic_counties() {
-            deterministic_counties.reserve(num_admin_units);
+            deterministic_counties.reserve(admin_capacity);
           }
 
+    // Allocated length of every per-admin-unit vector below. Never changes,
+    // and matches the size of the multigraph the admin walk runs on.
+    int const admin_capacity;
+    // Number of admin units actually live in the current draw. Always
+    // <= admin_capacity, and equal to it when plans are hierarchically valid.
+    // Reset by `prep_fresh_ust_call` on every draw.
+    //
+    // THIS, not admin_capacity, bounds every loop over admin units. Entries
+    // at or past this index hold stale values from earlier draws.
     int num_admin_units;
     int total_pop; // tracks total population
     int smallest_county_seen;
@@ -98,23 +121,35 @@ class USTSampler {
     std::vector<bool> ignore; // TODO make visited private and create one for tree splitter
 
     // This takes a function `is_active` which given a vertex v
-    // returns true if it should be included and false if not 
+    // returns true if it should be included and false if not
     // ie false value means ignore
     // Using this it preps all the inputs for a fresh ust call
+    //
+    // `counties` is the 1-indexed admin unit label of every map vertex and
+    // `num_admin_units` is how many of those units exist. They are passed in
+    // rather than read off `map_params` so a draw can run over fake counties.
+    // This is the only writer of `mg_scratch.num_admin_units`.
     template <typename IsActive>
     int prep_fresh_ust_call(
-        IsActive const &is_active
+        IsActive const &is_active,
+        std::vector<unsigned int> const &counties,
+        int const num_admin_units
     );
 
 
-    // Draws a completely fresh ust. 
+    // Draws a completely fresh ust over the administrative partition given by
+    // (`counties`, `admin_multigraph`, `num_admin_units`), which must all
+    // describe the same partition.
     template <bool SkipUnsplittableTrees, typename IsActive>
     USTDrawResult draw_fresh_ust(
         double const lower,
         double const upper,
         RNGState &rng_state,
-        IsActive const &is_active
-    );      
+        IsActive const &is_active,
+        std::vector<unsigned int> const &counties,
+        Multigraph const &admin_multigraph,
+        int const num_admin_units
+    );
 
     // Finds and 
     std::pair<bool, EdgeCut>
@@ -127,16 +162,28 @@ class USTSampler {
   public:
     USTSampler(MapParams const &map_params, SplittingSchedule const &splitting_schedule)
         :
+        assume_hierarchical(!map_params.plans_may_be_non_hierarchical),
         // ust(map_params.map_graph.get_flat_empty_tree()),
         ust(init_tree(map_params.V)),
         // wilson_submap(map_params.map_graph),
         pops_below_vertex(map_params.V, 0),
           visited(map_params.V), ignore(map_params.V), stack(map_params.V + 1),
-          county_tree(init_tree(map_params.num_counties)),
+          county_tree(init_tree(admin_unit_capacity(map_params))),
           g_scratch(map_params.V),
-          mg_scratch(map_params.num_counties),
+          mg_scratch(admin_unit_capacity(map_params)),
           vertex_queue(map_params.V), map_params(map_params),
-          splitting_schedule(splitting_schedule) {
+          splitting_schedule(splitting_schedule),
+          // Only allocated when plans can be non-hierarchical; empty otherwise
+          // so the hierarchical path pays nothing for them.
+          fake_counties(
+              map_params.plans_may_be_non_hierarchical ? map_params.V : 0, 0
+          ),
+          fake_cg(
+              map_params.plans_may_be_non_hierarchical ? map_params.V : 0
+          ),
+          fake_county_vertices(
+              map_params.plans_may_be_non_hierarchical ? map_params.V : 0
+          ) {
             // reserve the max capacity now 
             for (size_t v = 0; v < map_params.V; v++)
             {
@@ -145,6 +192,7 @@ class USTSampler {
              
           };
 
+    bool const assume_hierarchical; // Whether or not we can assume the inputted plans will always be hierarchical
     // FlatGraph ust;
     Tree ust;
     // FlatGraph wilson_submap; // subgraph of g restricted to only the vertices we care about 
@@ -156,6 +204,16 @@ class USTSampler {
     CircularQueue<std::pair<int, int>> vertex_queue; // not used in sample ust
     MapParams const &map_params;
     SplittingSchedule const &splitting_schedule;
+    // These variables are only needed if we're not guaranteed hierarchical
+    // plans, and are left empty otherwise. All three are indexed by fake
+    // county and sized to `mg_scratch.admin_capacity`, with only the first
+    // `mg_scratch.num_admin_units` entries live in any given draw.
+    //
+    // Fake county labels are 1-indexed to match `map_params.counties`.
+    std::vector<unsigned int> fake_counties;
+    Multigraph fake_cg;
+    std::vector<std::vector<int>> fake_county_vertices;
+
 
     // just used to draw a tree on a generic subgraph.
     // has toggable option to turn on or off skipping drawing 
@@ -196,9 +254,6 @@ class USTSampler {
       RNGState &rng_state, 
       int const max_tries_multiple = 1000
     );
-
-
-
 
     std::pair<bool, EdgeCut> attempt_to_find_valid_tree_split(
         RNGState &rng_state, ScoringFunction const &scoring_function,
