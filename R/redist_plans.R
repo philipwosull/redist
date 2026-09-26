@@ -843,6 +843,18 @@ rbind.redist_plans <- function(..., deparse.level = 1) {
     partial <- attr(objs[[1]], "partial")
     districting_scheme <- attr(objs[[1]], "districting_scheme")
     seats_range <- attr(objs[[1]], "seats_range")
+    counties <- attr(objs[[1]], "counties")
+
+    # County labels are compared by value rather than with `identical()`.
+    # A map with no counties stores `rep(1, V)`, a double, while a real
+    # county column is run through `as.integer(as.factor(...))`, so equal
+    # groupings can arrive with different storage types.
+    same_counties <- function(x, y) {
+        if (is.null(x) || is.null(y)) {
+            return(identical(x, y))
+        }
+        length(x) == length(y) && identical(as.integer(x), as.integer(y))
+    }
 
     for (i in 2:n_obj) {
         if (nrow(get_plans_matrix(objs[[i]])) != n_prec) {
@@ -850,6 +862,14 @@ rbind.redist_plans <- function(..., deparse.level = 1) {
         }
         if (!identical(attr(objs[[i]], "prec_pop"), prec_pop)) {
             cli::cli_abort("Precinct populations must match for all sets of plans.")
+        }
+        if (!same_counties(attr(objs[[i]], "counties"), counties)) {
+            cli::cli_abort(c(
+        "Administrative units must match for all sets of plans.",
+        "x" = "Set {i} was sampled with different {.arg counties} than set 1.",
+        "i" = "Plans sampled under different administrative units are not
+               comparable, since the county splitting behaviour differs."
+      ))
         }
         if (!identical(attr(objs[[i]], "ndists"), ndists)) {
             cli::cli_abort("Number of districts must match for all sets of plans.")
@@ -937,16 +957,81 @@ rbind.redist_plans <- function(..., deparse.level = 1) {
         seats_range <- NULL
     }
 
-    ret <- lapply(seq_along(objs), function(i) {
-        out <- objs[[i]] |>
-            dplyr::as_tibble()
+    # Relabel chains so that ids are unique across the inputs.
+    #
+    # Objects arrive with or without a `chain` column depending on the
+    # sampler: `redist_smc()` omits it for a single run, while
+    # `redist_mergesplit()` always emits one. Keeping an existing column
+    # as-is would make every single-chain mergesplit run come out labelled
+    # `1`, which silently collapses them into one chain and stops
+    # `summary()` from computing R-hat values.
+    #
+    # `NA` marks reference and initial plans rather than a chain, so it is
+    # left alone.
+    per_obj <- lapply(objs, function(obj) {
+        out <- dplyr::as_tibble(obj)
 
-        if (!"chain" %in% names(out)) {
-            out$chain <- i
+        out$chain <- if ("chain" %in% names(out)) {
+            as.integer(factor(out$chain))
+        } else {
+            1L
         }
+
         out
-    }) |>
-        dplyr::bind_rows()
+    })
+
+    n_chains_each <- vapply(per_obj, function(x) {
+        if (all(is.na(x$chain))) 0L else max(x$chain, na.rm = TRUE)
+    }, integer(1))
+
+    offsets <- cumsum(c(0L, n_chains_each))[seq_len(n_obj)]
+
+    per_obj <- Map(function(x, offset) {
+        x$chain <- x$chain + offset
+        x
+    }, per_obj, offsets)
+
+    # Only say anything if an input's own chain ids actually moved. Inputs
+    # that arrived without a `chain` column had no ids to preserve, so
+    # labelling them is not a change worth reporting.
+    renumbered <- vapply(seq_len(n_obj), function(i) {
+        if (!"chain" %in% names(objs[[i]])) {
+            return(FALSE)
+        }
+        !identical(
+      as.character(dplyr::as_tibble(objs[[i]])$chain),
+      as.character(per_obj[[i]]$chain)
+    )
+    }, logical(1))
+
+    if (any(renumbered)) {
+        obj_labels <- names(objs)
+        if (is.null(obj_labels)) {
+            obj_labels <- rep("", n_obj)
+        }
+        unnamed <- obj_labels == "" | is.na(obj_labels)
+        obj_labels[unnamed] <- paste0("input ", seq_len(n_obj)[unnamed])
+
+        assignments <- vapply(seq_len(n_obj), function(i) {
+            if (n_chains_each[i] == 0L) {
+                return(paste0("{.val ", obj_labels[i], "}: no chains"))
+            }
+            ids <- offsets[i] + seq_len(n_chains_each[i])
+            paste0(
+        "{.val ", obj_labels[i], "}: chain",
+        if (length(ids) > 1) paste0("s ", min(ids), "-", max(ids)) else paste0(" ", ids),
+        if (renumbered[i]) "" else " (unchanged)"
+      )
+        }, character(1))
+
+        cli::cli_warn(c(
+      "Chain ids were renumbered so that they are unique across the
+       {n_obj} sets of plans.",
+      stats::setNames(assignments, rep(">", n_obj))
+    ))
+    }
+
+    ret <- dplyr::bind_rows(per_obj)
 
     #ret$chain <- factor_combine(ret$chain)
     ret <- reconstruct.redist_plans(ret, objs[[1]])
@@ -975,15 +1060,42 @@ rbind.redist_plans <- function(..., deparse.level = 1) {
         lapply(objs, function(x) get_plans_matrix(x))
     )
     attr(ret, "wgt") <- do.call(c, lapply(objs, function(x) get_plans_weights(x)))
-    attr(ret, "n_eff") <- sum(do.call(
-        c,
-        lapply(objs, function(x) attr(x, "n_eff"))
-    ))
+
+    # Only carry `n_eff` if some input actually had one. Summing a list of
+    # NULLs yields 0, which would invent an effective sample size of zero.
+    all_n_eff <- do.call(c, lapply(objs, function(x) attr(x, "n_eff")))
+    attr(ret, "n_eff") <- if (is.null(all_n_eff)) NULL else sum(all_n_eff)
 
     attr(ret, "pop_bounds") <- pop_bounds
     attr(ret, "num_admin_units") <- num_admin_units
 
-    # TODO sum total runtime
+    # One acceptance rate per chain, so these have to be concatenated in the
+    # same order the chains were. Keeping only the first object's rates would
+    # leave `summary()` reporting fewer rates than there are chains.
+    attr(ret, "mh_acceptance") <- do.call(
+        c,
+        lapply(objs, function(x) attr(x, "mh_acceptance"))
+    )
+
+    # Total time spent sampling is the sum over the runs that were combined.
+    #
+    # `redist_smc()` stores plain seconds while `redist_mergesplit()` stores a
+    # difftime whose units depend on how long the run took, so normalise to
+    # seconds before adding rather than summing the raw values.
+    all_runtimes <- lapply(objs, function(x) attr(x, "total_runtime"))
+    all_runtimes <- all_runtimes[!vapply(all_runtimes, is.null, logical(1))]
+
+    attr(ret, "total_runtime") <- if (length(all_runtimes) == 0) {
+        NULL
+    } else {
+        sum(vapply(all_runtimes, function(rt) {
+            if (inherits(rt, "difftime")) {
+                as.numeric(rt, units = "secs")
+            } else {
+                as.numeric(rt)
+            }
+        }, numeric(1)))
+    }
 
     ret
 }
