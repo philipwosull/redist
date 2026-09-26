@@ -60,10 +60,12 @@
 #' @param order_stats Whether or not to compute rhats on the ordered district
 #' statistics.
 #' @param rhat_thresh What values to use when checking convergence. It should
-#' consist of two named values: `q99` and `max`.
-#' Strong convergence is when all rhats are less than or equal to the `max` value
-#' and weak convergence is when the 99th quantile is less than or equal to
-#' `q99` and all rhats are less than or equal to `max`.
+#' consist of two named values: `q99` and `max`, where `q99` is the tighter of
+#' the two. Any name that is omitted falls back to its default.
+#' Strong convergence is when all rhats are less than or equal to the `q99`
+#' value, and weak convergence is when the 99th quantile is less than or equal
+#' to `q99` and all rhats are less than or equal to `max`. Chains that meet
+#' neither are reported as not converged.
 #'
 #' @param \dots additional arguments (ignored)
 #'
@@ -213,81 +215,22 @@ summary.redist_plans <- function(
     }
 
     # now compute rhats if more than 1 chain
-    cols <- names(object)
-    multiple_chains <- "chain" %in% cols && dplyr::n_distinct(object[["chain"]]) > 1
-    if (multiple_chains) {
-        one_district_only <- 1 <= district && district <= n_distr
-
-        addl_cols <- setdiff(
-            cols,
-            c("chain", "draw", "district", "total_pop", "seats", "mcmc_accept")
-        )
-        if (one_district_only) {
-            idx <- seq_len(n_samp)
-            if ("district" %in% cols) {
-                idx <- as.integer(district) + (idx - 1) * n_distr
-            }
-
-            const_cols <- vapply(
-                addl_cols,
-                function(col) {
-                    x <- object[[col]][idx]
-                    all(is.na(x)) ||
-                        all(x == x[1]) ||
-                        any(
-                            tapply(x, object[['chain']][idx], FUN = function(z) {
-                                length(unique(z))
-                            }) ==
-                                1
-                        )
-                },
-                numeric(1)
-            )
-        } else {
-            const_cols <- vapply(
-                addl_cols,
-                function(col) {
-                    x <- object[[col]]
-                    all(is.na(x)) ||
-                        all(x == x[1]) ||
-                        any(
-                            tapply(x, object[["chain"]], FUN = function(z) length(unique(z))) ==
-                                1
-                        )
-                },
-                numeric(1)
-            )
-        }
-        addl_cols <- addl_cols[!const_cols]
-    } else {
-        addl_cols <- c()
-    }
+    rhat_cols <- select_rhat_columns(object, district, n_distr, n_samp)
 
     warn_converge <- FALSE
     # do nothing if no additional columns or no chain column
+    rhats_computed <- length(rhat_cols) > 0
 
-    if (multiple_chains && length(addl_cols) > 0) {
-        # check district input
-        if (!isFALSE(district)) {
-            # check integer
-            if (!rlang::is_integerish(district)) {
-                cli::cli_abort("{.arg district} must be an integer!")
-            } else {
-                district <- as.integer(district)
-            }
-            # check between 1 and ndists
-            if (!all(1 <= district && district <= n_distr)) {
-                cli::cli_abort("{.arg district} must be between 1 and {.arg ndists}!")
-            }
-        }
-        rhats_computed <- TRUE
+    if (rhats_computed) {
+        district <- validate_rhat_district(district, n_distr)
+
         split_rhat <- algo %in% c(MCMC_ALG_TYPE, "flip")
 
         # get rhats
         rhats_df <- compute_all_rhats(
             # drop everything but the columns to save size
-            as.data.frame(object)[c("chain", "district", addl_cols)],
-            addl_cols,
+            as.data.frame(object)[c("chain", "district", rhat_cols)],
+            rhat_cols,
             order_stats,
             district,
             n_distr,
@@ -295,76 +238,17 @@ summary.redist_plans <- function(
         )
 
         # remove NA rhats
-        if (anyNA(rhats_df$rhat)) {
-            num_na_rhats <- sum(is.na(rhats_df$rhat))
-            cat_cli("{num_na_rhats} rhat values are `NA`")
-            rhats_df <- rhats_df[!is.na(rhats_df$rhat), ]
-        }
+        rhats_df <- drop_na_rhats(rhats_df)
 
         out_list[["rhats_df"]] <- rhats_df
         out_list[["rhat"]] <- rhats_df$rhat
 
-        # get thresholds
-        q99_rhat_thresh <- ifelse("q99" %in% rhat_thresh, rhat_thresh[["q99"]], 1.05)
-        rhat_max_thresh <- ifelse("max" %in% rhat_thresh, rhat_thresh[["max"]], 1.1)
+        thresh <- resolve_rhat_thresh(rhat_thresh)
+        convergence <- classify_rhat_convergence(rhats_df$rhat, thresh)
 
-        ordered_str <- ifelse(order_stats, "ordered ", "")
-        cat_cli("Largest R-hat values for {ordered_str}summary statistics:\n")
-        # get maximum rhats for each statistic
-        max_rhats <- tapply(rhats_df$rhat, rhats_df$stat_name, max, na.rm = TRUE)
+        print_rhat_summary(rhats_df, convergence, thresh, order_stats)
 
-        rhats_p <- vapply(
-            max_rhats,
-            function(x) {
-                ifelse(x <= q99_rhat_thresh, sprintf("%.3f", x), paste0("\U274C", round(x, 3)))
-            },
-            FUN.VALUE = character(1)
-        )
-        print(noquote(rhats_p))
-
-        # print counts
-        rhat_vals <- rhats_df$rhat
-
-        cat_cli_fmt({
-            cli::cli_ul()
-            cli::cli_li(
-                "R-hat \u2264 {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
-            )
-            cli::cli_li(
-                "{format(q99_rhat_thresh, digits=3)} < R-hat \u2264 {format(rhat_max_thresh, digits=3)}:
-                        {sum(rhat_vals > q99_rhat_thresh & rhat_vals <= rhat_max_thresh)}"
-            )
-            cli::cli_li(
-                "R-hat > {format(rhat_max_thresh, digits=3)}: {sum(rhat_vals > rhat_max_thresh)}"
-            )
-            cli::cli_li("Total R-hats: {length(rhat_vals)}")
-            cli::cli_end()
-        })
-
-        # cat("Rhat Breakdown:\n")
-        # cat("R-hat \u2264 1.05:      ", sum(rhat_vals <= 1.05), "\n")
-        # cat("1.05 < R-hat \u2264 1.1:", sum(rhat_vals > 1.05 & rhat_vals <= 1.1), "\n")
-        # cat("R-hat > 1.1:       ", sum(rhat_vals > 1.1), "\n")
-
-        # get 99th quantile
-        q99_rhat <- quantile(x = rhats_df$rhat, probs = 0.99) |>
-            unname()
-
-        # check converge
-        # - weak convergence: all rhats <= 1.1 and 99th quantile <= 1.05
-        # - strong covergence: all rhats <= 1.05
-        if (all(rhat_vals <= 1.05)) {
-            convergence_status <- "strong"
-        } else if (q99_rhat <= 1.05 && all(rhat_vals <= 1.1)) {
-            convergence_status <- "weak"
-            cat_cli_fmt(cli::cli_alert_info("{.strong ALERT:} Chains have weakly converged."))
-        } else {
-            convergence_status <- "not_converged"
-            warn_converge <- TRUE
-            cat_cli_fmt(cli::cli_alert_danger("{.strong WARNING:} Chains have not converged."))
-        }
-    } else {
-        rhats_computed <- FALSE
+        warn_converge <- convergence$status == "not_converged"
     }
 
     # Now print algorithm specific diagnostics
@@ -772,6 +656,226 @@ compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists
 
     rhats_df
 }
+
+
+#' Pick the columns worth computing rhats for
+#'
+#' Returns the summary statistic columns that actually vary, dropping index
+#' columns, columns that are entirely `NA`, columns that are constant, and
+#' columns that are constant within any single chain. Returns an empty vector
+#' when there is no `chain` column or only one chain, in which case no rhats
+#' can be computed at all.
+#'
+#' @param object a [redist_plans] object
+#' @param district `FALSE` for all districts, or a single district to restrict to
+#' @param n_distr the number of districts
+#' @param n_samp the number of sampled plans
+#'
+#' @returns A character vector of column names, possibly empty.
+#' @noRd
+select_rhat_columns <- function(object, district, n_distr, n_samp) {
+    cols <- names(object)
+
+    multiple_chains <- "chain" %in%
+        cols &&
+        dplyr::n_distinct(object[["chain"]]) > 1
+
+    if (!multiple_chains) {
+        return(character(0))
+    }
+
+    one_district_only <- 1 <= district && district <= n_distr
+
+    addl_cols <- setdiff(
+        cols,
+        c("chain", "draw", "district", "total_pop", "seats", "mcmc_accept")
+    )
+
+    # When restricted to one district, look only at that district's rows.
+    if (one_district_only) {
+        idx <- seq_len(n_samp)
+        if ("district" %in% cols) {
+            idx <- as.integer(district) + (idx - 1) * n_distr
+        }
+        column_values <- function(col) object[[col]][idx]
+        chain_ids <- object[["chain"]][idx]
+    } else {
+        column_values <- function(col) object[[col]]
+        chain_ids <- object[["chain"]]
+    }
+
+    # `length(unique(x)) <= 1` covers both an all-NA column and a constant
+    # one, and unlike `all(x == x[1])` it cannot itself be NA when the column
+    # holds some but not all NAs. `na.rm` on the `any()` keeps the predicate
+    # total even if a chain contributes no rows.
+    const_cols <- vapply(
+        addl_cols,
+        function(col) {
+            x <- column_values(col)
+            length(unique(x)) <= 1 ||
+                any(
+                    tapply(x, chain_ids, FUN = function(z) length(unique(z))) ==
+                        1,
+                    na.rm = TRUE
+                )
+        },
+        logical(1)
+    )
+
+    addl_cols[!const_cols]
+}
+
+
+#' Validate the `district` argument used for rhat computation
+#'
+#' @inheritParams select_rhat_columns
+#' @param call environment to report the error against
+#'
+#' @returns `FALSE`, or `district` coerced to integer.
+#' @noRd
+validate_rhat_district <- function(district, n_distr, call = rlang::caller_env()) {
+    if (isFALSE(district)) {
+        return(district)
+    }
+
+    if (!rlang::is_integerish(district)) {
+        cli::cli_abort("{.arg district} must be an integer!", call = call)
+    }
+
+    district <- as.integer(district)
+
+    if (!all(1 <= district && district <= n_distr)) {
+        cli::cli_abort(
+      "{.arg district} must be between 1 and {.arg ndists}!",
+      call = call
+    )
+    }
+
+    district
+}
+
+
+#' Resolve the rhat reporting thresholds
+#'
+#' @inheritParams summary.redist_plans
+#'
+#' @returns A list with `q99` and `max` entries.
+#' @noRd
+resolve_rhat_thresh <- function(rhat_thresh) {
+    thresh_names <- names(rhat_thresh)
+
+    list(
+    q99 = if ("q99" %in% thresh_names) rhat_thresh[["q99"]] else 1.05,
+    max = if ("max" %in% thresh_names) rhat_thresh[["max"]] else 1.1
+  )
+}
+
+
+#' Drop rhats that are `NA`, reporting how many were dropped
+#'
+#' @param rhats_df long dataframe of rhats
+#'
+#' @returns `rhats_df` with `NA` rhats removed.
+#' @noRd
+drop_na_rhats <- function(rhats_df) {
+    if (anyNA(rhats_df$rhat)) {
+        num_na_rhats <- sum(is.na(rhats_df$rhat))
+        cat_cli("{num_na_rhats} rhat values are `NA`")
+        rhats_df <- rhats_df[!is.na(rhats_df$rhat), ]
+    }
+
+    rhats_df
+}
+
+
+#' Classify chain convergence from a vector of rhats
+#'
+#' Strong convergence is all rhats at or below 1.05. Weak convergence is a
+#' 99th percentile at or below 1.05 with all rhats at or below 1.1.
+#'
+#' @param rhat_vals numeric vector of rhats
+#' @param thresh the result of [resolve_rhat_thresh()]
+#'
+#' @returns A list with `status` (one of `"strong"`, `"weak"`,
+#' `"not_converged"`) and `q99`, the 99th percentile of the rhats.
+#' @noRd
+classify_rhat_convergence <- function(rhat_vals, thresh) {
+    q99_rhat <- quantile(x = rhat_vals, probs = 0.99) |>
+        unname()
+
+    status <- if (all(rhat_vals <= thresh$q99)) {
+        "strong"
+    } else if (q99_rhat <= thresh$q99 && all(rhat_vals <= thresh$max)) {
+        "weak"
+    } else {
+        "not_converged"
+    }
+
+    list(status = status, q99 = q99_rhat)
+}
+
+
+#' Print the rhat table, the threshold breakdown, and any convergence alert
+#'
+#' @param rhats_df long dataframe of rhats, with `NA`s already removed
+#' @param convergence the result of [classify_rhat_convergence()]
+#' @param thresh the result of [resolve_rhat_thresh()]
+#' @inheritParams summary.redist_plans
+#'
+#' @returns `NULL`, invisibly. Called for its printed output.
+#' @noRd
+print_rhat_summary <- function(rhats_df, convergence, thresh, order_stats) {
+    # cli tracks open containers per frame, so opening the list from this
+    # frame rather than the caller's would indent it one level deeper than it
+    # was when these calls lived inline in `summary.redist_plans()`.
+    caller_env <- parent.frame()
+
+    q99_rhat_thresh <- thresh$q99
+    rhat_max_thresh <- thresh$max
+
+    ordered_str <- ifelse(order_stats, "ordered ", "")
+    cat_cli("Largest R-hat values for {ordered_str}summary statistics:\n")
+
+    # get maximum rhats for each statistic
+    max_rhats <- tapply(rhats_df$rhat, rhats_df$stat_name, max, na.rm = TRUE)
+
+    rhats_p <- vapply(
+        max_rhats,
+        function(x) {
+            ifelse(x <= q99_rhat_thresh, sprintf("%.3f", x), paste0("\U274C", round(x, 3)))
+        },
+        FUN.VALUE = character(1)
+    )
+    print(noquote(rhats_p))
+
+    # print counts
+    rhat_vals <- rhats_df$rhat
+
+    cat_cli_fmt({
+        cli::cli_ul(.envir = caller_env)
+        cli::cli_li(
+            "R-hat ≤ {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
+        )
+        cli::cli_li(
+            "{format(q99_rhat_thresh, digits=3)} < R-hat ≤ {format(rhat_max_thresh, digits=3)}:
+                        {sum(rhat_vals > q99_rhat_thresh & rhat_vals <= rhat_max_thresh)}"
+        )
+        cli::cli_li(
+            "R-hat > {format(rhat_max_thresh, digits=3)}: {sum(rhat_vals > rhat_max_thresh)}"
+        )
+        cli::cli_li("Total R-hats: {length(rhat_vals)}")
+        cli::cli_end()
+    })
+
+    if (convergence$status == "weak") {
+        cat_cli_fmt(cli::cli_alert_info("{.strong ALERT:} Chains have weakly converged."))
+    } else if (convergence$status == "not_converged") {
+        cat_cli_fmt(cli::cli_alert_danger("{.strong WARNING:} Chains have not converged."))
+    }
+
+    invisible(NULL)
+}
+
 
 #' Legacy code to print diagnostic informaiton for old (pre Redist 5.0) plans
 #'

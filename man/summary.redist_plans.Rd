@@ -32,10 +32,12 @@ variation of information distance (sample diversity).}
 statistics.}
 
 \item{rhat_thresh}{What values to use when checking convergence. It should
-consist of two named values: \code{q99} and \code{max}.
-Strong convergence is when all rhats are less than or equal to the \code{max} value
-and weak convergence is when the 99th quantile is less than or equal to
-\code{q99} and all rhats are less than or equal to \code{max}.}
+consist of two named values: \code{q99} and \code{max}, where \code{q99} is the tighter of
+the two. Any name that is omitted falls back to its default.
+Strong convergence is when all rhats are less than or equal to the \code{q99}
+value, and weak convergence is when the 99th quantile is less than or equal
+to \code{q99} and all rhats are less than or equal to \code{max}. Chains that meet
+neither are reported as not converged.}
 
 \item{\dots}{additional arguments (ignored)}
 }
