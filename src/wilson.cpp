@@ -149,17 +149,6 @@ static int add_county_to_tree_dfs(
                 "add_county_to_tree_dfs: invalid county root."
             );
         }
-
-        // if (
-        //     static_cast<int>(
-        //         map_params.counties[root]
-        //     ) - 1 != county_id
-        // ) {
-        //     throw std::runtime_error(
-        //         "add_county_to_tree_dfs: root belongs to wrong county."
-        //     );
-        // }
-
         if (!visited[root]) {
             throw std::runtime_error(
                 "add_county_to_tree_dfs: county root is not already visited."
@@ -749,6 +738,7 @@ int add_walk_from_admin(
 template <bool SkipUnsplittableTrees>
 SampleSubUSTResult sample_full_ust(
     MapParams const &map_params, 
+    std::vector<unsigned int> const counties,
     Tree &tree, // FlatGraph &tree, 
     double const lower, double const upper, 
     std::vector<bool> &visited, const std::vector<bool> &ignore, 
@@ -1095,6 +1085,7 @@ USTDrawResult USTSampler::draw_fresh_ust(
     auto const result =
         sample_full_ust<SkipUnsplittableTrees>(
             map_params,
+            map_params.counties,
             ust,
             lower,
             upper,
@@ -1583,13 +1574,16 @@ std::pair<bool, int>  USTSampler::draw_tree_on_subgraph(
     std::pair<bool, int> result;
 
     if (skip_unsplittable_subtrees){
-        auto const ust_result = sample_full_ust<true>(map_params, ust, 
+        auto const ust_result = sample_full_ust<true>(
+            map_params, map_params.counties,
+            ust, 
             lower, upper, visited, ignore,
             county_tree, g_scratch, mg_scratch, rng_state
         );
         result = std::make_pair(ust_result.code == 0, ust_result.root);
     }else{
-        auto const ust_result = sample_full_ust<false>(map_params, ust, 
+        auto const ust_result = sample_full_ust<false>(
+            map_params, map_params.counties, ust, 
             lower, upper, visited, ignore,
             county_tree, g_scratch, mg_scratch, rng_state
         );

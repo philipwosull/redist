@@ -344,7 +344,8 @@ redist_mergesplit <- function(
 
     control <- list(
     splitting_method = split_method,
-    do_mh = TRUE
+    do_mh = TRUE,
+    enforce_hierarchical = TRUE
   )
 
     # add the splitting parameters
