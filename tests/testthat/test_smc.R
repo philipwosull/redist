@@ -197,7 +197,9 @@ test_that("Additional constraints work", {
         add_constr_grp_hinge(5, bvap + hvap, vap, c(0.5, 0)) |>
         add_constr_custom(1e2, function(plan, distr) plan[7] == 2)
 
-    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE)
+    # do district only splitting to avoid putting precinct 7 in district 2
+    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE,
+                        split_params = list(splitting_schedule = "split_district_only"))
     expect_false(any((as.matrix(plans)[7, ] - 1L) == 2))
 })
 
@@ -224,7 +226,8 @@ test_that("Thresholding constraints work", {
             thresh = 0.5
         )
 
-    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE)
+    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE,
+                        sampling_space = "spanning_forest")
 
     expect_true(
         all(get_plans_matrix(plans)[polk_precint, ] == get_plans_matrix(plans)[story_precint, ])
@@ -236,7 +239,8 @@ test_that("Thresholding constraints work", {
         add_constr_grp_hinge(5, bvap + hvap, vap, c(0.5, 0)) |>
         add_constr_plan_incumbency(1, c(polk_precint, story_precint), thresh = 1)
 
-    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE)
+    plans <- redist_smc(iowa_map, 100, constraints = constr, silent = TRUE,
+                        sampling_space = "spanning_forest")
 
     expect_true(
         all(get_plans_matrix(plans)[polk_precint, ] != get_plans_matrix(plans)[story_precint, ])
@@ -256,7 +260,8 @@ test_that("Precise population bounds are enforced", {
 test_that("SMC checks arguments", {
     expect_error(redist_smc(fl_map, 10, compactness = -1), "non-negative")
     expect_error(redist_smc(fl_map, 10, seq_alpha = 1.5), "0, 1")
-    expect_error(redist_smc(fl_map, 10, split_params = list(adapt_k_thresh = 1.5)), "0, 1")
+    expect_error(redist_smc(fl_map, 10, sampling_space = "graph_plan",
+                            split_params = list(adapt_k_thresh = 1.5)), "0, 1")
     expect_error(redist_smc(fl_map, 0), "positive")
 })
 

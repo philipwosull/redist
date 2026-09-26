@@ -249,7 +249,8 @@ redist_smc <- function(
     init_particles = NULL,
     init_seats = NULL,
     init_weights = NULL,
-    sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+    sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
+    # sampling_space = c("graph_plan", "linking_edge", "spanning_forest"),
     split_method = NULL,
     split_params = NULL,
     ms_params = list(),
@@ -947,9 +948,9 @@ get_splitting_schedule <- function(split_params, districting_scheme) {
       )
         }
     } else {
-        # default to  district
+        # default to  any_valid_sizes for single member
         if (districting_scheme == "single") {
-            splitting_size_regime <- "split_district_only"
+            splitting_size_regime <- "any_valid_sizes"
         } else if (districting_scheme == "multiple") {
             splitting_size_regime <- "split_district_only_mmd"
         } else {
