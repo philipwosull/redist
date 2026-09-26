@@ -2976,6 +2976,15 @@ inline size_t get_county_component_lookup_index(int const county_id, RegionID co
 std::pair<bool, int>
 PlanMultigraph::is_hierarchically_connected(Plan const &plan,
                                             std::vector<bool> component_lookup) {
+    return is_hierarchically_connected(
+        plan.region_ids, plan.num_regions, std::move(component_lookup)
+    );
+}
+
+std::pair<bool, int>
+PlanMultigraph::is_hierarchically_connected(PlanVector const &region_ids,
+                                            int const num_regions,
+                                            std::vector<bool> component_lookup) {
     // if no counties then its just one giant component
     if (!counties_on)
         return std::make_pair(true, 1);
@@ -2995,10 +3004,10 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
 
         // get current county
         int current_county = map_params.counties[v] - 1;
-        auto current_region = plan.region_ids[v];
+        auto current_region = region_ids[v];
         // for lookup we pretend table is num_counties x num_regions
         auto current_component_lookup_index =
-            get_county_component_lookup_index(current_county, current_region, plan.num_regions);
+            get_county_component_lookup_index(current_county, current_region, num_regions);
 
         // check if we've already declared this component
         // if default value then we haven't encountered this component yet
@@ -3019,7 +3028,7 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
 
         while (!current_county_region_vertices.empty()) {
             int u = current_county_region_vertices.pop();
-            int u_region = plan.region_ids[u];
+            int u_region = region_ids[u];
             int u_county = map_params.counties[u];
 
             // mark this as visited
@@ -3030,7 +3039,7 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
                 if (vertices_visited[child_vertex])
                     continue;
                 // Now only add if region and county are the same
-                if (u_region == plan.region_ids[child_vertex] &&
+                if (u_region == region_ids[child_vertex] &&
                     u_county == map_params.counties[child_vertex]) {
                     // if same then same component mark as visited to avoid being added later
                     vertices_visited[child_vertex] = true;
@@ -3464,22 +3473,30 @@ void PlanMultigraph::remove_invalid_mergesplit_pairs(Plan const &plan) {
 
 bool PlanMultigraph::is_hierarchically_valid(Plan const &plan,
                                              std::vector<bool> component_lookup) {
+    return is_hierarchically_valid(
+        plan.region_ids, plan.num_regions, std::move(component_lookup)
+    );
+}
+
+bool PlanMultigraph::is_hierarchically_valid(PlanVector const &region_ids,
+                                             int const num_regions,
+                                             std::vector<bool> component_lookup) {
     // if no counties then always valid
     if (!counties_on)
         return true;
     // first check if hierarchically connected
-    auto result = is_hierarchically_connected(plan, component_lookup);
+    auto result = is_hierarchically_connected(region_ids, num_regions, component_lookup);
     // if not immediately return false
     if (!result.first)
         return false;
     // if number of splits is greater than number of regions minus 1 reject
-    if (result.second - map_params.num_counties >= plan.num_regions)
+    if (result.second - map_params.num_counties >= num_regions)
         return false;
 
     // Now we know its hierarchically connected and has at most num_regions-1
     // splits so we just need to check for cycles in the administratively
     // adjacent quotient graph
-    return build_plan_hierarchical_multigraph(plan.region_ids, plan.num_regions);
+    return build_plan_hierarchical_multigraph(region_ids, num_regions);
 }
 
 void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b) {

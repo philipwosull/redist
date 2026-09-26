@@ -589,6 +589,109 @@ double get_merged_log_number_linking_edges(Rcpp::List const &adj_list,
 }
 
 
+// Check which plans are hierarchically valid
+//
+// Given a matrix of 1-indexed plans this checks, for each plan, whether it is
+// hierarchically valid with respect to `counties`, meaning
+//   - every region intersect county is a single connected piece;
+//   - the number of county region components is small enough; and
+//   - the administratively adjacent quotient graph has no cycles.
+//
+// This matters because the hierarchical Wilson sampler can never draw a tree
+// on a region that splits a county into disconnected pieces, so an invalid
+// plan makes the sampler retry until it gives up rather than fail fast.
+//
+// @param adj_list Zero indexed adjacency list of the map
+// @param counties 1-indexed vector of county labels, one per vertex
+// @param plans_mat A matrix of 1-indexed plans, one plan per column
+// @param ndists The number of districts in each plan
+//
+// @returns A logical vector with one entry per column of `plans_mat`
+//
+// @keywords internal
+// [[Rcpp::export]]
+Rcpp::LogicalVector plans_are_hierarchically_valid(
+    Rcpp::List const &adj_list,
+    Rcpp::IntegerVector const &counties,
+    Rcpp::IntegerMatrix const &plans_mat,
+    int const ndists
+) {
+    int const V = adj_list.size();
+
+    if (plans_mat.nrow() != V) {
+        throw Rcpp::exception(
+            "plans_are_hierarchically_valid: plans matrix must have one row "
+            "per vertex in the adjacency list."
+        );
+    }
+    if (counties.size() != V) {
+        throw Rcpp::exception(
+            "plans_are_hierarchically_valid: counties must have one entry "
+            "per vertex in the adjacency list."
+        );
+    }
+    if (ndists <= 0) {
+        throw Rcpp::exception(
+            "plans_are_hierarchically_valid: ndists must be positive."
+        );
+    }
+
+    Graph g;
+    g.reserve(V);
+    for (int i = 0; i < V; i++) {
+        g.push_back(Rcpp::as<std::vector<int>>((Rcpp::IntegerVector)adj_list[i]));
+    }
+
+    // Population and the population bounds play no part in this check, so
+    // they are left empty. ndists is real because `PlanMultigraph` sizes its
+    // per-region vectors by it.
+    MapParams const map_params(
+        g, Rcpp::as<std::vector<unsigned int>>(counties), {},
+        ndists, ndists, std::vector<int>{1}, 0, 0, 0,
+        SamplingSpace::GraphSpace
+    );
+
+    PlanMultigraph plan_multigraph(map_params);
+
+    int const num_plans = plans_mat.ncol();
+    Rcpp::LogicalVector out(num_plans);
+
+    // Reused across plans; `is_hierarchically_valid` clears it itself.
+    std::vector<bool> const component_lookup(
+        static_cast<std::size_t>(ndists) * map_params.num_counties, false
+    );
+
+    std::vector<RegionID> region_id_buffer(V);
+
+    for (int j = 0; j < num_plans; j++) {
+        for (int v = 0; v < V; v++) {
+            int const region = plans_mat(v, j);
+
+            if (region < 1 || region > ndists) {
+                std::ostringstream oss;
+                oss << "plans_are_hierarchically_valid: plan " << (j + 1)
+                    << " has region id " << region << " at vertex " << (v + 1)
+                    << ", but region ids must be between 1 and " << ndists
+                    << ".";
+
+                throw Rcpp::exception(oss.str().c_str());
+            }
+
+            // internal region ids are 0-indexed
+            region_id_buffer[v] = static_cast<RegionID>(region - 1);
+        }
+
+        PlanVector region_ids(region_id_buffer, 0, V);
+
+        out[j] = plan_multigraph.is_hierarchically_valid(
+            region_ids, ndists, component_lookup
+        );
+    }
+
+    return out;
+}
+
+
 // Get canonically relabeled plans matrix
 //
 // Given a matrix of 1-indexed plans (or partial plans) this function

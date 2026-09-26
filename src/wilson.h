@@ -137,6 +137,19 @@ class USTSampler {
     );
 
 
+    // Refines the counties into fake counties on the active subgraph, where
+    // each fake county is one connected piece of (active vertices) intersect
+    // (a county). Needed when a plan is not hierarchically valid, since then
+    // a county's active portion can be disconnected and the within county
+    // Wilson walk could never reach the far pieces.
+    //
+    // Fills `fake_counties` and `fake_cg` and returns how many fake counties
+    // there are. Does not touch `mg_scratch.num_admin_units`; the caller
+    // hands the returned count to `draw_fresh_ust` like any other partition.
+    template <typename IsActive>
+    int build_fake_counties(IsActive const &is_active);
+
+
     // Draws a completely fresh ust over the administrative partition given by
     // (`counties`, `admin_multigraph`, `num_admin_units`), which must all
     // describe the same partition.
@@ -180,9 +193,6 @@ class USTSampler {
           ),
           fake_cg(
               map_params.plans_may_be_non_hierarchical ? map_params.V : 0
-          ),
-          fake_county_vertices(
-              map_params.plans_may_be_non_hierarchical ? map_params.V : 0
           ) {
             // reserve the max capacity now 
             for (size_t v = 0; v < map_params.V; v++)
@@ -204,15 +214,16 @@ class USTSampler {
     CircularQueue<std::pair<int, int>> vertex_queue; // not used in sample ust
     MapParams const &map_params;
     SplittingSchedule const &splitting_schedule;
-    // These variables are only needed if we're not guaranteed hierarchical
-    // plans, and are left empty otherwise. All three are indexed by fake
-    // county and sized to `mg_scratch.admin_capacity`, with only the first
-    // `mg_scratch.num_admin_units` entries live in any given draw.
+    // These are only needed if we're not guaranteed hierarchical plans, and
+    // are left empty otherwise. `fake_counties` gives every map vertex its
+    // fake county label and `fake_cg` is the multigraph over those units,
+    // sized to `mg_scratch.admin_capacity` with only the first
+    // `mg_scratch.num_admin_units` rows live in any given draw.
     //
-    // Fake county labels are 1-indexed to match `map_params.counties`.
+    // Fake county labels are 1-indexed to match `map_params.counties`, so a
+    // label of 0 marks a vertex outside the active subgraph.
     std::vector<unsigned int> fake_counties;
     Multigraph fake_cg;
-    std::vector<std::vector<int>> fake_county_vertices;
 
 
     // just used to draw a tree on a generic subgraph.

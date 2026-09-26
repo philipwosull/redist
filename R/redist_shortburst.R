@@ -209,6 +209,12 @@ redist_shortburst <- function(
     if (any(contiguity(adj_list, init_plan) != 1)) {
         cli::cli_warn("{.arg init_plan} should have contiguous districts.")
     }
+    # Only the hierarchical mergesplit sampler requires this. With
+    # `enforce_hierarchical = FALSE` the sampler refines counties into
+    # connected pieces itself, so a non-hierarchical plan is fine.
+    if (backend == "mergesplit" && enforce_hierarchical) {
+        check_plans_hierarchically_valid(adj_list, counties, init_plan, ndists)
+    }
 
     if (backend == "flip") {
         pop_tol <- get_pop_tol(map)
