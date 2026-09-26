@@ -149,17 +149,6 @@ static int add_county_to_tree_dfs(
                 "add_county_to_tree_dfs: invalid county root."
             );
         }
-
-        // if (
-        //     static_cast<int>(
-        //         map_params.counties[root]
-        //     ) - 1 != county_id
-        // ) {
-        //     throw std::runtime_error(
-        //         "add_county_to_tree_dfs: root belongs to wrong county."
-        //     );
-        // }
-
         if (!visited[root]) {
             throw std::runtime_error(
                 "add_county_to_tree_dfs: county root is not already visited."
@@ -744,22 +733,67 @@ int add_walk_from_admin(
 }
 
 
-// We assume that ignore has been properly set and nothing else
-// has been cleared 
+/*
+ * We assume that ignore has been properly set and nothing else
+ * has been cleared.
+ *
+ * The administrative partition is passed in rather than read off `map_params`
+ * so the same code can run over either the real counties or the fake counties
+ * built for a non-hierarchical plan:
+ *
+ *   counties          1-indexed admin unit label of every map vertex
+ *   admin_multigraph  multigraph over those admin units, indexed 0-based
+ *
+ * The number of live admin units comes from `mg_scratch.num_admin_units`,
+ * which `prep_fresh_ust_call` set, and must describe the same partition as
+ * these two arguments.
+ *
+ * `map_params` is still used for everything the partition does not affect,
+ * notably the county-restricted graphs, which stay valid because fake
+ * counties only ever refine real ones.
+ */
 template <bool SkipUnsplittableTrees>
 SampleSubUSTResult sample_full_ust(
-    MapParams const &map_params, 
-    Tree &tree, // FlatGraph &tree, 
-    double const lower, double const upper, 
-    std::vector<bool> &visited, const std::vector<bool> &ignore, 
-    Tree &county_tree, 
+    MapParams const &map_params,
+    std::vector<unsigned int> const &counties,
+    Multigraph const &admin_multigraph,
+    Tree &tree, // FlatGraph &tree,
+    double const lower, double const upper,
+    std::vector<bool> &visited, const std::vector<bool> &ignore,
+    Tree &county_tree,
     WilsonGraphScratch &g_scratch,
     WilsonMultiGraphScratch &mg_scratch,
     RNGState &rng_state
     ) {
     // auto t1_start = std::chrono::steady_clock::now();
     int const V = map_params.V;
-    int const n_county = map_params.num_counties;
+    // The number of admin units live in THIS draw, which `prep_fresh_ust_call`
+    // set. This is the count of counties when plans are hierarchically valid
+    // and the count of fake counties otherwise, so it is never safe to read
+    // `map_params.num_counties` or `mg_scratch.admin_capacity` here instead.
+    int const n_county = mg_scratch.num_admin_units;
+
+    if constexpr (perf_config::supposedly_safe_input_checks) {
+        if (n_county <= 0 || n_county > mg_scratch.admin_capacity) {
+            std::ostringstream oss;
+            oss << "sample_full_ust: live admin unit count out of range.\n";
+            oss << "num_admin_units=" << n_county << "\n";
+            oss << "admin_capacity=" << mg_scratch.admin_capacity << "\n";
+
+            throw std::runtime_error(oss.str());
+        }
+        if (static_cast<int>(counties.size()) != V) {
+            throw std::runtime_error(
+                "sample_full_ust: counties has wrong size."
+            );
+        }
+        if (static_cast<int>(admin_multigraph.size()) < n_county) {
+            throw std::runtime_error(
+                "sample_full_ust: admin multigraph is smaller than the "
+                "number of live admin units."
+            );
+        }
+    }
 
     // pick root
     int const root = find_unvisited_vertex(V, visited, g_scratch.smallest_v_seen);
@@ -774,7 +808,7 @@ SampleSubUSTResult sample_full_ust(
     visited[root] = true;
     g_scratch.remaining--;
 
-    int root_county = map_params.counties[root] - 1;
+    int root_county = counties[root] - 1;
     mg_scratch.c_visited[root_county] = true;
     mg_scratch.c_remaining--;
     mg_scratch.admin_roots[root_county] = root;
@@ -817,7 +851,7 @@ SampleSubUSTResult sample_full_ust(
         }
         // update visited list and constructed tree
         int admins_added = add_walk_from_admin(
-            map_params.cg,
+            admin_multigraph,
             county_tree,
             tree,
             unvisited_county,
@@ -846,7 +880,7 @@ SampleSubUSTResult sample_full_ust(
     if (n_county > 1) {
         // don't need to fill pop below since it gets reset
         OLD_TO_UPDATE_get_tree_pops_below(
-            county_tree, map_params.counties[root] - 1, 
+            county_tree, counties[root] - 1,
             mg_scratch.county_stack, mg_scratch.county_pop,
             mg_scratch.cty_pop_below);
         for (int county_i = 0; county_i < n_county; county_i++) {
@@ -994,16 +1028,41 @@ SampleSubUSTResult sample_full_ust(
 
 
 template <typename IsActive>
-int USTSampler::prep_fresh_ust_call(IsActive const &is_active){
-    // We will now 
-    // - properly set the visited vector 
+int USTSampler::prep_fresh_ust_call(
+    IsActive const &is_active,
+    std::vector<unsigned int> const &counties,
+    int const num_admin_units
+){
+    // We will now
+    // - properly set the visited vector
 
-    // - TODO: set up county multigraph stuff 
+    // - TODO: set up county multigraph stuff
+
+    if constexpr (perf_config::supposedly_safe_input_checks) {
+        if (num_admin_units <= 0 ||
+            num_admin_units > mg_scratch.admin_capacity) {
+            std::ostringstream oss;
+            oss << "prep_fresh_ust_call: admin unit count out of range.\n";
+            oss << "num_admin_units=" << num_admin_units << "\n";
+            oss << "admin_capacity=" << mg_scratch.admin_capacity << "\n";
+
+            throw std::runtime_error(oss.str());
+        }
+        if (static_cast<int>(counties.size()) != map_params.V) {
+            throw std::runtime_error(
+                "prep_fresh_ust_call: counties has wrong size."
+            );
+        }
+    }
 
     // First we clear the multigraph stuff
     mg_scratch.c_remaining = 0;
     mg_scratch.total_pop = 0;
-    // Set 
+    // Record how many admin units are live in this draw. This is the single
+    // writer of `num_admin_units`, so everything downstream reads the count
+    // that belongs to the `counties` labelling it was prepped with.
+    mg_scratch.num_admin_units = num_admin_units;
+    // Set
     std::fill(
         mg_scratch.c_visited.begin(),
         mg_scratch.c_visited.end(),
@@ -1036,7 +1095,7 @@ int USTSampler::prep_fresh_ust_call(IsActive const &is_active){
         // Else it means v is part of the subgraph we care about 
         visited[v] = false;
         g_scratch.remaining++;
-        auto v_county = map_params.counties[v] - 1;
+        auto v_county = counties[v] - 1;
         if (mg_scratch.c_visited[v_county]) {
             mg_scratch.c_visited[v_county] = false;
             mg_scratch.admin_ignore[v_county] = false;
@@ -1082,19 +1141,158 @@ int USTSampler::prep_fresh_ust_call(IsActive const &is_active){
 }
 
 
+/*
+ * Build the fake county partition of the active subgraph.
+ *
+ * A fake county is one connected component of (active vertices) intersect
+ * (a single county). When a plan is hierarchically valid every county has
+ * exactly one such component, so the fake counties coincide with the real
+ * ones and the draw is unchanged. When it is not, a county's active portion
+ * can be split into several pieces that are unreachable from each other
+ * without leaving the county, which is precisely what breaks the within
+ * county Wilson walk.
+ *
+ * Labels are 1-indexed to match `map_params.counties`, so a label of 0 marks
+ * a vertex outside the active subgraph. `map_params.county_restricted_graph`
+ * needs no adjustment here because fake counties only ever refine real ones.
+ */
+template <typename IsActive>
+int USTSampler::build_fake_counties(IsActive const &is_active) {
+    int const V = map_params.V;
+
+    if constexpr (perf_config::supposedly_safe_input_checks) {
+        if (static_cast<int>(fake_counties.size()) != V ||
+            static_cast<int>(fake_cg.size()) != V) {
+            throw std::runtime_error(
+                "build_fake_counties: fake county buffers were not allocated. "
+                "This sampler was constructed for hierarchically valid plans."
+            );
+        }
+    }
+
+    /*
+     * After this a label of 0 means "active but not yet labelled" for active
+     * vertices and stays 0 for inactive ones.
+     *
+     * Clearing lazily is not an option. A walk starting from an early vertex
+     * can reach a later one whose stale label from the previous draw would
+     * read as already labelled, silently truncating the component.
+     */
+    std::fill(fake_counties.begin(), fake_counties.end(), 0);
+
+    auto &queue = g_scratch.dummy_county_tree_queue;
+    int n_fake = 0;
+
+    for (int v = 0; v < V; v++) {
+        if (fake_counties[v] != 0 || !is_active(v)) {
+            continue;
+        }
+
+        // Mint the next label and clear the multigraph row it will own.
+        ++n_fake;
+
+        if constexpr (perf_config::bounds_checking) {
+            if (n_fake > mg_scratch.admin_capacity) {
+                std::ostringstream oss;
+                oss << "build_fake_counties: more fake counties than the "
+                    << "scratch objects can hold.\n";
+                oss << "n_fake=" << n_fake << "\n";
+                oss << "admin_capacity=" << mg_scratch.admin_capacity << "\n";
+
+                throw std::runtime_error(oss.str());
+            }
+        }
+
+        unsigned int const label = static_cast<unsigned int>(n_fake);
+        fake_cg[n_fake - 1].clear();
+
+        /*
+         * Walk the component. `county_restricted_graph` has no cross county
+         * edges, so this cannot leave the real county, which is what makes
+         * each component exactly one piece of (active) intersect (county).
+         *
+         * Vertices are labelled when pushed rather than when popped so that
+         * none is ever enqueued twice.
+         */
+        queue.clear();
+        fake_counties[v] = label;
+        queue.push(v);
+
+        while (!queue.empty()) {
+            int const u = queue.pop();
+
+            for (int const w : map_params.county_restricted_graph[u]) {
+                if (fake_counties[w] != 0 || !is_active(w)) {
+                    continue;
+                }
+
+                fake_counties[w] = label;
+                queue.push(w);
+            }
+        }
+    }
+
+    /*
+     * Relabel the county multigraph onto the fake counties. This has to be a
+     * separate pass because an edge cannot be relabelled until both of its
+     * endpoints have labels.
+     *
+     * Iterating `map_params.cg` finds every fake county adjacency: two fake
+     * counties inside one real county are never adjacent in the active
+     * subgraph, since otherwise the walk above would have merged them into a
+     * single component. So all fake adjacencies come from real cross county
+     * edges, and the edge multiplicities that make the hierarchical walk
+     * sample the right measure carry over one for one.
+     */
+    for (int c = 0; c < map_params.num_counties; c++) {
+        for (AdminEdge const &edge : map_params.cg[c]) {
+            unsigned int const current_fake =
+                fake_counties[edge.current_map_vertex];
+            unsigned int const neighbor_fake =
+                fake_counties[edge.neighbor_map_vertex];
+
+            // A 0 label means that endpoint is outside the active subgraph.
+            if (current_fake == 0 || neighbor_fake == 0) {
+                continue;
+            }
+
+            /*
+             * `neighbor_admin` is 0-indexed because `add_walk_from_admin`
+             * uses it to index the multigraph directly, while the labels
+             * themselves are 1-indexed.
+             */
+            fake_cg[current_fake - 1].push_back(
+                AdminEdge{
+                    static_cast<int>(neighbor_fake) - 1,
+                    edge.current_map_vertex,
+                    edge.neighbor_map_vertex
+                }
+            );
+        }
+    }
+
+    return n_fake;
+}
+
+
 template <bool SkipUnsplittableTrees, typename IsActive>
 USTDrawResult USTSampler::draw_fresh_ust(
     double const lower,
     double const upper,
     RNGState &rng_state,
-    IsActive const &is_active
+    IsActive const &is_active,
+    std::vector<unsigned int> const &counties,
+    Multigraph const &admin_multigraph,
+    int const num_admin_units
 ) {
     int const num_tree_vertices =
-        prep_fresh_ust_call(is_active);
+        prep_fresh_ust_call(is_active, counties, num_admin_units);
 
     auto const result =
         sample_full_ust<SkipUnsplittableTrees>(
             map_params,
+            counties,
+            admin_multigraph,
             ust,
             lower,
             upper,
@@ -1183,17 +1381,38 @@ USTDrawResult USTSampler::attempt_to_draw_tree_on_region(
         sample_sub_ust_lower = min_max_pair.first * map_params.lower; // lower
         sample_sub_ust_upper = min_max_pair.second * map_params.upper; // upper
     }
+    auto const is_active = [&plan, region_to_draw_tree_on](
+        int const v
+    ) noexcept {
+        return plan.region_ids[v] ==
+            region_to_draw_tree_on;
+    };
+
     // Now sample a uniform spanning tree drawn on that region
+    if (assume_hierarchical) {
+        return draw_fresh_ust<true>(
+            sample_sub_ust_lower,
+            sample_sub_ust_upper,
+            rng_state,
+            is_active,
+            map_params.counties,
+            map_params.cg,
+            map_params.num_counties
+        );
+    }
+
+    // This region's counties may be disconnected within it, so refine them
+    // into connected fake counties before drawing.
+    int const num_fake_counties = build_fake_counties(is_active);
+
     return draw_fresh_ust<true>(
         sample_sub_ust_lower,
         sample_sub_ust_upper,
         rng_state,
-        [&plan, region_to_draw_tree_on](
-            int const v
-        ) noexcept {
-            return plan.region_ids[v] ==
-                region_to_draw_tree_on;
-        }
+        is_active,
+        fake_counties,
+        fake_cg,
+        num_fake_counties
     );
 }
 
@@ -1225,23 +1444,44 @@ USTDrawResult USTSampler::attempt_to_draw_tree_on_merged_region(RNGState &rng_st
     }
 
 
+    auto const is_active = [
+        &plan,
+        region1_to_draw_tree_on,
+        region2_to_draw_tree_on
+    ](int const v) noexcept {
+        RegionID const region =
+            plan.region_ids[v];
+
+        return
+            region == region1_to_draw_tree_on ||
+            region == region2_to_draw_tree_on;
+    };
+
     // Now sample a uniform spanning tree drawn on that region
+    if (assume_hierarchical) {
+        return draw_fresh_ust<true>(
+            sample_sub_ust_lower,
+            sample_sub_ust_upper,
+            rng_state,
+            is_active,
+            map_params.counties,
+            map_params.cg,
+            map_params.num_counties
+        );
+    }
+
+    // A county can meet the merged region in several disconnected pieces, so
+    // refine them into connected fake counties before drawing.
+    int const num_fake_counties = build_fake_counties(is_active);
+
     return draw_fresh_ust<true>(
         sample_sub_ust_lower,
         sample_sub_ust_upper,
         rng_state,
-        [
-            &plan,
-            region1_to_draw_tree_on,
-            region2_to_draw_tree_on
-        ](int const v) noexcept {
-            RegionID const region =
-                plan.region_ids[v];
-
-            return
-                region == region1_to_draw_tree_on ||
-                region == region2_to_draw_tree_on;
-        }
+        is_active,
+        fake_counties,
+        fake_cg,
+        num_fake_counties
     );
 }
 
@@ -1564,12 +1804,16 @@ std::pair<bool, int>  USTSampler::draw_tree_on_subgraph(
     int V = map_params.V;
     // prepare the inputs for a `sample_ust` call
     // The function marks a vertex as ignore if true in `vertices_to_ignore` 
+    // This is a testing entry point and always draws hierarchically with
+    // respect to the real counties.
     int const num_vertices = prep_fresh_ust_call(
         [&vertices_to_ignore](
             int const v
         ) noexcept {
             return !vertices_to_ignore[v];
-        }
+        },
+        map_params.counties,
+        map_params.num_counties
     );
 
     auto prep_end_time = std::chrono::steady_clock::now();
@@ -1583,13 +1827,16 @@ std::pair<bool, int>  USTSampler::draw_tree_on_subgraph(
     std::pair<bool, int> result;
 
     if (skip_unsplittable_subtrees){
-        auto const ust_result = sample_full_ust<true>(map_params, ust, 
+        auto const ust_result = sample_full_ust<true>(
+            map_params, map_params.counties, map_params.cg,
+            ust,
             lower, upper, visited, ignore,
             county_tree, g_scratch, mg_scratch, rng_state
         );
         result = std::make_pair(ust_result.code == 0, ust_result.root);
     }else{
-        auto const ust_result = sample_full_ust<false>(map_params, ust, 
+        auto const ust_result = sample_full_ust<false>(
+            map_params, map_params.counties, map_params.cg, ust,
             lower, upper, visited, ignore,
             county_tree, g_scratch, mg_scratch, rng_state
         );

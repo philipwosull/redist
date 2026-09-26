@@ -49,6 +49,12 @@
 #' \code{\link{redist_mergesplit}} for more information.
 #' @param reversible If `FALSE` and `backend="mergesplit"`, the Markov chain
 #' used will not be reversible. This may speed up optimization.
+#' @param enforce_hierarchical When `backend="mergesplit"` this controls whether
+#' the sampled plans must be hierarchically valid with respect to the inputted
+#' administrative units. See O'Sullivan, McCartan, and Imai (2023) 
+#' <doi:10.48550/arXiv.2603.22188> for a definition of hierarchical plans.
+#' When `reversible` is `TRUE` the calculated Metropolis-Hastings ratio will
+#' generally not be correct.
 #' @param return_all Whether to return all the burst results or just the best
 #' one (generally, the Pareto frontier). Recommended for monitoring purposes.
 #' @param thin Save every `thin`-th sample. Defaults to no thinning (1). Ignored
@@ -97,6 +103,7 @@ redist_shortburst <- function(
     constraints = redist_constr(map),
     compactness = 1,
     reversible = TRUE,
+    enforce_hierarchical = FALSE,
     return_all = TRUE,
     thin = 1L,
     backend = "mergesplit",
@@ -202,6 +209,12 @@ redist_shortburst <- function(
     if (any(contiguity(adj_list, init_plan) != 1)) {
         cli::cli_warn("{.arg init_plan} should have contiguous districts.")
     }
+    # Only the hierarchical mergesplit sampler requires this. With
+    # `enforce_hierarchical = FALSE` the sampler refines counties into
+    # connected pieces itself, so a non-hierarchical plan is fine.
+    if (backend == "mergesplit" && enforce_hierarchical) {
+        check_plans_hierarchically_valid(adj_list, counties, init_plan, ndists)
+    }
 
     if (backend == "flip") {
         pop_tol <- get_pop_tol(map)
@@ -226,7 +239,8 @@ redist_shortburst <- function(
     if (backend == "mergesplit") {
         control <- list(
             splitting_method=UNIF_VALID_EDGE_SPLITTING,
-            do_mh=reversible
+            do_mh=reversible,
+            enforce_hierarchical = enforce_hierarchical
         )
 
         run_burst <- function(init, init_sizes, steps) {

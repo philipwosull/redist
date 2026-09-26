@@ -748,6 +748,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// plans_are_hierarchically_valid
+Rcpp::LogicalVector plans_are_hierarchically_valid(Rcpp::List const& adj_list, Rcpp::IntegerVector const& counties, Rcpp::IntegerMatrix const& plans_mat, int const ndists);
+RcppExport SEXP _redist_plans_are_hierarchically_valid(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP plans_matSEXP, SEXP ndistsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector const& >::type counties(countiesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type plans_mat(plans_matSEXP);
+    Rcpp::traits::input_parameter< int const >::type ndists(ndistsSEXP);
+    rcpp_result_gen = Rcpp::wrap(plans_are_hierarchically_valid(adj_list, counties, plans_mat, ndists));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_canonical_plan_labelling
 Rcpp::IntegerMatrix get_canonical_plan_labelling(Rcpp::IntegerMatrix const& plans_mat, int const num_regions, int const ncores);
 RcppExport SEXP _redist_get_canonical_plan_labelling(SEXP plans_matSEXP, SEXP num_regionsSEXP, SEXP ncoresSEXP) {
@@ -1077,6 +1091,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_redist_resample_lowvar", (DL_FUNC) &_redist_resample_lowvar, 1},
     {"_redist_get_log_number_linking_edges", (DL_FUNC) &_redist_get_log_number_linking_edges, 7},
     {"_redist_get_merged_log_number_linking_edges", (DL_FUNC) &_redist_get_merged_log_number_linking_edges, 9},
+    {"_redist_plans_are_hierarchically_valid", (DL_FUNC) &_redist_plans_are_hierarchically_valid, 4},
     {"_redist_get_canonical_plan_labelling", (DL_FUNC) &_redist_get_canonical_plan_labelling, 3},
     {"_redist_get_plan_counts", (DL_FUNC) &_redist_get_plan_counts, 4},
     {"_redist_validate_init_seats_cpp", (DL_FUNC) &_redist_validate_init_seats_cpp, 6},

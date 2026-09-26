@@ -22,14 +22,21 @@ ForestPlan::ForestPlan(int const ndists, int const num_regions, const std::vecto
     } else {
         // else just build a forest at random
         for (size_t region_id = 0; region_id < num_regions; region_id++) {
-            auto result = draw_tree_on_region(ust_sampler, region_id,
-                                              rng_state, 1000000);
+            auto result = draw_tree_on_region(
+                ust_sampler, region_id,
+                rng_state, INITIAL_PLAN_TREE_DRAW_ATTEMPTS
+            );
 
             if (!result.first) {
                 std::ostringstream oss;
 
                 oss << "Failed to draw tree on region " << region_id
-                    << " after 1000000 attempts.\n";
+                    << " after " << INITIAL_PLAN_TREE_DRAW_ATTEMPTS
+                    << " attempts.\n";
+                oss << "This usually means the plan is not hierarchically "
+                       "valid, that is some region splits a county into "
+                       "disconnected pieces. Either pass a hierarchically "
+                       "valid plan or turn counties off.\n";
                 oss << debug_string(true);
 
                 throw std::runtime_error(oss.str());

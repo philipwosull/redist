@@ -477,12 +477,14 @@ MapParams::MapParams(Graph const &g,
             std::vector<int> const &district_seat_sizes, 
             double const lower,
             double const target, double const upper,
-            SamplingSpace const sampling_space)
+            SamplingSpace const sampling_space,
+            bool const plans_may_be_non_hierarchical)
     : g(g), map_graph(g),
     num_edges(count_undirected_edges(g)),
     graph_edge_index(g, num_edges), num_edge_bit_words(compute_num_edge_bit_words(num_edges)),
         counties(counties.begin(), counties.end()), 
         num_counties(*std::max_element(counties.begin(), counties.end())), 
+        plans_may_be_non_hierarchical(plans_may_be_non_hierarchical && num_counties > 1),
         cg(county_multigraph(g, counties)),
         county_vertices(build_county_vertices(counties, num_counties)),
         county_restricted_graph(num_counties > 1 ? build_restricted_county_graph(g, counties)

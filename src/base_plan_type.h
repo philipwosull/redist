@@ -181,6 +181,23 @@ class Plan {
     std::pair<bool, int> draw_tree_on_region(USTSampler &ust_sampler, const int region_to_draw_tree_on,
                           RNGState &rng_state, int const attempts_to_make);
 
+    /*
+     * How many times to retry drawing a tree on a region of an initial plan
+     * before giving up.
+     *
+     * Retries only ever help against bad luck. A single attempt already
+     * allows 500 * n * log(n) walk steps internally, so for a region whose
+     * counties are each connected within it, one attempt nearly always
+     * succeeds and a thousand makes failure vanishingly unlikely.
+     *
+     * The case that fails every time is structural: if a region splits some
+     * county into disconnected pieces, the within-county walk can never
+     * reach the stranded pieces and no number of retries will help. This
+     * count is therefore kept small enough that such a plan reports an error
+     * in seconds rather than burning a full attempt budget for hours.
+     */
+    static constexpr int INITIAL_PLAN_TREE_DRAW_ATTEMPTS = 1000;
+
     void update_region_info_from_cut(EdgeCut cut_edge, const int split_region1_id,
                                      const int split_region2_id, bool const add_region);
 
@@ -433,7 +450,8 @@ void swap_pair_maps(RegionPairHash &a, RegionPairHash &b);
 class PlanMultigraph {
   public:
     PlanMultigraph(MapParams const &map_params,
-                   bool const need_to_compute_multigraph_taus = false);
+                   bool const need_to_compute_multigraph_taus = false
+                );
 
     MapParams const &map_params;
     bool const counties_on;
@@ -476,6 +494,13 @@ class PlanMultigraph {
     std::pair<bool, int> is_hierarchically_connected(Plan const &plan,
                                                      std::vector<bool> component_lookup);
 
+    // Same check but taking the region ids directly, so a plan that has not
+    // been built into a `Plan` (and so has no forest drawn on it yet) can be
+    // checked. `component_lookup` must have length num_counties * num_regions.
+    std::pair<bool, int> is_hierarchically_connected(PlanVector const &region_ids,
+                                                     int const num_regions,
+                                                     std::vector<bool> component_lookup);
+
     bool build_plan_hierarchical_multigraph(PlanVector const &region_ids,
                                             int const num_regions);
 
@@ -508,6 +533,13 @@ class PlanMultigraph {
     //  - hierarchically connected
     //  - The administratively adjacent plan quotient graph has no cycles
     bool is_hierarchically_valid(Plan const &plan, std::vector<bool> component_lookup);
+
+    // Same check but taking the region ids directly. This is what lets an
+    // initial plan be validated before any forest is drawn on it, which
+    // matters because drawing a hierarchical tree on a plan that is not
+    // hierarchically valid can never succeed.
+    bool is_hierarchically_valid(PlanVector const &region_ids, int const num_regions,
+                                 std::vector<bool> component_lookup);
 
     // Computes log linking edges for non-hierarchical plans
     double compute_non_hierarchical_log_multigraph_tau(int const num_regions,

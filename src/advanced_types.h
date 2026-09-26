@@ -588,7 +588,8 @@ class MapParams {
               std::vector<int> const &district_seat_sizes, 
               double const lower,
               double const target, double const upper,
-              SamplingSpace const sampling_space);
+              SamplingSpace const sampling_space,
+              bool const plans_may_be_non_hierarchical = false);
 
     // Constructor for when we only need map information
     // so fake district info is ued 
@@ -607,6 +608,7 @@ class MapParams {
     int const num_edge_bit_words; // used for bitpacked stuff
     std::vector<unsigned int> const counties;           // county labels
     int const num_counties;              // The number of distinct counties
+    bool const plans_may_be_non_hierarchical; // Whether or not we can assume all plans are hierarchically valid
     Multigraph const cg;                 // county multigraph
     std::vector<std::vector<int>> county_vertices;    // The vertices in each county 
     Graph const county_restricted_graph; // g but with all edges crossing counties removed

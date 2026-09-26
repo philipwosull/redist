@@ -452,9 +452,11 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         }
         auto extra_wilson_time = maybe_now(); // optional timing 
         // now fill in any deterministic subtrees if needed
-        plan.fill_in_skipped_subtrees(
-            ust_sampler, rng_state
-        );
+        if (!map_params.plans_may_be_non_hierarchical){
+            plan.fill_in_skipped_subtrees(
+                ust_sampler, rng_state
+            );
+        }
         if constexpr (perf_config::track_granular_times){
             add_elapsed(granular_times.backfill_wilson_time, extra_wilson_time); // optional timing
         }

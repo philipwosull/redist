@@ -54,19 +54,21 @@ Rcpp::List ms_plans(
     Rcpp::List const &constraints, // constraints
     int const verbosity = 3, bool const diagnostic_mode = false) {
     // whether or not to perform MH step
-    bool do_mh = (bool)control["do_mh"];
+    bool do_mh = (bool) control["do_mh"];
+    // whether or not to sample hierarchically but not enforce hierarchical validity
+    bool enforce_hierarchical = Rcpp::as<bool>(control["enforce_hierarchical"]);
 
     if constexpr (DEBUG_PURE_MS_VERBOSE)
         Rprintf("Checkpoint 1!\n");
     Rcpp::List out; // return
     // re-seed MT so that `set.seed()` works in R
-    int global_rng_seed = (int)Rcpp::sample(INT_MAX, 1)[0];
+    int global_rng_seed = (int) Rcpp::sample(INT_MAX, 1)[0];
     RNGState rng_state(global_rng_seed);
     // Set the sampling space
     SamplingSpace sampling_space = get_sampling_space(sampling_space_str);
     bool save_edge_selection_prob = sampling_space == SamplingSpace::LinkingEdgeSpace;
     // TODO: Legacy, in future remove
-    global_seed_rng((int)Rcpp::sample(INT_MAX, 1)[0]);
+    global_seed_rng( (int) Rcpp::sample(INT_MAX, 1)[0]);
 
     // make sure both are 1 column matrix
     if (init_plan.ncol() > 1 || init_seats.ncol() > 1) {
@@ -78,8 +80,8 @@ Rcpp::List ms_plans(
         Rcpp::as<std::vector<unsigned int>>(counties), 
         Rcpp::as<std::vector<unsigned int>>(pop), 
         ndists, total_seats,
-                               Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
-                            sampling_space);
+        Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
+        sampling_space, !enforce_hierarchical);
     int V = map_params.g.size();
 
     int initial_num_regions = static_cast<int>(ndists);
@@ -161,9 +163,11 @@ Rcpp::List ms_plans(
     {
         USTSampler ust_sampler(map_params, *splitting_schedule_ptr);
         PlanMultigraph current_plan_multigraph(map_params, sampling_space ==
-                                                               SamplingSpace::LinkingEdgeSpace);
+                                                               SamplingSpace::LinkingEdgeSpace
+                                                );
         PlanMultigraph proposed_plan_multigraph(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace
+            );
 
         RcppThread::ThreadPool pool(0);
         // underlying vector from plan

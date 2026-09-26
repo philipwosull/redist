@@ -324,6 +324,11 @@ redist_mergesplit <- function(
     # validate initial plans
     validate_initial_region_id_mat(init_plan, V, chains, ndists)
 
+    # `redist_mergesplit` always samples hierarchically, so an initial plan
+    # that splits a county into disconnected pieces can never have a tree
+    # drawn on it. Catch that here rather than letting the sampler retry.
+    check_plans_hierarchically_valid(adj_list, counties, init_plan, ndists)
+
     bad_pops <- sapply(seq_len(chains), function(i) {
         any(init_pop[, i] < pop_bounds[1] * init_seats[, i]) ||
             any(init_pop[, i] > pop_bounds[3] * init_seats[, i])
@@ -344,7 +349,8 @@ redist_mergesplit <- function(
 
     control <- list(
     splitting_method = split_method,
-    do_mh = TRUE
+    do_mh = TRUE,
+    enforce_hierarchical = TRUE
   )
 
     # add the splitting parameters

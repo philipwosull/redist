@@ -372,6 +372,93 @@ validate_initial_region_id_mat <- function(
 }
 
 
+#' Check which plans are hierarchically valid with respect to counties
+#'
+#' A plan is hierarchically valid when every region intersect county is a
+#' single connected piece, there are few enough county-region components, and
+#' the administratively adjacent quotient graph has no cycles.
+#'
+#' The `counties` argument must be the county vector returned by
+#' [get_map_parameters()], not the raw column from the map. That function
+#' splits any discontinuous county into its contiguous pieces, and checking
+#' against the unprocessed labels would give the wrong answer.
+#'
+#' @param adj_list Zero-indexed adjacency list, as from [get_adj()].
+#' @param counties Integer county labels from [get_map_parameters()].
+#' @param plans A matrix of 1-indexed plans, one per column, or a single plan
+#'   as a vector.
+#' @param ndists The number of districts in each plan.
+#'
+#' @returns A logical vector with one entry per plan.
+#'
+#' @keywords internal
+#' @noRd
+are_plans_hierarchically_valid <- function(adj_list, counties, plans, ndists) {
+    if (!is.matrix(plans)) {
+        plans <- matrix(plans, ncol = 1)
+    }
+    storage.mode(plans) <- "integer"
+
+    plans_are_hierarchically_valid(
+        adj_list,
+        as.integer(counties),
+        plans,
+        as.integer(ndists)
+    )
+}
+
+
+#' Abort if any plan is not hierarchically valid
+#'
+#' The hierarchical Wilson sampler can never draw a spanning tree on a region
+#' that splits a county into disconnected pieces, so it would otherwise retry
+#' until it exhausted its attempt budget rather than failing fast. Checking
+#' here turns that into an immediate, explanatory error.
+#'
+#' Does nothing when there is only one county, since every plan is then
+#' trivially valid.
+#'
+#' @inheritParams are_plans_hierarchically_valid
+#' @param arg Name of the argument to blame in the error message.
+#' @param call Environment to report the error against.
+#'
+#' @keywords internal
+#' @noRd
+check_plans_hierarchically_valid <- function(
+    adj_list,
+    counties,
+    plans,
+    ndists,
+    arg = "init_plan",
+    call = rlang::caller_env()
+) {
+    if (dplyr::n_distinct(counties) <= 1) {
+        return(invisible(TRUE))
+    }
+
+    valid <- are_plans_hierarchically_valid(adj_list, counties, plans, ndists)
+
+    if (all(valid)) {
+        return(invisible(TRUE))
+    }
+
+    bad <- which(!valid)
+
+    cli::cli_abort(
+    c(
+      "{.arg {arg}} contains {length(bad)} plan{?s} that {?is/are} not
+       hierarchically valid with respect to {.arg counties}.",
+      "x" = "Plan{?s} {bad} split{?s/} at least one county into pieces that
+             are not connected to each other within their district.",
+      "i" = "Either pass a hierarchically valid plan, drop {.arg counties},
+             or set {.code enforce_hierarchical = FALSE} if the sampler
+             supports it."
+    ),
+    call = call
+  )
+}
+
+
 #' Attempts to infer the number of seats for each district in a plan
 #'
 #' Attempts to guess the number of seats assigned to each region in a plans
