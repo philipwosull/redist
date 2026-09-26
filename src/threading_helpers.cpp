@@ -17,6 +17,19 @@ RcppThread::ThreadPool get_thread_pool(int const num_threads) {
 }
 
 
+int resolve_num_threads(int const num_threads) {
+    if (num_threads == 1) {
+        // RcppThread reads 0 as "run in the calling thread"
+        return 0;
+    } else if (num_threads > 1) {
+        return num_threads;
+    } else {
+        auto const hardware_threads = std::thread::hardware_concurrency();
+        return hardware_threads > 0 ? static_cast<int>(hardware_threads) : 1;
+    }
+}
+
+
 int get_num_threads(const RcppThread::ThreadPool &pool){
     auto const pool_threads = pool.getNumThreads();
     if (pool_threads <= 1) {

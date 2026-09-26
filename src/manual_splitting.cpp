@@ -143,7 +143,8 @@ Rcpp::List draw_a_tree_on_a_region(Rcpp::List adj_list, const Rcpp::IntegerVecto
     rng_states.reserve(1);
     rng_states.emplace_back(global_rng_seed2, 6);
     // Create a plan object via size 1 ensemble
-    RcppThread::ThreadPool pool(0);
+    // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
 
     // fake splitting schedule, don't actually use
     // Just need for constructor
@@ -246,7 +247,8 @@ Rcpp::List perform_a_valid_multidistrict_split(Rcpp::List adj_list, const Rcpp::
     rng_states.reserve(1);
     rng_states.emplace_back(global_rng_seed2, 6);
     // Create a plan object via size 1 ensemble
-    RcppThread::ThreadPool pool(0);
+    // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
 
     // fake splitting schedule, don't actually use
     // Just need for constructor
@@ -856,7 +858,7 @@ Rcpp::List attempt_splits_on_a_region(Rcpp::List const &adj_list, const Rcpp::In
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     std::vector<int> wat{1};
     auto splitting_schedule_ptr =

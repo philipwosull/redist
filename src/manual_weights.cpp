@@ -305,7 +305,7 @@ std::vector<double> compute_plans_log_optimal_weights(
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // create the map param object
     MapParams map_params(list_to_graph(adj_list), 
@@ -435,7 +435,7 @@ std::vector<double> compute_plans_log_simple_weights(
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // create the map param object
     MapParams map_params(list_to_graph(adj_list), 

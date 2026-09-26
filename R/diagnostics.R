@@ -67,6 +67,10 @@
 #' to `q99` and all rhats are less than or equal to `max`. Chains that meet
 #' neither are reported as not converged.
 #'
+#' @param ncores Number of cores to use when computing R-hat values. Defaults
+#' to 1, which runs serially. Raising this is worthwhile for large ensembles,
+#' where the R-hat computation dominates the cost of this function.
+#'
 #' @param \dots additional arguments (ignored)
 #'
 #' @return A data frame containing diagnostic information, invisibly.
@@ -88,6 +92,7 @@ summary.redist_plans <- function(
     vi_max = 100,
     order_stats = TRUE,
     rhat_thresh = getOption("redist.rhat_thresh", c(q99=1.05, max=1.1)),
+    ncores = 1,
     ...
 ) {
     cli::cli_process_done(done_class = "") # in case an earlier
@@ -234,7 +239,8 @@ summary.redist_plans <- function(
             order_stats,
             district,
             n_distr,
-            split_rhat
+            split_rhat,
+            ncores
         )
 
         # remove NA rhats
@@ -631,6 +637,53 @@ diag_rhat <- function(x, grp = NULL, split = FALSE,
 }
 
 
+#' Compute an rhat for every (statistic, district) pair
+#'
+#' Flattens the per-district row indices and group memberships into the
+#' CSR-style layout [compute_rhats_cpp()] expects, then hands the numeric work
+#' to C++, which parallelizes over the pairs.
+#'
+#' The groups are built in R and passed down so that the split-chain
+#' convention is defined in one place only.
+#'
+#' @param stats_df dataframe of summary statistics
+#' @param rhat_cols names of the columns to compute rhats for
+#' @param district_idx list of row indices, one entry per district
+#' @param district_groups list of [make_rhat_groups()] results, one per district
+#' @param ncores number of cores to use; 1 runs serially
+#'
+#' @returns A districts by statistics matrix of rhats.
+#' @noRd
+rhats_over_districts <- function(stats_df, rhat_cols, district_idx, district_groups,
+                                 ncores = 1) {
+    row_index <- unlist(district_idx, use.names = FALSE)
+    district_start <- c(0L, cumsum(lengths(district_idx)))
+
+    # For each row of `row_index`, which group within its district it is in.
+    # `make_rhat_groups()` already returns groups in the order R's `split()`
+    # would produce them, so the numbering carries over directly.
+    group_index <- integer(length(row_index))
+    for (k in seq_along(district_groups)) {
+        offset <- district_start[k]
+        idx <- district_groups[[k]]$idx
+        for (g in seq_along(idx)) {
+            group_index[offset + idx[[g]]] <- g - 1L
+        }
+    }
+
+    n_groups <- max(lengths(lapply(district_groups, `[[`, "idx")))
+
+    compute_rhats_cpp(
+        values = lapply(rhat_cols, function(col) as.numeric(stats_df[[col]])),
+        row_index = as.integer(row_index) - 1L,
+        district_start = as.integer(district_start),
+        group_index = group_index,
+        n_groups = as.integer(n_groups),
+        num_threads = as.integer(ncores)
+    )
+}
+
+
 #' Computes all rhats for a dataframe of summary statistics
 #'
 #' Given a dataframe with `chain` and `district` columns and all other columns
@@ -646,13 +699,15 @@ diag_rhat <- function(x, grp = NULL, split = FALSE,
 #'
 #' @returns A long dataframe of rhats
 #' @noRd
-compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists, split_rhat) {
+compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists,
+                              split_rhat, ncores = 1) {
     # order values if needed
     if (order_stats) {
         stats_df <- order_columns_by_district(
             stats_df |> filter(!is.na(chain)),
             rhat_cols,
-            ndists
+            ndists,
+            num_threads = ncores
         )
     }
     # filter district if needed
@@ -666,28 +721,18 @@ compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists
 
     # The chain grouping depends only on the district, so build it once and
     # share it across every statistic instead of rebuilding the factor inside
-    # each `tapply()` call.
+    # each `tapply()` call. Building it here rather than in C++ also keeps the
+    # split-chain convention in exactly one place.
     district_groups <- lapply(district_idx, function(rows) {
         make_rhat_groups(chain[rows], split = split_rhat)
     })
 
-    # now compute rhats for each column and district
-    rhat_results <- lapply(rhat_cols, function(col_name) {
-        values <- stats_df[[col_name]]
+    rhat_matrix <- rhats_over_districts(
+        stats_df, rhat_cols, district_idx, district_groups, ncores
+    )
 
-        stats::setNames(
-            vapply(
-                seq_along(district_idx),
-                function(k) {
-                    diag_rhat(
-                        x = values[district_idx[[k]]],
-                        groups = district_groups[[k]]
-                    )
-                },
-                numeric(1)
-            ),
-            names(district_idx)
-        )
+    rhat_results <- lapply(seq_along(rhat_cols), function(j) {
+        stats::setNames(rhat_matrix[, j], names(district_idx))
     })
     names(rhat_results) <- rhat_cols
 

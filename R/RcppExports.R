@@ -225,6 +225,10 @@ solve_hungarian <- function(costMatrix) {
     .Call(`_redist_solve_hungarian`, costMatrix)
 }
 
+compute_rhats_cpp <- function(values, row_index, district_start, group_index, n_groups, num_threads = 0L) {
+    .Call(`_redist_compute_rhats_cpp`, values, row_index, district_start, group_index, n_groups, num_threads)
+}
+
 rsg <- function(adj_list, population, Ndistrict, target_pop, thresh, maxiter) {
     .Call(`_redist_rsg`, adj_list, population, Ndistrict, target_pop, thresh, maxiter)
 }

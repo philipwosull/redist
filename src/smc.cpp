@@ -1586,7 +1586,7 @@ Rcpp::List run_redist_smc(
         diagnostic_level, splitting_all_the_way, split_district_only);
 
     // Create a threadpool
-    RcppThread::ThreadPool pool(num_threads > 1 ? num_threads : 0);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // If hard custom then switch to no threading
     if (scoring_functions[0].any_hard_custom_constraints) {

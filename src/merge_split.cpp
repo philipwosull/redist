@@ -25,6 +25,7 @@
 #include "random.h"
 #include "wilson.h"
 #include "utils.h"
+#include "threading_helpers.h"
 
 
 #include <RcppThread.h>
@@ -169,7 +170,8 @@ Rcpp::List ms_plans(
             map_params, sampling_space == SamplingSpace::LinkingEdgeSpace
             );
 
-        RcppThread::ThreadPool pool(0);
+        // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
         // underlying vector from plan
         PlanEnsemble plan_ensemble = get_plan_ensemble(
             map_params, *splitting_schedule_ptr, initial_num_regions, 1, sampling_space,

@@ -16,6 +16,7 @@
 
 #include "utils.h"
 #include "tree_op.h"
+#include "threading_helpers.h"
 
 #include <cli/progress.h>
 #include <string>
@@ -121,7 +122,8 @@ Rcpp::List cyclewalk_plans(int N, int warmup, int thin, int ndists, int total_se
     {
         // Single-thread pool (cyclewalk runs one chain at a time; parallel
         // chains are handled in R via foreach).
-        RcppThread::ThreadPool pool(0);
+        // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
 
         // Load initial plan into a PlanEnsemble of size 1.
         PlanEnsemble plan_ensemble = get_plan_ensemble(

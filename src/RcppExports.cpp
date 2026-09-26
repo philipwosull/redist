@@ -887,6 +887,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_rhats_cpp
+Rcpp::NumericMatrix compute_rhats_cpp(Rcpp::List const& values, Rcpp::IntegerVector const& row_index, Rcpp::IntegerVector const& district_start, Rcpp::IntegerVector const& group_index, int const n_groups, int const num_threads);
+RcppExport SEXP _redist_compute_rhats_cpp(SEXP valuesSEXP, SEXP row_indexSEXP, SEXP district_startSEXP, SEXP group_indexSEXP, SEXP n_groupsSEXP, SEXP num_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List const& >::type values(valuesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector const& >::type row_index(row_indexSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector const& >::type district_start(district_startSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector const& >::type group_index(group_indexSEXP);
+    Rcpp::traits::input_parameter< int const >::type n_groups(n_groupsSEXP);
+    Rcpp::traits::input_parameter< int const >::type num_threads(num_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_rhats_cpp(values, row_index, district_start, group_index, n_groups, num_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // rsg
 List rsg(List adj_list, NumericVector population, int Ndistrict, double target_pop, double thresh, int maxiter);
 RcppExport SEXP _redist_rsg(SEXP adj_listSEXP, SEXP populationSEXP, SEXP NdistrictSEXP, SEXP target_popSEXP, SEXP threshSEXP, SEXP maxiterSEXP) {
@@ -1102,6 +1118,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_redist_plan_joint", (DL_FUNC) &_redist_plan_joint, 3},
     {"_redist_renumber_matrix", (DL_FUNC) &_redist_renumber_matrix, 2},
     {"_redist_solve_hungarian", (DL_FUNC) &_redist_solve_hungarian, 1},
+    {"_redist_compute_rhats_cpp", (DL_FUNC) &_redist_compute_rhats_cpp, 6},
     {"_redist_rsg", (DL_FUNC) &_redist_rsg, 6},
     {"_redist_k_smallest", (DL_FUNC) &_redist_k_smallest, 2},
     {"_redist_k_biggest", (DL_FUNC) &_redist_k_biggest, 2},

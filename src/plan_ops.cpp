@@ -50,7 +50,7 @@ Rcpp::NumericMatrix prec_cooccur(Rcpp::IntegerMatrix m, Rcpp::IntegerVector idxs
                 out(j, i) = shared;
             }
         },
-        ncores);
+        resolve_num_threads(ncores));
 
     return out;
 }
@@ -62,15 +62,14 @@ Rcpp::NumericMatrix prec_cooccur(Rcpp::IntegerMatrix m, Rcpp::IntegerVector idxs
  */
 // [[Rcpp::export]]
 Rcpp::NumericMatrix group_pct(Rcpp::IntegerMatrix const &plans_mat, Rcpp::NumericVector const &group_pop,
-                        Rcpp::NumericVector const &total_pop, int const n_distr, int const ncores = 0) {
+                        Rcpp::NumericVector const &total_pop, int const n_distr, int const ncores = 1) {
     int V = plans_mat.nrow();
     int num_plans = plans_mat.ncol();
 
     Rcpp::NumericMatrix grp_distr(n_distr, num_plans);
     Rcpp::NumericMatrix tot_distr(n_distr, num_plans);
 
-    // 0 or 1 ncores means no threading
-    RcppThread::ThreadPool pool(ncores > 1 ? ncores : 0);
+    RcppThread::ThreadPool pool = get_thread_pool(ncores);
 
     pool.parallelFor(0, num_plans, [&](unsigned int i) {
         for (int j = 0; j < V; j++) {
@@ -135,7 +134,7 @@ Rcpp::NumericVector group_pct_top_k(const Rcpp::IntegerMatrix m, const Rcpp::Num
 // [[Rcpp::export]]
 Rcpp::IntegerMatrix infer_region_seats(Rcpp::IntegerMatrix const &region_pops,
                                        double const lower, double const upper,
-                                       int const total_seats, int const num_threads = 0) {
+                                       int const total_seats, int const num_threads = 1) {
     //
     int const num_plans = region_pops.ncol();
     int const num_regions = region_pops.nrow();
@@ -179,14 +178,19 @@ Rcpp::IntegerMatrix infer_region_seats(Rcpp::IntegerMatrix const &region_pops,
                     }
                 }
                 if (!size_selected) {
-                    REprintf("No valid size could be found for Plan %i\n", i + 1);
+                    // RcppThread::Rcerr is the thread safe route to R's
+                    // output; REprintf from a worker is not. The throw is
+                    // fine as is, RcppThread rethrows it on the main thread.
+                    RcppThread::Rcerr
+                        << "No valid size could be found for Plan "
+                        << (i + 1) << "\n";
                     throw Rcpp::exception("No valid size could be inferred!\n");
                 }
 
                 region_sizes(j, i) = region_size;
             }
         },
-        num_threads > 0 ? num_threads : 0);
+        resolve_num_threads(num_threads));
 
     return region_sizes;
 }
@@ -199,7 +203,7 @@ Rcpp::IntegerMatrix infer_region_seats(Rcpp::IntegerMatrix const &region_pops,
 // NOTE: Maybe can make parallel version of this? Not sure
 // [[Rcpp::export]]
 Rcpp::NumericMatrix pop_tally(Rcpp::IntegerMatrix const &districts, Rcpp::NumericVector const &pop, int const n_distr,
-                        int const ncores = 0) {
+                        int const ncores = 1) {
     int const num_plans = districts.ncol();
     int const V = districts.nrow();
 
@@ -214,7 +218,7 @@ Rcpp::NumericMatrix pop_tally(Rcpp::IntegerMatrix const &districts, Rcpp::Numeri
                 tally(d, i) = tally(d, i) + pop(j);
             }
         },
-        ncores > 1 ? ncores : 0);
+        resolve_num_threads(ncores));
 
     return tally;
 }
@@ -247,7 +251,7 @@ Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const Rcpp::Nu
                     }
                 }
             },
-            num_threads > 0 ? num_threads : 0);
+            resolve_num_threads(num_threads));
     } else {
         double const target_pop = Rcpp::sum(pop) / n_distr;
         RcppThread::parallelFor(
@@ -261,7 +265,7 @@ Rcpp::NumericVector max_dev(const Rcpp::IntegerMatrix &districts, const Rcpp::Nu
                     }
                 }
             },
-            num_threads > 0 ? num_threads : 0);
+            resolve_num_threads(num_threads));
     }
 
     return res;
@@ -297,7 +301,7 @@ Rcpp::NumericVector order_district_stats(Rcpp::NumericVector const &district_sta
             std::sort(ordered_district_stats.begin() + start_index,
                       ordered_district_stats.begin() + end_index);
         },
-        num_threads > 0 ? num_threads : 0);
+        resolve_num_threads(num_threads));
 
     return ordered_district_stats;
 }
@@ -310,28 +314,37 @@ Rcpp::DataFrame order_columns_by_district(Rcpp::DataFrame const &df,
     Rcpp::List out(df.size()); // same number of columns
     Rcpp::CharacterVector names = df.names();
 
-    RcppThread::parallelFor(
-        0, df.size(),
-        [&](unsigned int i) {
-            Rcpp::String colname = names[i];
-            bool should_process = false;
+    /*
+     * This loop is deliberately serial. Every statement in it touches the R
+     * API: pulling a column out of the data frame, allocating the sorted
+     * result, and assigning into the output list. R's allocator and garbage
+     * collector are not thread safe, so running this across threads risks
+     * heap corruption rather than a speedup.
+     *
+     * The parallelism belongs one level down instead. `order_district_stats`
+     * sorts disjoint chunks of a plain numeric buffer and makes no R calls,
+     * so it is safe to thread, and there are normally far more plans than
+     * columns to spread across cores.
+     */
+    for (int i = 0; i < df.size(); ++i) {
+        Rcpp::String colname = names[i];
+        bool should_process = false;
 
-            // check if this column is in the selected set
-            for (int j = 0; j < columns.size(); ++j) {
-                if (columns[j] == colname) {
-                    should_process = true;
-                    break;
-                }
+        // check if this column is in the selected set
+        for (int j = 0; j < columns.size(); ++j) {
+            if (columns[j] == colname) {
+                should_process = true;
+                break;
             }
+        }
 
-            if (should_process) {
-                Rcpp::NumericVector col = df[i];
-                out[i] = order_district_stats(col, ndists, 1);
-            } else {
-                out[i] = df[i]; // leave unchanged
-            }
-        },
-        num_threads > 0 ? num_threads : 0);
+        if (should_process) {
+            Rcpp::NumericVector col = df[i];
+            out[i] = order_district_stats(col, ndists, num_threads);
+        } else {
+            out[i] = df[i]; // leave unchanged
+        }
+    }
 
     out.attr("names") = names;
     out.attr("class") = df.attr("class");
@@ -730,7 +743,7 @@ Rcpp::IntegerMatrix get_canonical_plan_labelling(Rcpp::IntegerMatrix const &plan
 
     int const num_threads = ncores <= 0 ? std::thread::hardware_concurrency() : ncores;
     // create thread pool
-    RcppThread::ThreadPool pool(num_threads > 1 ? num_threads : 0);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // trick to give each thread a unique id
     static std::atomic<int> global_generation_counter{0};
