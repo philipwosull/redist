@@ -11,6 +11,7 @@
   vi_max = 100,
   order_stats = TRUE,
   rhat_thresh = getOption("redist.rhat_thresh", c(q99 = 1.05, max = 1.1)),
+  ncores = 1,
   ...
 )
 }
@@ -38,6 +39,10 @@ Strong convergence is when all rhats are less than or equal to the \code{q99}
 value, and weak convergence is when the 99th quantile is less than or equal
 to \code{q99} and all rhats are less than or equal to \code{max}. Chains that meet
 neither are reported as not converged.}
+
+\item{ncores}{Number of cores to use when computing R-hat values. Defaults
+to 1, which runs serially. Raising this is worthwhile for large ensembles,
+where the R-hat computation dominates the cost of this function.}
 
 \item{\dots}{additional arguments (ignored)}
 }

@@ -175,12 +175,13 @@ class USTSampler {
   public:
     USTSampler(MapParams const &map_params, SplittingSchedule const &splitting_schedule)
         :
-        assume_hierarchical(!map_params.plans_may_be_non_hierarchical),
-        // ust(map_params.map_graph.get_flat_empty_tree()),
-        ust(init_tree(map_params.V)),
-        // wilson_submap(map_params.map_graph),
-        pops_below_vertex(map_params.V, 0),
-          visited(map_params.V), ignore(map_params.V), stack(map_params.V + 1),
+          visited(map_params.V), ignore(map_params.V),
+          assume_hierarchical(!map_params.plans_may_be_non_hierarchical),
+          // ust(map_params.map_graph.get_flat_empty_tree()),
+          ust(init_tree(map_params.V)),
+          // wilson_submap(map_params.map_graph),
+          pops_below_vertex(map_params.V, 0),
+          stack(map_params.V + 1),
           county_tree(init_tree(admin_unit_capacity(map_params))),
           g_scratch(map_params.V),
           mg_scratch(admin_unit_capacity(map_params)),

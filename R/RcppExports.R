@@ -129,7 +129,7 @@ prec_cooccur <- function(m, idxs, ncores = 1L) {
     .Call(`_redist_prec_cooccur`, m, idxs, ncores)
 }
 
-group_pct <- function(plans_mat, group_pop, total_pop, n_distr, ncores = 0L) {
+group_pct <- function(plans_mat, group_pop, total_pop, n_distr, ncores = 1L) {
     .Call(`_redist_group_pct`, plans_mat, group_pop, total_pop, n_distr, ncores)
 }
 
@@ -137,11 +137,11 @@ group_pct_top_k <- function(m, group_pop, total_pop, k, n_distr) {
     .Call(`_redist_group_pct_top_k`, m, group_pop, total_pop, k, n_distr)
 }
 
-infer_region_seats <- function(region_pops, lower, upper, total_seats, num_threads = 0L) {
+infer_region_seats <- function(region_pops, lower, upper, total_seats, num_threads = 1L) {
     .Call(`_redist_infer_region_seats`, region_pops, lower, upper, total_seats, num_threads)
 }
 
-pop_tally <- function(districts, pop, n_distr, ncores = 0L) {
+pop_tally <- function(districts, pop, n_distr, ncores = 1L) {
     .Call(`_redist_pop_tally`, districts, pop, n_distr, ncores)
 }
 

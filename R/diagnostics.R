@@ -948,10 +948,10 @@ print_rhat_summary <- function(rhats_df, convergence, thresh, order_stats) {
     cat_cli_fmt({
         cli::cli_ul(.envir = caller_env)
         cli::cli_li(
-            "R-hat ≤ {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
+            "R-hat \u2264 {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
         )
         cli::cli_li(
-            "{format(q99_rhat_thresh, digits=3)} < R-hat ≤ {format(rhat_max_thresh, digits=3)}:
+            "{format(q99_rhat_thresh, digits=3)} < R-hat \u2264 {format(rhat_max_thresh, digits=3)}:
                         {sum(rhat_vals > q99_rhat_thresh & rhat_vals <= rhat_max_thresh)}"
         )
         cli::cli_li(
