@@ -587,20 +587,47 @@ diag_ranknorm <- function(x) {
     qnorm(rank(x) / (length(x) + 1))
 }
 
-diag_calc_rhat <- function(x, grp) {
-    n <- mean(table(grp))
-    var_between <- n * var(tapply(x, grp, mean))
-    var_within <- mean(tapply(x, grp, var))
-    sqrt((var_between / var_within + n - 1) / n)
-}
-
-diag_rhat <- function(x, grp, split = FALSE) {
+#' Precompute the chain grouping that the rhat calculation needs
+#'
+#' The grouping depends only on `grp`, never on the statistic being
+#' summarised, so it can be built once and reused across every statistic and
+#' across both halves of [diag_rhat()]. Splitting the row indices once is much
+#' cheaper than letting `tapply()` and `table()` rebuild the factor on every
+#' call.
+#'
+#' @param grp vector of chain ids, with each chain in a contiguous run
+#' @param split whether to split each chain in half first
+#'
+#' @returns A list with `idx`, a list of index vectors in factor level order,
+#' and `n`, the mean group size.
+#' @noRd
+make_rhat_groups <- function(grp, split = FALSE) {
     if (split) {
         lengths <- rle(grp)$lengths
         grp <- grp + do.call(c, lapply(lengths, function(l) rep(c(0.0, 0.5), each = l / 2)))
     }
 
-    max(diag_calc_rhat(diag_ranknorm(x), grp), diag_calc_rhat(diag_ranknorm(diag_fold(x)), grp))
+    idx <- split(seq_along(grp), grp)
+
+    list(idx = idx, n = mean(lengths(idx)))
+}
+
+diag_calc_rhat <- function(x, grp = NULL, groups = make_rhat_groups(grp)) {
+    n <- groups$n
+    group_means <- vapply(groups$idx, function(rows) mean(x[rows]), numeric(1))
+    group_vars <- vapply(groups$idx, function(rows) var(x[rows]), numeric(1))
+
+    var_between <- n * var(group_means)
+    var_within <- mean(group_vars)
+    sqrt((var_between / var_within + n - 1) / n)
+}
+
+diag_rhat <- function(x, grp = NULL, split = FALSE,
+                      groups = make_rhat_groups(grp, split)) {
+    max(
+        diag_calc_rhat(diag_ranknorm(x), groups = groups),
+        diag_calc_rhat(diag_ranknorm(diag_fold(x)), groups = groups)
+    )
 }
 
 
@@ -632,13 +659,35 @@ compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists
     if (!isFALSE(district)) {
         stats_df <- stats_df[stats_df$district %in% district, ]
     }
+    # Split the row indices rather than the data frame itself. Splitting the
+    # frame copies every column, and it used to happen once per statistic.
+    district_idx <- split(seq_len(nrow(stats_df)), stats_df$district)
+    chain <- stats_df$chain
+
+    # The chain grouping depends only on the district, so build it once and
+    # share it across every statistic instead of rebuilding the factor inside
+    # each `tapply()` call.
+    district_groups <- lapply(district_idx, function(rows) {
+        make_rhat_groups(chain[rows], split = split_rhat)
+    })
+
     # now compute rhats for each column and district
     rhat_results <- lapply(rhat_cols, function(col_name) {
-        # Split data by district
-        # For each district, compute rhat for the column
-        sapply(split(stats_df, stats_df$district), function(df) {
-            diag_rhat(x = df[[col_name]], grp = df$chain, split = split_rhat)
-        })
+        values <- stats_df[[col_name]]
+
+        stats::setNames(
+            vapply(
+                seq_along(district_idx),
+                function(k) {
+                    diag_rhat(
+                        x = values[district_idx[[k]]],
+                        groups = district_groups[[k]]
+                    )
+                },
+                numeric(1)
+            ),
+            names(district_idx)
+        )
     })
     names(rhat_results) <- rhat_cols
 
