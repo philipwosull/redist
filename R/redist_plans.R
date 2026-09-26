@@ -579,9 +579,15 @@ add_reference <- function(plans, ref_plan, name = NULL, ref_seats = NULL) {
         cli::cli_abort("Reference plan name already exists")
     }
 
+    # Build the new draw column from the existing rows rather than from the
+    # levels. Draw labels repeat across chains, so there are `ndists` rows per
+    # (chain, draw) rather than per level, and generating one block per level
+    # produces a column that is too short once more than one chain is present.
     fct_levels <- c(name, levels(plans$draw))
-    new_draw <- rep(factor(fct_levels, levels = fct_levels), each = ndists)
-    # TODO: this is broken when multiple runs but draws are labelled the same
+    new_draw <- factor(
+        c(rep(name, ndists), as.character(plans$draw)),
+        levels = fct_levels
+    )
 
     if (isFALSE(attr(plans, "districting_scheme") != "single")) {
         x <- dplyr::bind_rows(
