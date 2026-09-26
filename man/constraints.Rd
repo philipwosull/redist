@@ -275,12 +275,6 @@ having two or more incumbents be in the same district.}
 
 \item{min_fracs}{A vector of minimum fraction thresholds for each of the
 different population sets}
-
-\item{only_districts}{Whether or not to apply the constraints to
-districts only. If constraints are only applied to districts then it will
-likely cause a drop in efficiency in the final round. If splitting plans all
-the way this does not affect the final target distribution. This is not relevant
-for constraints that penalize the entire plan instead of specific districts.}
 }
 \description{
 The \code{\link[=redist_smc]{redist_smc()}} and \code{\link[=redist_mergesplit]{redist_mergesplit()}} algorithms in this package allow

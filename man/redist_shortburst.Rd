@@ -17,6 +17,7 @@ redist_shortburst(
   constraints = redist_constr(map),
   compactness = 1,
   reversible = TRUE,
+  enforce_hierarchical = FALSE,
   return_all = TRUE,
   thin = 1L,
   backend = "mergesplit",
@@ -74,6 +75,13 @@ higher values preferring more compact districts. Must be non-negative. See
 
 \item{reversible}{If \code{FALSE} and \code{backend="mergesplit"}, the Markov chain
 used will not be reversible. This may speed up optimization.}
+
+\item{enforce_hierarchical}{When \code{backend="mergesplit"} this controls whether
+the sampled plans must be hierarchically valid with respect to the inputted
+administrative units. See O'Sullivan, McCartan, and Imai (2023)
+\url{doi:10.48550/arXiv.2603.22188} for a definition of hierarchical plans.
+When \code{reversible} is \code{TRUE} the calculated Metropolis-Hastings ratio will
+generally not be correct.}
 
 \item{return_all}{Whether to return all the burst results or just the best
 one (generally, the Pareto frontier). Recommended for monitoring purposes.}

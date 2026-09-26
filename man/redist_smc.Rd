@@ -16,7 +16,7 @@ redist_smc(
   init_particles = NULL,
   init_seats = NULL,
   init_weights = NULL,
-  sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+  sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
   split_method = NULL,
   split_params = NULL,
   ms_params = list(),
@@ -198,7 +198,7 @@ Recommended.}
 options are
 \itemize{
 \item \code{basic} Saves the final plans and for each step the
-incremental weights and ancestors.
+incremental weights and parent indices.
 \item \code{all} Saves everything \code{basic} does in addition to the
 intermediate plan and seat matrices after each splitting and mergesplit step.
 Use with caution as this can use a lot of memory very quickly.
@@ -228,6 +228,9 @@ number of tries before sampling the extra plan, and then discarding the
 extra plan. The number of attempts can be used with the weights to form an
 unbiased estimator, as opposed to the biased normalizing
 constant estimators that are obtained with the weights alone.
+\item \code{md_alpha} What power to use for multidistrict selection
+probability. When choosing a multidistrict to split, one will be chosen with
+probability proportional to \if{html}{\out{<size>}}^md_alpha.
 }}
 
 \item{adapt_k_thresh}{Deprecated. Pass in through the \code{split_params} arg.
