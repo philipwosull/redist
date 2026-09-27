@@ -122,7 +122,7 @@ redist_mergesplit <- function(
     compactness = 1,
     constraints = list(),
     constraint_fn = function(m) rep(0, ncol(m)),
-    sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+    sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
     split_method = NULL,
     split_params = NULL,
     pair_rule = "uniform",
@@ -144,7 +144,7 @@ redist_mergesplit <- function(
     if (!missing(adapt_k_thresh)) {
         cli::cli_warn(
       "Passing {.arg adapt_k_thresh} directly is deprecated. Pass it in as an argument
-                 in {.arg split_params}"
+                 in {.arg split_params} if using Graph Plan sampling."
     )
         if (is.list(split_params)) {
             split_params$adapt_k_thresh <- adapt_k_thresh
