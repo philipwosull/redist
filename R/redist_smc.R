@@ -687,7 +687,7 @@ redist_smc <- function(
         #     algout$nunique_plans,
         #     nrow(get_plan_counts(
         #         algout$plans, dplyr::n_distinct(algout$plans[,1]),
-        #         TRUE, ncores
+        #         use_canonical_ordering = TRUE
         #     ))
         # )
                 nunique_plans <- algout$nunique_plans

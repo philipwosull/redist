@@ -22,6 +22,7 @@ test_that("redist_mergesplit rejects invalid arguments", {
         redist_mergesplit(
             iowa_map,
             nsims = 10,
+            sampling_space = "graph_plan",
             split_params = list(adapt_k_thresh = 1.5),
             silent = TRUE
         ),

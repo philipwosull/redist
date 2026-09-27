@@ -161,13 +161,15 @@ test_that("Partial sampling works accurately", {
     # get the counts of the plans in the two samples
     all_the_way_counts_df <- get_plan_counts(
         get_plans_matrix(out_all_the_way),
-        attr(fl_map, "ndists")
+        attr(fl_map, "ndists"),
+        return_plan_strings = TRUE
     ) |>
         arrange(plan_string)
 
     partial_counts_df <- get_plan_counts(
         get_plans_matrix(out2),
-        attr(fl_map, "ndists")
+        attr(fl_map, "ndists"),
+        return_plan_strings = TRUE
     ) |>
         arrange(plan_string)
 

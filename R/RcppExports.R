@@ -189,8 +189,8 @@ get_canonical_plan_labelling <- function(plans_mat, num_regions, ncores = 0L) {
     .Call(`_redist_get_canonical_plan_labelling`, plans_mat, num_regions, ncores)
 }
 
-get_plan_counts <- function(input_plans_mat, num_regions, use_canonical_ordering = TRUE, num_threads = 1L) {
-    .Call(`_redist_get_plan_counts`, input_plans_mat, num_regions, use_canonical_ordering, num_threads)
+get_plan_counts <- function(input_plans_mat, num_regions, use_canonical_ordering = TRUE, return_plan_strings = FALSE) {
+    .Call(`_redist_get_plan_counts`, input_plans_mat, num_regions, use_canonical_ordering, return_plan_strings)
 }
 
 validate_init_seats_cpp <- function(init_seats, num_regions, nseats, seats_range, split_districts_only, num_threads) {

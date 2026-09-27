@@ -347,16 +347,26 @@ Rcpp::IntegerMatrix PlanEnsemble::get_R_sizes_matrix(RcppThread::ThreadPool &poo
     return sizes_mat;
 }
 
-int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
+std::vector<PlanTallyEntry> PlanEnsemble::get_unique_plan_tally(
+    RcppThread::ThreadPool &pool) const {
     if (nsims == 0) {
-        return 0;
+        return {};
     }
 
     int const num_regions = plan_ptr_vec[0]->num_regions;
     int const num_threads = get_num_threads(pool);
-    std::vector<std::vector<int>> region_reindex_vecs(num_threads, std::vector<int>(num_regions));
 
-    // Stores only {hash, plan index}: normally 16 bytes per plan.
+    // A plan is just a run of `V` region ids in the flattened buffer, and a
+    // raw pointer into it already indexes the way the shared helpers expect.
+    auto const plan_ptr = [&](int const plan_idx) {
+        return flattened_all_plans.data() +
+               static_cast<std::size_t>(plan_idx) * static_cast<std::size_t>(V);
+    };
+
+    std::vector<std::vector<int>> label_scratches(num_threads,
+                                                  std::vector<int>(num_regions));
+
+    // Stores only {hash, plan index}: 16 bytes per plan.
     std::vector<std::pair<std::uint64_t, int>> hashed_plans(nsims);
 
     // Trick to give each thread a unique id
@@ -366,6 +376,7 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
     static std::atomic<int> global_generation_counter{0};
     int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
     std::atomic<int> thread_id_counter{0};
+
     // First pass: compute each plan's canonical hash.
     pool.parallelFor(0, nsims, [&](int const plan_idx) {
         static thread_local int thread_generation_counter = -1;
@@ -378,40 +389,11 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
             thread_generation_counter = generation;
         }
 
-        std::vector<int> &region_reindex = region_reindex_vecs[thread_id];
-        region_reindex.assign(num_regions, -1);
-
-        int next_region_id = 0;
-
-        // Standard FNV-1a 64-bit constants.
-        std::uint64_t hash = 14695981039346656037ULL;
-        constexpr std::uint64_t fnv_prime = 1099511628211ULL;
-
-        std::size_t const offset =
-            static_cast<std::size_t>(plan_idx) *
-            static_cast<std::size_t>(V);
-
-        for (int v = 0; v < V; ++v) {
-            int const old_region =
-                static_cast<int>(flattened_all_plans[offset + v]);
-
-            int &canonical_region = region_reindex[old_region];
-
-            if (canonical_region < 0) {
-                canonical_region = next_region_id++;
-            }
-
-            std::uint16_t const value =
-                static_cast<std::uint16_t>(canonical_region);
-
-            hash ^= static_cast<std::uint8_t>(value & 0xffU);
-            hash *= fnv_prime;
-
-            hash ^= static_cast<std::uint8_t>((value >> 8) & 0xffU);
-            hash *= fnv_prime;
-        }
-
-        hashed_plans[plan_idx] = {hash, plan_idx};
+        hashed_plans[plan_idx] = {
+            canonical_plan_hash(plan_ptr(plan_idx), V, num_regions,
+                                label_scratches[thread_id]),
+            plan_idx
+        };
     });
 
     pool.wait();
@@ -419,102 +401,65 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
     // Put plans with matching hashes next to each other.
     std::sort(hashed_plans.begin(), hashed_plans.end());
 
-    // Returns true exactly when two plans define the same partition,
-    // ignoring their region labels.
     std::vector<int> plan1_to_plan2(num_regions);
     std::vector<int> plan2_to_plan1(num_regions);
 
-    auto const plans_are_equal =
-        [&](int const plan1_idx, int const plan2_idx) {
-            std::fill(
-                plan1_to_plan2.begin(),
-                plan1_to_plan2.end(),
-                -1
-            );
-            std::fill(
-                plan2_to_plan1.begin(),
-                plan2_to_plan1.end(),
-                -1
-            );
+    std::vector<PlanTallyEntry> tally;
+    tally.reserve(nsims);
 
-            std::size_t const offset1 =
-                static_cast<std::size_t>(plan1_idx) *
-                static_cast<std::size_t>(V);
-
-            std::size_t const offset2 =
-                static_cast<std::size_t>(plan2_idx) *
-                static_cast<std::size_t>(V);
-
-            for (int v = 0; v < V; ++v) {
-                int const region1 =
-                    static_cast<int>(flattened_all_plans[offset1 + v]);
-
-                int const region2 =
-                    static_cast<int>(flattened_all_plans[offset2 + v]);
-
-                int &mapped_region2 = plan1_to_plan2[region1];
-                int &mapped_region1 = plan2_to_plan1[region2];
-
-                if (mapped_region2 < 0 && mapped_region1 < 0) {
-                    mapped_region2 = region2;
-                    mapped_region1 = region1;
-                } else if (
-                    mapped_region2 != region2 ||
-                    mapped_region1 != region1
-                ) {
-                    return false;
-                }
-            }
-
-            return true;
-        };
-
-    int num_unique_plans = 0;
-
-    // Usually this vector has one entry. It gets more than one only if
-    // distinct plans happen to have the same 64-bit hash.
-    std::vector<int> representatives;
-    representatives.reserve(2);
+    // Slots in `tally` for the group of plans sharing the current hash.
+    // Usually holds one entry; it grows only when distinct plans happen to
+    // share a 64-bit hash, which is why matches are confirmed exactly below.
+    std::vector<int> representative_slots;
+    representative_slots.reserve(2);
 
     std::size_t group_begin = 0;
 
     while (group_begin < hashed_plans.size()) {
         std::size_t group_end = group_begin + 1;
 
-        while (
-            group_end < hashed_plans.size() &&
-            hashed_plans[group_end].first ==
-                hashed_plans[group_begin].first
-        ) {
+        while (group_end < hashed_plans.size() &&
+               hashed_plans[group_end].first == hashed_plans[group_begin].first) {
             ++group_end;
         }
 
-        representatives.clear();
+        representative_slots.clear();
 
         for (std::size_t i = group_begin; i < group_end; ++i) {
             int const candidate_idx = hashed_plans[i].second;
-            bool already_counted = false;
+            bool matched = false;
 
-            for (int const representative_idx : representatives) {
-                if (plans_are_equal(
-                        candidate_idx,
-                        representative_idx
-                    )) {
-                    already_counted = true;
+            for (int const slot : representative_slots) {
+                if (plans_canonically_equal(plan_ptr(candidate_idx),
+                                            plan_ptr(tally[slot].representative), V,
+                                            num_regions, plan1_to_plan2,
+                                            plan2_to_plan1)) {
+                    ++tally[slot].count;
+                    matched = true;
                     break;
                 }
             }
 
-            if (!already_counted) {
-                representatives.push_back(candidate_idx);
-                ++num_unique_plans;
+            if (!matched) {
+                if (!representative_slots.empty()) {
+                    // genuine hash collision, chain it off the last one
+                    tally[representative_slots.back()].next_same_hash =
+                        static_cast<int>(tally.size());
+                }
+                representative_slots.push_back(static_cast<int>(tally.size()));
+                tally.push_back(PlanTallyEntry{candidate_idx, 1, -1});
             }
         }
 
         group_begin = group_end;
     }
 
-    return num_unique_plans;
+    return tally;
+}
+
+
+int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
+    return static_cast<int>(get_unique_plan_tally(pool).size());
 }
 
 Rcpp::IntegerMatrix PlanEnsemble::get_region_pops_matrix(RcppThread::ThreadPool &pool) {

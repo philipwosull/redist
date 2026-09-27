@@ -22,7 +22,47 @@
 #include "random.h"
 #include "scoring.h"
 #include "base_plan_type.h"
+#include "redist_alg_helpers.h"
 #include "threading_helpers.h"
+
+
+namespace {
+
+/*
+ * The canonical labelling of a plan written out as "1,1,2,3,...", with labels
+ * numbered from 1 in order of first appearance.
+ *
+ * Only ever called once per distinct plan. Building one of these per particle
+ * is exactly what `canonical_plan_hash` exists to avoid.
+ */
+template <typename PlanID>
+std::string canonical_plan_string(PlanID const &region_ids, int const V,
+                                  int const num_regions,
+                                  std::vector<int> &label_scratch) {
+    label_scratch.assign(num_regions, UNSEEN_REGION);
+
+    std::string out;
+    out.reserve(static_cast<std::size_t>(V) * 3);
+
+    int next_label = 0;
+
+    for (int v = 0; v < V; ++v) {
+        int const region = static_cast<int>(region_ids[v]);
+
+        int label = label_scratch[region];
+        if (label == UNSEEN_REGION) {
+            label = next_label++;
+            label_scratch[region] = label;
+        }
+
+        if (v > 0) out.push_back(',');
+        out += std::to_string(label + 1);
+    }
+
+    return out;
+}
+
+} // namespace
 
 
 
@@ -353,21 +393,6 @@ Rcpp::DataFrame order_columns_by_district(Rcpp::DataFrame const &df,
     return out;
 }
 
-namespace{
-
-/*
- * Convert zero-indxed R adjacency list to Graph object (vector of vectors of ints).
- */
-Graph list_to_graph(const Rcpp::List &l) {
-    int V = l.size();
-    Graph g;
-    for (int i = 0; i < V; i++) {
-        g.push_back(Rcpp::as<std::vector<int>>((Rcpp::IntegerVector)l[i]));
-    }
-    return g;
-}
-
-}
 
 RegionMultigraphCount build_region_multigraph(Graph const &g, PlanVector const &region_ids,
                                               int const num_regions) {
@@ -819,71 +844,77 @@ Rcpp::IntegerMatrix get_canonical_plan_labelling(Rcpp::IntegerMatrix const &plan
 // @keywords internal
 // [[Rcpp::export]]
 Rcpp::DataFrame get_plan_counts(Rcpp::IntegerMatrix const &input_plans_mat,
-                                int const num_regions, bool const use_canonical_ordering = true,
-                                int const num_threads = 1) {
+                                int const num_regions,
+                                bool const use_canonical_ordering = true,
+                                bool const return_plan_strings = false) {
+    int const V = input_plans_mat.nrow();
+    int const nsims = input_plans_mat.ncol();
 
-    Rcpp::IntegerMatrix plans_mat =
-        use_canonical_ordering
-            ? get_canonical_plan_labelling(input_plans_mat, num_regions, num_threads)
-            : input_plans_mat;
+    // plans arrive 1-indexed, so region ids run 1..num_regions
+    int const label_slots = num_regions + 1;
 
-    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
-    int const V = plans_mat.nrow();
-    int const nsims = plans_mat.ncol();
+    auto const plan_at = [&](int const i) { return input_plans_mat.column(i); };
 
-    std::vector<std::unordered_map<std::string, int>> plan_count_maps_vec(
-        pool.getNumThreads() == 0 ? 1 : pool.getNumThreads());
+    std::vector<PlanTallyEntry> tally;
 
-    // trick to give each thread a unique id
-    static std::atomic<int> global_generation_counter{0};
-    int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
-    std::atomic<int> thread_id_counter{0};
+    if (use_canonical_ordering) {
+        // canonicalising happens inside the hash, so no relabelled copy of
+        // the plans matrix is ever built
+        tally = tally_unique_plans(plan_at, nsims, V, label_slots);
+    } else {
+        // count region id permutations of the same partition separately
+        std::unordered_map<std::uint64_t, int> heads;
+        heads.reserve(nsims * 2);
+        tally.reserve(nsims);
 
-    pool.parallelFor(0, nsims, [&](int i) {
-        static thread_local int thread_generation_counter = -1;
-        static thread_local int thread_id;
+        for (int i = 0; i < nsims; ++i) {
+            auto const plan = plan_at(i);
 
-        // check if the thread id was generated this function call
-        if (thread_generation_counter != generation) {
-            // if not then give it a new id
-            thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
-            thread_generation_counter = generation;
-        }
+            std::uint64_t hash = 0xcbf29ce484222325ULL;
+            for (int v = 0; v < V; ++v) {
+                hash ^= static_cast<std::uint64_t>(plan[v]) + 1ULL;
+                hash *= 0x100000001b3ULL;
+            }
+            hash = mix64_hash(hash);
 
-        std::ostringstream oss;
-
-        for (int row = 0; row < V; ++row) {
-            oss << plans_mat(row, i);
-            if (row < V - 1) {
-                oss << ",";
+            auto const inserted = heads.emplace(hash, static_cast<int>(tally.size()));
+            if (inserted.second) {
+                tally.push_back(PlanTallyEntry{i, 1, -1});
+            } else {
+                ++tally[inserted.first->second].count;
             }
         }
-        auto key = oss.str();
-        plan_count_maps_vec[thread_id][key]++;
-    });
-
-    pool.wait();
-
-    // now combine into one map
-    std::unordered_map<std::string, int> pattern_counts;
-    for (size_t i = 0; i < plan_count_maps_vec.size(); i++) {
-        for (const auto &pair : plan_count_maps_vec[i]) {
-            pattern_counts[pair.first] += pair.second;
-        }
     }
 
-    // Convert to R named vector
-    // Fill vectors for DataFrame
-    std::vector<std::string> patterns;
-    std::vector<int> counts;
+    int const n_unique = static_cast<int>(tally.size());
 
-    for (const auto &pair : pattern_counts) {
-        patterns.push_back(pair.first);
-        counts.push_back(pair.second);
+    Rcpp::IntegerVector counts(n_unique);
+    // 1-indexed column of the first plan carrying each distinct plan
+    Rcpp::IntegerVector representative(n_unique);
+
+    for (int i = 0; i < n_unique; ++i) {
+        counts[i] = tally[i].count;
+        representative[i] = tally[i].representative + 1;
     }
 
-    return Rcpp::DataFrame::create(Rcpp::Named("plan_string") = patterns,
-                                   Rcpp::Named("count") = counts);
+    if (!return_plan_strings) {
+        return Rcpp::DataFrame::create(Rcpp::Named("count") = counts,
+                                       Rcpp::Named("representative") = representative);
+    }
+
+    // Built once per distinct plan rather than once per particle.
+    Rcpp::CharacterVector plan_string(n_unique);
+    std::vector<int> label_scratch(label_slots);
+
+    for (int i = 0; i < n_unique; ++i) {
+        auto const plan = plan_at(tally[i].representative);
+        plan_string[i] = canonical_plan_string(plan, V, label_slots, label_scratch);
+    }
+
+    return Rcpp::DataFrame::create(Rcpp::Named("plan_string") = plan_string,
+                                   Rcpp::Named("count") = counts,
+                                   Rcpp::Named("representative") = representative,
+                                   Rcpp::Named("stringsAsFactors") = false);
 }
 
 

@@ -397,6 +397,22 @@ Rcpp::List ms_plans(
               << std::endl;
     }
 
+    /*
+     * How many of the saved plans are distinct, ignoring how regions happen to
+     * be numbered. Counted while the matrix is still 0-indexed, so region ids
+     * run 0..ndists-1.
+     *
+     * Only the count is kept: the tally behind it is one entry per distinct
+     * plan and is discarded here, so this adds a fraction of a percent to what
+     * the saved plans matrix already occupies.
+     */
+    int const nunique_saved_plans = static_cast<int>(
+        tally_unique_plans(
+            [&](int const i) { return saved_plans_mat.column(i); },
+            saved_plans_mat.ncol(), V, ndists
+        ).size()
+    );
+
     // now add 1 to plans
     std::transform(saved_plans_mat.begin(), saved_plans_mat.end(), saved_plans_mat.begin(),
                    [](int x) { return x + 1; });
@@ -412,6 +428,7 @@ Rcpp::List ms_plans(
     out["warmup_acceptances"] = warmup_acceptances;
     out["post_warump_acceptances"] = post_warump_acceptances;
     out["log_mh_ratio"] = log_mh_ratios;
+    out["nunique_plans"] = nunique_saved_plans;
     out["tree_sizes"] = tree_sizes;
     out["successful_tree_sizes"] = successful_tree_sizes;
     out["warmup_time"] = warmup_time;

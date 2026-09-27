@@ -129,16 +129,16 @@ validate_constraints <- function(map, constraints, compactness = 1L) {
             map
         ))
     }
-    if (any(c("edges_removed", "log_st") %in% names(constraints))) {
+    if (any(c("log_st", "fry_hold") %in% names(constraints))) {
         cli::cli_warn(c(
-      "{.var edges_removed} or {.var log_st} constraint found in
+      "{.var fry_hold} or {.var log_st} constraint found in
            {.arg constraints} and will be ignored.",
       ">" = "Adjust using {.arg compactness} instead."
     ))
     }
-    if (any(c("poslby", "fry_hold") %in% names(constraints)) && compactness == 1) {
+    if (any(c("poslby") %in% names(constraints)) && compactness == 1) {
         cli::cli_warn(
-      "{.var polsby} or {.var fry_hold} constraint found in {.arg constraints}
+      "{.var polsby} constraint found in {.arg constraints}
                  with {.arg compactness == 1). This may disrupt efficient sampling."
     )
     }

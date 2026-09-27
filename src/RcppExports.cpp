@@ -776,16 +776,16 @@ BEGIN_RCPP
 END_RCPP
 }
 // get_plan_counts
-Rcpp::DataFrame get_plan_counts(Rcpp::IntegerMatrix const& input_plans_mat, int const num_regions, bool const use_canonical_ordering, int const num_threads);
-RcppExport SEXP _redist_get_plan_counts(SEXP input_plans_matSEXP, SEXP num_regionsSEXP, SEXP use_canonical_orderingSEXP, SEXP num_threadsSEXP) {
+Rcpp::DataFrame get_plan_counts(Rcpp::IntegerMatrix const& input_plans_mat, int const num_regions, bool const use_canonical_ordering, bool const return_plan_strings);
+RcppExport SEXP _redist_get_plan_counts(SEXP input_plans_matSEXP, SEXP num_regionsSEXP, SEXP use_canonical_orderingSEXP, SEXP return_plan_stringsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::IntegerMatrix const& >::type input_plans_mat(input_plans_matSEXP);
     Rcpp::traits::input_parameter< int const >::type num_regions(num_regionsSEXP);
     Rcpp::traits::input_parameter< bool const >::type use_canonical_ordering(use_canonical_orderingSEXP);
-    Rcpp::traits::input_parameter< int const >::type num_threads(num_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(get_plan_counts(input_plans_mat, num_regions, use_canonical_ordering, num_threads));
+    Rcpp::traits::input_parameter< bool const >::type return_plan_strings(return_plan_stringsSEXP);
+    rcpp_result_gen = Rcpp::wrap(get_plan_counts(input_plans_mat, num_regions, use_canonical_ordering, return_plan_strings));
     return rcpp_result_gen;
 END_RCPP
 }

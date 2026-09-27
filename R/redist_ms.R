@@ -482,6 +482,7 @@ redist_mergesplit <- function(
           algout$post_warump_acceptances) /
           algout$total_steps,
         total_steps = algout$total_steps,
+        nunique_plans = algout$nunique_plans,
         forward_kernel_params = run_forward_kernel_params
       )
 
