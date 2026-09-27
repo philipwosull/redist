@@ -3,6 +3,7 @@
 
 #include "random.h"
 
+#include <Rcpp.h>
 #include <cmath>
 #include <numeric>
 #include <sstream>
@@ -37,7 +38,7 @@ void RNGState::seed_rng(int seed, int num_jumps) {
 // Construct RNG state object
 RNGState::RNGState(int seed, int num_jumps) { seed_rng(seed, num_jumps); }
 
-RNGState::RNGState(void) { seed_rng((int)Rcpp::sample(INT_MAX, 1)[0]); }
+RNGState::RNGState(void) { seed_rng((int) Rcpp::sample(INT_MAX, 1)[0]); }
 
 uint64_t RNGState::next_sr() {
     uint64_t z = (state_sr += 0x9e3779b97f4a7c15);

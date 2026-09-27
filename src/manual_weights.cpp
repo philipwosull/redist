@@ -328,7 +328,7 @@ std::vector<double> compute_plans_log_optimal_weights(
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule_ptr = get_splitting_schedule(
         1, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
-        splitting_schedule_type, control);
+        splitting_schedule_type);
     splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, num_regions - 1);
     splitting_schedule_ptr->print_current_step_splitting_info();
 
@@ -457,7 +457,7 @@ std::vector<double> compute_plans_log_simple_weights(
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule_ptr = get_splitting_schedule(
         1, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
-        splitting_schedule_type, control);
+        splitting_schedule_type);
     splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, num_regions - 1);
     splitting_schedule_ptr->print_current_step_splitting_info();
 

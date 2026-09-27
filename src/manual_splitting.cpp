@@ -844,7 +844,7 @@ Rcpp::List attempt_splits_on_a_region(Rcpp::List const &adj_list, const Rcpp::In
     SplittingSizeScheduleType splitting_schedule_type =
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule = get_splitting_schedule(1, ndists, ndists, std::vector<int>{},
-                                                     splitting_schedule_type, control);
+                                                     splitting_schedule_type);
 
     int global_rng_seed = (int)Rcpp::sample(INT_MAX, 1)[0];
     int num_rng_states = num_threads > 0 ? num_threads : 1;

@@ -1681,7 +1681,7 @@ Rcpp::List run_redist_smc(
         get_splitting_size_regime(static_cast<std::string>(control["splitting_size_regime"]));
     auto splitting_schedule_ptr = get_splitting_schedule(
         total_smc_steps, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
-        splitting_size_regime, control);
+        splitting_size_regime);
     // it wants presplit number of regions so make initial regions - 1
     // Needed for initializing linking edge plans
     splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, initial_num_regions -

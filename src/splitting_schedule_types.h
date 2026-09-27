@@ -4,7 +4,6 @@
 
 #include <memory>
 #include "advanced_types.h"
-#include <Rcpp.h>
 
 /*
  * Abstract class for object used to manage what sizes are allowed to be split
@@ -192,30 +191,10 @@ class PureMSSplittingSchedule : public SplittingSchedule {
     };
 };
 
-/*
- * Derived Class for one custom split schedule. This is where only one type
- * of split is allowed in each step
- *
- * BE VERY CAREFUL WITH THIS! Not all configurations are guaranteed to be correct
- */
-class OneCustomSplitSchedule : public SplittingSchedule {
-
-  private:
-    std::vector<std::array<int, 3>> split_array_list; // list of the split for each round
-    // array is (presplit size, split size 1, split size 2)
-
-  public:
-    // constructor
-    OneCustomSplitSchedule(const int num_splits, const int ndists, Rcpp::List const &control);
-
-    void set_potential_cut_sizes_for_each_valid_size(int split_num,
-                                                     int presplit_num_regions) override;
-};
 
 std::unique_ptr<SplittingSchedule>
 get_splitting_schedule(const int num_splits, const int ndists, const int total_seats,
                        std::vector<int> const &district_seat_sizes,
-                       SplittingSizeScheduleType const schedule_type,
-                       Rcpp::List const &control);
+                       SplittingSizeScheduleType const schedule_type);
 
 #endif

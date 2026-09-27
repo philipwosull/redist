@@ -5,12 +5,15 @@
  * Purpose: Implements Various Splitting Schedule Types
  ********************************************************/
 
-#include <cmath>
-#include <iostream>
-#include <numeric>
-
 #include "splitting_schedule_types.h"
+
+// for `Rprintf` / `REprintf` 
+#include <R_ext/Print.h>
+
+#include <cmath>
 #include <memory>
+#include <numeric>
+#include <string>
 
 constexpr bool DEBUG_SPLITTING_SCHEDULES_VERBOSE = false;
 
@@ -61,43 +64,25 @@ void SplittingSchedule::print_current_step_splitting_info() {
     }
 
     Rprintf("The following valid merge pairs are:\n");
-    Rcpp::Rcout << "_ |";
+    Rprintf("_ |");
     for (int i = 1; i <= total_seats; i++) {
         if (!valid_region_sizes_to_split[i] && !valid_split_region_sizes[i])
             continue;
-        // Rcpp::Rcout << " " << i;
-        Rcpp::Rcout << " " << "\033[4m" << i << "\033[0m";
+        // \033[4m .. \033[0m underlines the column header
+        Rprintf(" \033[4m%d\033[0m", i);
     }
-    Rcpp::Rcout << std::endl;
+    Rprintf("\n");
     for (int i = 1; i <= total_seats; i++) {
         if (!valid_region_sizes_to_split[i] && !valid_split_region_sizes[i])
             continue;
-        Rcpp::Rcout << i << " | ";
+        Rprintf("%d | ", i);
         for (int j = 1; j <= total_seats; j++) {
             if (!valid_region_sizes_to_split[j] && !valid_split_region_sizes[j])
                 continue;
-            Rcpp::Rcout << (valid_merge_pair_sizes[i][j] ? "1 " : "0 ");
+            Rprintf("%s", valid_merge_pair_sizes[i][j] ? "1 " : "0 ");
         }
-        Rcpp::Rcout << std::endl;
+        Rprintf("\n");
     }
-
-    // int row_num = 0;
-    // for (const auto& row : valid_merge_pair_sizes) {  // Iterate over rows
-    //     if(row_num == 0){
-    //         row_num++;
-    //         continue;
-    //     }
-    //     Rcpp::Rcout << row_num++ << " | ";
-    //     int col_num = 0;
-    //     for (bool val : row) {        // Iterate over elements in the row
-    //         if(col_num == 0){
-    //             col_num++;
-    //             continue;
-    //         }
-    //         Rcpp::Rcout << (val ? "1 " : "0 ");  // Print 1 for true, 0 for false
-    //     }
-    //     Rcpp::Rcout << "\n";  // Newline after each row
-    // }
 }
 
 /*
@@ -577,94 +562,19 @@ PureMSSplittingSchedule::PureMSSplittingSchedule(const int ndists, const int tot
     }
 }
 
-OneCustomSplitSchedule::OneCustomSplitSchedule(const int num_splits, const int ndists,
-                                               Rcpp::List const &control)
-    : SplittingSchedule(SplittingSizeScheduleType::OneCustomSize, ndists, ndists,
-                        std::vector<int>{1}) {
 
-    // Ensure "custom_size_split_list" exists and is a list
-    if (!control.containsElementNamed("custom_size_split_list")) {
-        Rcpp::stop("Error: 'permitted_split_region_sizes_list' is missing from control.");
-    }
 
-    // extract
-    Rcpp::List custom_size_split_list = control["custom_size_split_list"];
-    std::vector<std::vector<int>> custom_splits_vector =
-        Rcpp::as<std::vector<std::vector<int>>>(custom_size_split_list);
-    // ensure its the same size as the number of splits
-    if (num_splits != custom_splits_vector.size()) {
-        Rcpp::stop(
-            "Error: 'custom_size_split_list' must be the same length as number of splits.");
-    }
-
-    split_array_list.reserve(custom_splits_vector.size());
-    // convert to vector of arrays of size 3
-    for (auto split_vec : custom_splits_vector) {
-        // check it is length 3
-        if (split_vec.size() != 3) {
-            Rcpp::stop("Error: All vectors in 'custom_size_split_list' must be of length 3.");
-        }
-        // check the first element is sum of second two
-        if (split_vec[0] != split_vec[1] + split_vec[2]) {
-            Rcpp::stop("Error: First element in each vector in 'custom_size_split_list' must "
-                       "be sum of other two elements.");
-        }
-        // check first element is above 0
-        if (split_vec[0] <= 0 || split_vec[2] <= 0 || split_vec[2] <= 0) {
-            Rcpp::stop("Error: All elements in each vector in 'custom_size_split_list' must be "
-                       "greater than zero.");
-        }
-        split_array_list.push_back({split_vec[0], split_vec[1], split_vec[2]});
-    }
-}
-
-void OneCustomSplitSchedule::set_potential_cut_sizes_for_each_valid_size(
-    int split_num, int presplit_num_regions) {
-
-    // reset all regions split and merge booleans
-    reset_splitting_and_merge_booleans();
-
-    // get the (presplit size, split size 1, split size 2)
-    auto the_custom_split = split_array_list[split_num];
-
-    int valid_region_size_to_split = the_custom_split[0];
-    int valid_split_region1_size = the_custom_split[1];
-    int valid_split_region2_size = the_custom_split[2];
-    int smaller_valid_split_size = std::min(valid_split_region1_size, valid_split_region2_size);
-    int bigger_valid_split_size = std::max(valid_split_region1_size, valid_split_region2_size);
-
-    // we can only split the one valid size to split
-    valid_region_sizes_to_split[valid_region_size_to_split] = true;
-    // only two valid split sizes
-    valid_split_region_sizes[valid_split_region1_size] = true;
-    valid_split_region_sizes[valid_split_region2_size] = true;
-    check_adj_to_regions = valid_split_region_sizes;
-    // we can only merge those two valid split sizes
-    valid_merge_pair_sizes[valid_split_region1_size][valid_split_region2_size] = true;
-    valid_merge_pair_sizes[valid_split_region2_size][valid_split_region1_size] = true;
-
-    // Now set the splitting size
-    all_regions_smaller_cut_sizes_to_try[valid_region_size_to_split] = {
-        smaller_valid_split_size};
-    // set min and max
-    all_regions_min_and_max_possible_cut_sizes[valid_region_size_to_split] = {
-        smaller_valid_split_size, bigger_valid_split_size};
-
-    return;
-}
 
 // Returns a splitting schedule depending on the schedule type
 std::unique_ptr<SplittingSchedule>
 get_splitting_schedule(const int num_splits, const int ndists, const int total_seats,
                        std::vector<int> const &district_seat_sizes,
-                       SplittingSizeScheduleType const schedule_type,
-                       Rcpp::List const &control) {
+                       SplittingSizeScheduleType const schedule_type
+                       ) {
     if (schedule_type == SplittingSizeScheduleType::DistrictOnlySMD) {
         return std::make_unique<DistrictOnlySplittingSchedule>(num_splits, ndists);
     } else if (schedule_type == SplittingSizeScheduleType::AnyValidSizeSMD) {
         return std::make_unique<AnyRegionSMDSplittingSchedule>(num_splits, ndists);
-    } else if (schedule_type == SplittingSizeScheduleType::OneCustomSize) {
-        return std::make_unique<OneCustomSplitSchedule>(num_splits, ndists, control);
     } else if (schedule_type == SplittingSizeScheduleType::DistrictOnlyMMD) {
         return std::make_unique<DistrictOnlyMMDSplittingSchedule>(
             num_splits, ndists, total_seats, district_seat_sizes);

@@ -2,6 +2,7 @@
 #ifndef LCT_GRAPH_PLAN_TYPE_H
 #define LCT_GRAPH_PLAN_TYPE_H
 
+#include <Rcpp.h>
 #include <functional>
 
 #include "cw_lct.h"

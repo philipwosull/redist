@@ -250,7 +250,6 @@ redist_smc <- function(
     init_seats = NULL,
     init_weights = NULL,
     sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
-    # sampling_space = c("graph_plan", "linking_edge", "spanning_forest"),
     split_method = NULL,
     split_params = NULL,
     ms_params = list(),

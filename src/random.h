@@ -1,7 +1,6 @@
 #ifndef RANDOM_H
 #define RANDOM_H
 
-#include <Rcpp.h>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
