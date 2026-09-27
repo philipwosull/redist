@@ -402,3 +402,95 @@ test_that("est_norm_unbiased accounts for rejected draws", {
 
     expect_gt(log(mean(exp(ignoring_tries))) - truth, 5)
 })
+
+test_that("est_norm_biased agrees with est_norm_unbiased and needs no extra tries", {
+    skip_on_cran()
+    set.seed(1935)
+
+    map <- suppressMessages(
+        redist_map(fl25, ndists = 3, pop_tol = 0.2, total_pop = pop)
+    )
+    plans <- suppressWarnings(
+        redist_smc(map, 2000, runs = 5, compactness = 0,
+                   ncores = 1, silent = TRUE)
+    )
+
+    biased <- est_norm_biased(map, plans)
+    unbiased <- est_norm_unbiased(map, plans)
+
+    # the biased version leaves the discarded extra particle out of the
+    # denominator, so it divides by less and always comes out larger
+    expect_true(all(biased > unbiased))
+
+    # that extra particle is one draw among many, so the two barely differ
+    expect_equal(log(mean(exp(biased))), exact_log_norm(0.2), tolerance = 0.05)
+
+    # the biased estimator needs no extra bookkeeping, so it still works when
+    # the sampler was told not to draw the extra particle
+    untracked <- suppressWarnings(
+        redist_smc(map, 500, runs = 2, compactness = 0, ncores = 1,
+                   control = list(est_norm_unbiased = FALSE), silent = TRUE)
+    )
+    expect_true(all(is.finite(est_norm_biased(map, untracked))))
+    expect_error(
+        est_norm_unbiased(map, untracked),
+        "tries_before_extra_particle"
+    )
+})
+
+test_that("est_norm_unbiased handles a hard thresholding constraint", {
+    skip_on_cran()
+    set.seed(1935)
+
+    map <- suppressMessages(
+        redist_map(fl25, ndists = 3, pop_tol = 0.2, total_pop = pop)
+    )
+
+    # A 0/1 score with `thresh = 0.5` rejects outright, since any plan scoring
+    # at or above the threshold is thrown out at the splitting stage. That
+    # restricts the target to plans keeping precincts 1 and 5 together.
+    constr <- redist_constr(map) |>
+        add_constr_custom_plan(
+            1,
+            function(plan, seats, num_regions) {
+                if (plan[1] == plan[5]) 0 else 1
+            },
+            thresh = 0.5
+        )
+
+    # At the default compactness each plan is weighted by its number of
+    # spanning forests, so the normalizing constant is the summed spanning tree
+    # count over the enumerated plans that clear both the population bound and
+    # the constraint, rather than a plain count of them.
+    enum <- fl25_enum$plans
+    keep <- fl25_enum$pop_dev <= 0.2 & (enum[1, ] == enum[5, ])
+    log_st_kept <- log_st_map(adj, enum[, keep, drop = FALSE], rep(1L, 25), 3L)
+    truth <- log(sum(exp(log_st_kept)))
+
+    plans <- suppressWarnings(
+        redist_smc(map, 2000, runs = 5, compactness = 1, ncores = 1,
+                   sampling_space = "spanning_forest", constraints = constr,
+                   silent = TRUE)
+    )
+
+    plan_m <- get_plans_matrix(plans)
+
+    # the threshold really did reject: every sampled plan obeys it
+    expect_true(all(plan_m[1, ] == plan_m[5, ]))
+
+    # and rejection was a large part of the cost, with several times more trees
+    # drawn than particles kept
+    tries <- vapply(attr(plans, "internal_diagnostics"), function(d) {
+        sum(d$draw_tries_mat) / (2000 * ncol(d$draw_tries_mat))
+    }, numeric(1))
+    expect_true(all(tries > 3))
+
+    # the estimate tracks the constrained target, not the unconstrained one
+    log_st_all <- log_st_map(
+        adj, enum[, fl25_enum$pop_dev <= 0.2, drop = FALSE], rep(1L, 25), 3L
+    )
+    pooled <- log(mean(exp(est_norm_unbiased(map, plans))))
+
+    expect_equal(pooled, truth, tolerance = 0.01)
+    expect_lt(pooled, log(sum(exp(log_st_all))))
+})

@@ -15,6 +15,12 @@ est_norm_biased(map, plans)
 An estimate of the normalizing constant from each run
 }
 \description{
-Returns an estimate of the log normalizing constant for plans sampled using
-\code{redist_smc}
+Returns a biased estimate of the log normalizing constant for plans sampled
+using \code{redist_smc}. The denominator at each step is the number of spanning
+trees drawn for the particles that were kept, which leaves out the extra
+discarded particle that \code{\link[=est_norm_unbiased]{est_norm_unbiased()}} uses to remove the bias.
+}
+\details{
+Unlike \code{\link[=est_norm_unbiased]{est_norm_unbiased()}} this needs no extra bookkeeping from the
+sampler, so it works on any plans object from \verb{Redist 5.0} or later.
 }

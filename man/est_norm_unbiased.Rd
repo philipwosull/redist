@@ -5,6 +5,8 @@
 \title{Unbiased Estimates the log of normalizing constant of plans sampled with \code{redist_smc}}
 \usage{
 est_norm_unbiased(map, plans)
+
+est_norm_unbiased(map, plans)
 }
 \arguments{
 \item{map}{A \code{\link[=redist_map]{redist_map()}} object.}
@@ -13,8 +15,16 @@ est_norm_unbiased(map, plans)
 }
 \value{
 An estimate of the normalizing constant from each run
+
+An estimate of the normalizing constant from each run
 }
 \description{
+Returns an unbiased estimate of the log normalizing constant for plans
+sampled using \code{redist_smc}. Requires that the plans were sampled with
+\code{control = list(est_norm_unbiased = TRUE)}, which draws one extra particle
+per step and discards it so that the attempt counts give an unbiased
+estimate.
+
 Returns an estimate of the log normalizing constant for plans sampled using
 \code{redist_smc}
 }
