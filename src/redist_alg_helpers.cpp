@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -316,11 +317,9 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
 Rcpp::IntegerMatrix PlanEnsemble::get_R_plans_matrix() {
     // make the plans matrix
     Rcpp::IntegerMatrix plan_mat(V, nsims);
-    // copy data over
-    std::copy(flattened_all_plans.begin(), flattened_all_plans.end(), plan_mat.begin());
-    // now add 1 to everything
-    std::transform(plan_mat.begin(), plan_mat.end(), plan_mat.begin(),
-                   [](int x) { return x + 1; });
+    // widen to R's 4-byte integers and shift to 1-indexed in a single pass
+    std::transform(flattened_all_plans.begin(), flattened_all_plans.end(), plan_mat.begin(),
+                   [](RegionID x) { return static_cast<int>(x) + 1; });
     return plan_mat;
 }
 
@@ -460,6 +459,21 @@ std::vector<PlanTallyEntry> PlanEnsemble::get_unique_plan_tally(
 
 int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
     return static_cast<int>(get_unique_plan_tally(pool).size());
+}
+
+void PlanEnsemble::release_all_but_plan_ids() {
+    // Swapping with a fresh empty vector is what actually hands the memory
+    // back: `shrink_to_fit` is only a non-binding request, whereas the
+    // temporary here takes ownership of the buffer and deallocates it when it
+    // dies at the end of the statement.
+    auto release = [](auto &buffer) { std::decay_t<decltype(buffer)>().swap(buffer); };
+
+    // The plans are views into the buffers below, so they have to go first.
+    release(plan_ptr_vec);
+    release(flattened_all_region_sizes);
+    release(flattened_all_region_pops);
+    release(flattened_all_region_order_added);
+    release(flattened_all_forest_edge_bits);
 }
 
 Rcpp::IntegerMatrix PlanEnsemble::get_region_pops_matrix(RcppThread::ThreadPool &pool) {

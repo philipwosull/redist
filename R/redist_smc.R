@@ -302,6 +302,9 @@ redist_smc <- function(
     if (nsims < 1) {
         cli::cli_abort("{.arg nsims} must be positive.")
     }
+    if (!rlang::is_scalar_logical(resample)) {
+        cli::cli_abort("{.arg resample} must be a single {.val TRUE} or {.val FALSE}.")
+    }
 
     # check default inputs
     diagnostics <- rlang::arg_match(diagnostics)
@@ -531,6 +534,7 @@ redist_smc <- function(
     cache_weights = cache_weights,
     max_split_tries = max_split_tries,
     est_norm_unbiased = est_norm_unbiased,
+    resample = resample,
     seq_alpha = seq_alpha,
     pop_temper = pop_temper,
     num_threads = as.integer(ncores),
@@ -649,52 +653,12 @@ redist_smc <- function(
         ))
             }
 
-            if (resample) {
-                # get normalized weights for sampling
-                normalized_wgts <- wgt / sum(wgt)
-
-                # resample matrices in place using lowvar resampling
-                rs_idx <- resample_plans_lowvar(
-                    normalized_wgts,
-                    algout$plans_mat,
-                    algout$region_pops,
-                    algout$seats,
-                    algout$plan_seats_saved
-                )
-
-                # rs_idx maps plan i to its new plan index
-                # `rs_idx[i] = k` means you should replace plan i with plan k
-                # that means if after we've resampled then the parent of plan
-                # i was rs_idx[i]
-
-                # add a final column for the resampling since for the resampled plans
-                # plan[i] parent is rs_idx[i]
-                algout$parent_index <- cbind(
-                    algout$parent_index,
-                    rs_idx[seq_along(rs_idx)]
-                )
-                # fix storage in case converts to double for some reason
-                storage.mode(algout$parent_index) <- "integer"
-
-                # do unique parents
-                nunique_parent_indices <- c(
-          algout$nunique_parent_indices,
-          dplyr::n_distinct(rs_idx[seq_along(rs_idx)])
-        )
-                # need to add unique after resample
-                # TODO switch resampling to c++ to avoid memory usage
-        #         nunique_plans <- c(
-        #     algout$nunique_plans,
-        #     nrow(get_plan_counts(
-        #         algout$plans, dplyr::n_distinct(algout$plans[,1]),
-        #         use_canonical_ordering = TRUE
-        #     ))
-        # )
-                nunique_plans <- algout$nunique_plans
-            } else {
-                nunique_parent_indices <- algout$nunique_parent_indices
-                nunique_plans <- algout$nunique_plans
-            }
+            # Resampling is done inside the sampler if needed. If performed it
+            # also sizes the ancestry diagnostics to match, appending the resampling
+            # index as a final parent index column and a final entry to the
+            # unique parent and unique plan counts.
+            nunique_parent_indices <- algout$nunique_parent_indices
+            nunique_plans <- algout$nunique_plans
 
             t2_run <- Sys.time()
 

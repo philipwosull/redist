@@ -292,6 +292,13 @@ class PlanEnsemble {
     // counts the number of unique plans in the ensemble
     int count_unique_plans(RcppThread::ThreadPool &pool) const;
 
+    // Frees every buffer except the plan region ids, leaving the ensemble
+    // valid only for `get_R_plans_matrix`. The R plan matrix needs 4 bytes per
+    // unit where the sampler needs 1, so it is the largest allocation of the
+    // whole run; this keeps the rest of the ensemble from being resident while
+    // it is made.
+    void release_all_but_plan_ids();
+
     // debugging methods
     // checks all plans are valid. 
     void check_all_plans_valid(

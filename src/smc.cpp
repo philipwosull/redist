@@ -110,10 +110,13 @@ class SMCDiagnostics {
                    int const total_smc_steps, int const total_ms_steps,
                    bool const estimated_unbiased_normalizing_constant,
                    int const diagnostic_level, bool const splitting_all_the_way,
-                   bool const split_district_only);
+                   bool const split_district_only, bool const final_resample);
 
     int const diagnostic_level;
     int const total_steps;
+    // Whether a final resampling step will be run. When it is, the per-step
+    // diagnostics below carry one extra slot for it.
+    bool const final_resample;
     // Level 0
     // Essential Diagnostics that are always created
     std::vector<double> log_wgt_stddevs;  // log weight std devs
@@ -180,6 +183,10 @@ class SMCDiagnostics {
     Rcpp::NumericMatrix total_plan_mcmc_times; // total time spent running mergesplit on a plan
 
 
+    // Records the final resampling step in the extra diagnostic slots
+    void record_final_resample(std::vector<int> const &resample_index,
+                               int const nunique_resampled_plans);
+
     // adds full diagnostics (takes a lot of memory)
     void add_full_step_diagnostics(int const total_steps, bool const splitting_all_the_way,
                                    int const step_num, int const merge_split_step_num,
@@ -201,13 +208,18 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
                                std::vector<bool> const &merge_split_step_vec, int const V,
                                int const nsims, int const ndists, int const total_seats,
                                int const initial_num_regions, int const total_smc_steps,
-                               int const total_ms_steps, 
+                               int const total_ms_steps,
                                bool const estimated_unbiased_normalizing_constant,
                                int const diagnostic_level,
-                               bool const splitting_all_the_way, bool const split_district_only)
+                               bool const splitting_all_the_way, bool const split_district_only,
+                               bool const final_resample)
     : diagnostic_level(diagnostic_level), total_steps(total_smc_steps + total_ms_steps),
+      final_resample(final_resample),
       log_wgt_stddevs(total_smc_steps), acceptance_rates(total_steps),
-      nunique_parents(total_smc_steps), nunique_plans(total_steps), n_eff(total_smc_steps),
+      // the final resampling step gets a slot of its own in anything that
+      // tracks how much of the ensemble survived each step
+      nunique_parents(total_smc_steps + (final_resample ? 1 : 0)),
+      nunique_plans(total_steps + (final_resample ? 1 : 0)), n_eff(total_smc_steps),
       num_merge_split_attempts_vec(total_ms_steps),
       cut_k_values(sampling_space == SamplingSpace::GraphSpace ? total_steps : 0),
       tries_before_extra_particle(estimated_unbiased_normalizing_constant ? total_smc_steps : 0),
@@ -251,7 +263,10 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
                                                  // to form particle i on split s
     parent_index_mat = Rcpp::IntegerMatrix(
         nsims,
-        total_smc_steps); // Entry [i][s] is the index of the parent of particle i at split s
+        // Entry [i][s] is the index of the parent of particle i at split s. When
+        // the run ends with a resampling step it gets one extra column holding
+        // the resampling index, which is the parent of particle i after it.
+        total_smc_steps + (final_resample ? 1 : 0));
     // This is a nsims by total_ms_steps matrix where [i][s] is the number of
     // successful merge splits performed for plan i on merge split round s
     merge_split_successes_mat =
@@ -302,6 +317,24 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
             }
         }
     }
+}
+
+void SMCDiagnostics::record_final_resample(std::vector<int> const &resample_index,
+                                           int const nunique_resampled_plans) {
+    if (!final_resample) {
+        throw Rcpp::exception(
+            "SMCDiagnostics was not sized for a final resampling step!\n");
+    }
+    // `resample_index[i]` is the plan that became plan i, which is exactly the
+    // parent relationship the rest of this matrix records, so it goes in the
+    // extra final column. It is stored 0-indexed and shifted along with every
+    // other entry in `add_diagnostics_to_out_list`.
+    std::copy(resample_index.begin(), resample_index.end(),
+              parent_index_mat.column(parent_index_mat.ncol() - 1).begin());
+
+    std::set<int> const surviving_parents(resample_index.begin(), resample_index.end());
+    nunique_parents.back() = static_cast<int>(surviving_parents.size());
+    nunique_plans.back() = nunique_resampled_plans;
 }
 
 void SMCDiagnostics::add_full_step_diagnostics(
@@ -1366,6 +1399,71 @@ void compute_all_plans_log_simple_incremental_weights(
     return;
 }
 
+/*
+ *  Resample the ensemble with a systematic (low-variance) resampler.
+ *
+ *  This runs at the end of the sampler rather than in R because everything it
+ *  needs is already allocated here. `dummy_plan_ensemble` is the scratch
+ *  ensemble the SMC steps have been splitting into, so gathering into it and
+ *  swapping costs no extra memory, and the plans are exported to R exactly
+ *  once, already in their final order. Resampling in R instead means holding
+ *  the exported plan matrix plus a permutation buffer, and forces a `cbind`
+ *  that reallocates the whole parent index matrix.
+ *
+ *  A gather cannot be done in place because `resample_index` repeats entries,
+ *  which is why the scratch ensemble is needed at all.
+ *
+ *  @param log_wgts The unnormalized log weights of the plans.
+ *
+ *  @details Modifications
+ *     - `plan_ensemble` holds the resampled plans on return, and
+ *     `dummy_plan_ensemble` holds the pre-resampling plans
+ *
+ *  @returns The 0-indexed resampling index, where entry `i` is the plan that
+ *  became plan `i`.
+ */
+static std::vector<int> resample_plan_ensemble(
+    RcppThread::ThreadPool &pool, RNGState &rng_state, std::vector<double> const &log_wgts,
+    std::unique_ptr<PlanEnsemble> &plan_ensemble,
+    std::unique_ptr<PlanEnsemble> &dummy_plan_ensemble) {
+    int const nsims = plan_ensemble->nsims;
+
+    // Exponentiate shifted so the largest weight is 1, which keeps the sum
+    // finite, then turn the weights into a normalized cumulative sum. The shift
+    // cancels in the normalization.
+    std::vector<double> cumulative_wgts(nsims);
+    fill_shifted_exp_weights(log_wgts, 1.0, cumulative_wgts);
+    double weight_total = 0.0;
+    for (int i = 0; i < nsims; i++) {
+        weight_total += cumulative_wgts[i];
+        cumulative_wgts[i] = weight_total;
+    }
+    for (double &w : cumulative_wgts) w /= weight_total;
+
+    // One uniform draw placed into `nsims` evenly spaced strata
+    std::vector<int> resample_index(nsims);
+    double const r = rng_state.r_unif() / nsims;
+    int idx = 0;
+    for (int n = 0; n < nsims; n++) {
+        double const u = r + n / static_cast<double>(nsims);
+        // the bound on `idx` stops rounding in the cumulative sum from walking
+        // off the end when `u` lands just past the final weight
+        while (u > cumulative_wgts[idx] && idx + 1 < nsims) ++idx;
+        resample_index[n] = idx;
+    }
+
+    pool.parallelFor(0, nsims, [&](int i) {
+        dummy_plan_ensemble->plan_ptr_vec[i]->shallow_copy(
+            *plan_ensemble->plan_ptr_vec[resample_index[i]]);
+    });
+    pool.wait();
+
+    // the gathered plans are in the dummy ensemble, so swap it in
+    std::swap(plan_ensemble, dummy_plan_ensemble);
+
+    return resample_index;
+}
+
 // Different diagnostic levels
 //      - level 0 - Does not capture any ancestry information or retain intermediate weights
 //      - level 1 - Saves ancestry information, intermediate weights and the number of tries
@@ -1494,7 +1592,9 @@ Rcpp::List run_redist_smc(
     // max tries value
     int const max_split_tries = Rcpp::as<int>(control["max_split_tries"]);
     // unbiased normalizing estimate
-    bool const estimated_unbiased_normalizing_constant = Rcpp::as<bool>(control["est_norm_unbiased"]); 
+    bool const estimated_unbiased_normalizing_constant = Rcpp::as<bool>(control["est_norm_unbiased"]);
+    // whether to resample the plans once the run is over
+    bool const final_resample = Rcpp::as<bool>(control["resample"]);
     double tmp_multidistrict_selection_alpha;
     // custom multidistrict selection alpha
     if(control.containsElementNamed("md_alpha")){
@@ -1582,8 +1682,8 @@ Rcpp::List run_redist_smc(
     SMCDiagnostics smc_diagnostics(
         sampling_space, splitting_method, splitting_size_regime, merge_split_step_vec, V, nsims,
         ndists, total_seats, initial_num_regions, total_smc_steps, total_ms_steps,
-        estimated_unbiased_normalizing_constant, 
-        diagnostic_level, splitting_all_the_way, split_district_only);
+        estimated_unbiased_normalizing_constant,
+        diagnostic_level, splitting_all_the_way, split_district_only, final_resample);
 
     // Create a threadpool
     RcppThread::ThreadPool pool = get_thread_pool(num_threads);
@@ -2183,6 +2283,17 @@ Rcpp::List run_redist_smc(
             reorder_all_plans(pool, plan_ensemble_ptr->plan_ptr_vec,
                               dummy_plan_ensemble_ptr->plan_ptr_vec);
         }
+
+        // Resample while the dummy ensemble is still in scope to gather into.
+        // After this the plans are in their final order, so everything below
+        // exports them to R exactly once.
+        if (final_resample) {
+            std::vector<int> const resample_index = resample_plan_ensemble(
+                pool, rng_states[0], log_weights, plan_ensemble_ptr,
+                dummy_plan_ensemble_ptr);
+            smc_diagnostics.record_final_resample(
+                resample_index, plan_ensemble_ptr->count_unique_plans(pool));
+        }
         // end of scope
     }
 
@@ -2208,14 +2319,26 @@ Rcpp::List run_redist_smc(
     if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
         Rprintf("Plan matrix (and sizes potentially) saved!\n");
 
+    // Export the per-region matrices first, then drop everything in the
+    // ensemble except the plan region ids. R stores the plans 4 bytes per unit
+    // where the sampler stores them in 1, so the plan matrix is the single
+    // largest allocation of the whole run and it is worth making it with as
+    // little else resident as possible.
+    Rcpp::IntegerMatrix seats_mat = plan_sizes_saved
+                                        ? plan_ensemble_ptr->get_R_sizes_matrix(pool)
+                                        : Rcpp::IntegerMatrix(1, 1);
+    Rcpp::IntegerMatrix region_pops_mat = plan_ensemble_ptr->get_region_pops_matrix(pool);
+    plan_ensemble_ptr->release_all_but_plan_ids();
+
+    Rcpp::IntegerMatrix plans_mat = plan_ensemble_ptr->get_R_plans_matrix();
+    // the ids now live in R's memory, so hand the sampler's copy back
+    std::vector<RegionID>().swap(plan_ensemble_ptr->flattened_all_plans);
+
     // Return results
     Rcpp::List out = Rcpp::List::create(
-        Rcpp::_["plans_mat"] =
-            plan_ensemble_ptr->get_R_plans_matrix(), // integer matrix to store final plans
-        Rcpp::_["seats"] = plan_sizes_saved
-                         ? plan_ensemble_ptr->get_R_sizes_matrix(pool)
-                         : Rcpp::IntegerMatrix(1, 1), // saves sizes matrix if needed
-        Rcpp::_["region_pops"] = plan_ensemble_ptr->get_region_pops_matrix(pool),
+        Rcpp::_["plans_mat"] = plans_mat, // integer matrix to store final plans
+        Rcpp::_["seats"] = seats_mat,     // saves sizes matrix if needed
+        Rcpp::_["region_pops"] = region_pops_mat,
         Rcpp::_["plan_seats_saved"] = plan_sizes_saved, Rcpp::_["log_weights"] = log_weights,
         Rcpp::_["step_types"] = step_types,
         Rcpp::_["merge_split_steps"] = merge_split_step_vec,
@@ -2223,9 +2346,6 @@ Rcpp::List run_redist_smc(
         Rcpp::_["multidistrict_selection_alpha"] = multidistrict_selection_alpha 
     );
 
-    // to try to save memory kill the plan vector
-    plan_ensemble_ptr->flattened_all_plans.clear();
-    plan_ensemble_ptr->flattened_all_plans.shrink_to_fit();
     // add all the diagnostics
     smc_diagnostics.add_diagnostics_to_out_list(out);
 
