@@ -281,6 +281,27 @@ class USTSampler {
     // Tree get_vertex_tree ()const {return ust.to_vertex_graph();}
     Tree get_vertex_tree ()const {return ust;}
 
+    /*
+     * The same tree with every edge stored at both endpoints.
+     *
+     * `ust` is directed, holding each edge only under its parent, whereas a
+     * forest recovered from the packed edge bitset is undirected. Comparing
+     * the two directly fails at the first leaf, so anything checking the
+     * sampler's tree against a packed forest wants this instead.
+     */
+    Tree get_undirected_vertex_tree() const {
+        Tree undirected(ust.size());
+
+        for (std::size_t v = 0; v < ust.size(); ++v) {
+            for (int const child : ust[v]) {
+                undirected[v].push_back(static_cast<int>(child));
+                undirected[child].push_back(static_cast<int>(v));
+            }
+        }
+
+        return undirected;
+    }
+
     // checks that all the vertices in the tree are valid and 
     // its a directed tree 
     void check_tree_integrity(
