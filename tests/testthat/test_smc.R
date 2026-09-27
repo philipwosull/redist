@@ -45,7 +45,6 @@ test_that("Not egregiously incorrect sampling accuracy (5-prec)", {
         map,
         20e3,
         compactness = 0,
-        split_params = list(adapt_k_thresh = 0.99),
         ncores = 1L,
         resample = FALSE,
         silent = TRUE
@@ -70,8 +69,6 @@ test_that("Not egregiously incorrect sampling accuracy (25-prec)", {
         6000,
         compactness = 0,
         ncores = 1L,
-        sampling_space = "linking_edge",
-        split_params = list(adapt_k_thresh = 0.99999),
         seq_alpha = 1L,
         resample = FALSE,
         silent = TRUE
@@ -100,7 +97,6 @@ test_that("Labeling accounted for", {
         map,
         10e3,
         ncores = 1L,
-        split_params = list(adapt_k_thresh = 1L),
         resample = FALSE,
         silent = TRUE
     )
@@ -131,9 +127,8 @@ test_that("Partial sampling works accurately", {
         set_pop_tol(fl_map, 0.01),
         nsims,
         compactness = compactness,
-        split_params = list(adapt_k_thresh = 0.99),
         seq_alpha = 1L,
-        ncores = 1L, # control = list(weight_type = "simple"),
+        ncores = 1L,
         resample = FALSE,
         silent = TRUE
     ) |>
@@ -145,9 +140,8 @@ test_that("Partial sampling works accurately", {
         nsims,
         compactness = compactness,
         n_steps = 1,
-        split_params = list(adapt_k_thresh = 0.99),
         seq_alpha = 1L,
-        ncores = 1L, # control = list(weight_type = "simple"),
+        ncores = 1L,
         resample = FALSE,
         silent = TRUE
     ) |>
@@ -157,8 +151,7 @@ test_that("Partial sampling works accurately", {
         nsims,
         compactness = compactness,
         init_particles = out1,
-        ncores = 1L, #control = list(weight_type = "simple"),
-        split_params = list(adapt_k_thresh = 0.99),
+        ncores = 1L,
         seq_alpha = 1L,
         resample = FALSE,
         silent = TRUE
