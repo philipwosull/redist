@@ -12,6 +12,7 @@
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
+#include <queue>
 
 constexpr bool DEBUG_SCORING_VERBOSE = false;
 
