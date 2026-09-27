@@ -564,27 +564,86 @@ double eval_fry_hold(PlanID const &region_ids, int const region_id, int const V,
 }
 
 /*
+ * Maps every region to itself.
+ *
+ * Lets the plain and merged edges removed scores share one implementation:
+ * the plain caller passes this and the compiler folds the lookup away, while
+ * the merged caller passes a real reindex vector.
+ */
+struct IdentityReindex {
+    template <typename T>
+    constexpr T operator[](T const region_id) const noexcept { return region_id; }
+};
+
+
+/*
  * Compute the edges removed penalty, ie the number of edges in the graph whose
  * two endpoints fall in different regions.
+ *
+ * `reindex` maps each region id to the region it should be counted as. Passing
+ * `IdentityReindex` scores the plan as it stands; passing a vector that sends
+ * one region's id to another scores the plan as though those two regions had
+ * been merged, without having to build the merged plan.
  *
  * Mirrors `redistmetrics::n_removed` for a single plan: the loop sees every
  * crossing edge once from each of its endpoints, so the total is halved. The
  * number of districts is not needed, which is why `redistmetrics::n_removed`
  * never uses the `n_distr` it takes.
  */
-template <typename PlanID>
-double eval_er(PlanID const &region_ids, Graph const &g) {
+template <typename PlanID, typename Reindex>
+double eval_er(PlanID const &region_ids, Reindex const &reindex, Graph const &g) {
     int const V = static_cast<int>(g.size());
 
     double removed = 0.0;
     for (int i = 0; i < V; i++) {
-        auto const region_id = region_ids[i];
+        // hoisted out of the neighbor loop, so the reindex costs one lookup
+        // per edge rather than two
+        auto const region_id = reindex[region_ids[i]];
         for (int const nbor : g[i]) {
-            if (region_ids[nbor] != region_id) removed += 1.0;
+            if (reindex[region_ids[nbor]] != region_id) removed += 1.0;
         }
     }
 
     return removed / 2.0;
+}
+
+
+/*
+ * Edges removed for the plan exactly as it is.
+ */
+template <typename PlanID>
+double eval_er(PlanID const &region_ids, Graph const &g) {
+    return eval_er(region_ids, IdentityReindex{}, g);
+}
+
+
+/*
+ * Number of edges running between two regions.
+ *
+ * Merging two regions can only ever un-cut edges that ran between them, so
+ * this is exactly the drop in the edges removed score from merging them. Used
+ * to check the merged score against the plain one.
+ */
+template <typename PlanID>
+double count_edges_between_regions(PlanID const &region_ids, int const region1_id,
+                                   int const region2_id, Graph const &g) {
+    int const V = static_cast<int>(g.size());
+
+    double between = 0.0;
+    for (int i = 0; i < V; i++) {
+        auto const region_id = region_ids[i];
+        if (region_id != region1_id && region_id != region2_id) continue;
+
+        for (int const nbor : g[i]) {
+            auto const nbor_region = region_ids[nbor];
+            if (nbor_region != region_id &&
+                (nbor_region == region1_id || nbor_region == region2_id)) {
+                between += 1.0;
+            }
+        }
+    }
+
+    return between / 2.0;
 }
 
 /*

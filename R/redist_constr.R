@@ -1012,24 +1012,6 @@ add_constr_log_st <- function(
     add_to_constr(constr, "log_st", new_constr)
 }
 
-#' @rdname constraints
-#' @export
-add_constr_edges_rem <- function(
-    constr,
-    strength,
-    only_nregions = FALSE,
-    only_nseats = FALSE,
-    thresh = NULL
-) {
-    new_constr <- get_base_region_constraint_list(
-        constr = constr, strength = strength,
-        only_nregions = only_nregions,
-        only_nseats = only_nseats, thresh = thresh
-    )
-
-    add_to_constr(constr, "edges_removed", new_constr)
-}
-
 #' @param fn A function
 #' @rdname constraints
 #' @export
@@ -1125,6 +1107,32 @@ extract_vars <- function(expr) {
 ######
 # Whole Plan constraints
 ######
+
+#' @param use_frac Whether or not to normalize the number of edges removed by
+#' the total number of edges in the graph. If `TRUE` then the raw score will be
+#' bounded between 0 and 1.
+#' @rdname constraints
+#' @export
+add_constr_edges_rem <- function(
+        constr,
+        strength,
+        use_frac = FALSE,
+        only_nregions = FALSE,
+        thresh = NULL
+) {
+    new_constr <- get_base_plan_constraint_list(
+        constr = constr, strength = strength,
+        only_nregions = only_nregions,
+        thresh = thresh
+    )
+
+    new_constr <- c(new_constr,
+                    list(
+                        use_frac = use_frac
+                    ))
+
+    add_to_constr(constr, "edges_removed", new_constr)
+}
 
 #' @param admin A vector indicating administrative unit membership
 #' @rdname constraints

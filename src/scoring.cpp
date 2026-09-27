@@ -8,12 +8,60 @@
 #include "scoring.h"
 #include "base_plan_type.h"
 
+#include <cmath>
 #include <numeric>
+#include <sstream>
+#include <stdexcept>
 
 constexpr bool DEBUG_SCORING_VERBOSE = false;
 
 // helpers
 
+
+/*
+ * A region reindex vector maps each region id to the id it should be counted
+ * as. Constraint scoring functions read regions through it, so the same
+ * scoring pass can evaluate a plan either as it stands or as though two of
+ * its regions had already been merged.
+ *
+ * Only the first `num_regions` entries are ever read, since every value in a
+ * plan's region ids is below that, so both helpers leave the rest alone.
+ */
+
+// Every region maps to itself: score the plan exactly as it is.
+void set_identity_reindex(std::vector<int> &region_reindex_vec, int const num_regions) {
+    if constexpr (perf_config::bounds_checking) {
+        if (num_regions > static_cast<int>(region_reindex_vec.size())) {
+            throw std::runtime_error(
+                "set_identity_reindex: more regions than the reindex vector holds."
+            );
+        }
+    }
+
+    std::iota(region_reindex_vec.begin(), region_reindex_vec.begin() + num_regions, 0);
+}
+
+// `region2_id` maps to `region1_id` and every other region maps to itself:
+// score the plan as though those two regions had been merged.
+void set_merged_reindex(std::vector<int> &region_reindex_vec, int const num_regions,
+                        int const region1_id, int const region2_id) {
+    if constexpr (perf_config::bounds_checking) {
+        if (num_regions > static_cast<int>(region_reindex_vec.size())) {
+            throw std::runtime_error(
+                "set_merged_reindex: more regions than the reindex vector holds."
+            );
+        }
+        if (region1_id < 0 || region1_id >= num_regions ||
+            region2_id < 0 || region2_id >= num_regions) {
+            throw std::runtime_error(
+                "set_merged_reindex: region to merge is out of range."
+            );
+        }
+    }
+
+    std::iota(region_reindex_vec.begin(), region_reindex_vec.begin() + num_regions, 0);
+    region_reindex_vec[region2_id] = region1_id;
+}
 
 
 // counts how many administrative unit are split by a plan
@@ -680,6 +728,69 @@ double CustomPlanConstraint::compute_raw_merged_plan_constraint_score(
     return raw_score;
 }
 
+double EdgesRemovedCountConstraint::compute_raw_plan_constraint_score(
+    int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
+    IntPlanAttribute const &region_pops) const {
+    // A single region has nothing to cut, so no edges are removed. Note this
+    // is a statement about the number of regions, unlike the splits
+    // constraints, which short circuit on the number of administrative units.
+    if (num_regions == 1)
+        return 0;
+
+    auto raw_edge_count = eval_er(region_ids, map_graph);
+
+    if(normalize_count){
+        return raw_edge_count / num_edges;
+    }else{
+        return raw_edge_count;
+    }
+
+}
+
+
+double EdgesRemovedCountConstraint::compute_raw_merged_plan_constraint_score(
+    const Plan &plan, int const region1_id, int const region2_id) const {
+    // merging leaves `plan.num_regions - 1` regions behind, and a lone region
+    // has no edges to remove
+    if (plan.num_regions == 2)
+        return 0;
+
+    set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
+
+    double const raw_merged_edge_count = eval_er(plan.region_ids, region_reindex_vec, map_graph);
+
+    if constexpr (perf_config::object_integrity_checking) {
+        /*
+         * Merging two regions can only un-cut edges that ran between them, so
+         * the merged score has to be the plain score less the number of edges
+         * on their shared boundary. This pins the reindexed pass against an
+         * independent computation.
+         */
+        double const plain_score = eval_er(plan.region_ids, map_graph);
+        double const between = count_edges_between_regions(
+            plan.region_ids, region1_id, region2_id, map_graph);
+
+        if (std::fabs(raw_merged_edge_count - (plain_score - between)) > 1e-9) {
+            std::ostringstream oss;
+            oss << "EdgesRemovedCountConstraint: merged score does not match "
+                << "the plain score less the shared boundary.\n";
+            oss << "region1_id=" << region1_id << "\n";
+            oss << "region2_id=" << region2_id << "\n";
+            oss << "merged_score=" << raw_merged_edge_count << "\n";
+            oss << "plain_score=" << plain_score << "\n";
+            oss << "edges_between=" << between << "\n";
+
+            throw std::runtime_error(oss.str());
+        }
+    }
+
+    if(normalize_count){
+        return raw_merged_edge_count / num_edges;
+    }else{
+        return raw_merged_edge_count;
+    }
+}
+
 double PlanSplitsConstraint::compute_raw_plan_constraint_score(
     int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
     IntPlanAttribute const &region_pops) const {
@@ -687,8 +798,7 @@ double PlanSplitsConstraint::compute_raw_plan_constraint_score(
     if (num_regions == 1 || num_admin_units == 1)
         return 0;
 
-    // set the reindex for each region to be itself
-    std::iota(region_reindex_vec.begin(), region_reindex_vec.end(), 0);
+    set_identity_reindex(region_reindex_vec, num_regions);
 
     auto splits = count_admin_splits(admin_vertex_lists, region_ids, region_reindex_vec);
 
@@ -701,13 +811,7 @@ double PlanSplitsConstraint::compute_raw_merged_plan_constraint_score(
     if (plan.num_regions == 2 || num_admin_units == 1)
         return 0;
 
-    for (int region_id = 0; region_id < plan.num_regions; region_id++) {
-        if (region_id == region2_id) {
-            region_reindex_vec[region2_id] = region1_id;
-        } else {
-            region_reindex_vec[region_id] = region_id;
-        }
-    }
+    set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
 
     auto splits = count_admin_splits(admin_vertex_lists, plan.region_ids, region_reindex_vec);
 
@@ -721,8 +825,7 @@ double TotalPlanSplitsConstraint::compute_raw_plan_constraint_score(
     if (num_regions == 1 || num_admin_units == 1)
         return 0;
 
-    // set the reindex for each region to be itself
-    std::iota(region_reindex_vec.begin(), region_reindex_vec.end(), 0);
+    set_identity_reindex(region_reindex_vec, num_regions);
 
     auto splits = count_total_admin_splits(admin_vertex_lists, admin_unit_regions, region_ids,
                                            region_reindex_vec);
@@ -736,13 +839,7 @@ double TotalPlanSplitsConstraint::compute_raw_merged_plan_constraint_score(
     if (plan.num_regions == 2 || num_admin_units == 1)
         return 0;
 
-    for (int region_id = 0; region_id < plan.num_regions; region_id++) {
-        if (region_id == region2_id) {
-            region_reindex_vec[region2_id] = region1_id;
-        } else {
-            region_reindex_vec[region_id] = region_id;
-        }
-    }
+    set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
 
     auto splits = count_total_admin_splits(admin_vertex_lists, admin_unit_regions,
                                            plan.region_ids, region_reindex_vec);
@@ -757,8 +854,7 @@ double PlanIncumbentConstraint::compute_raw_plan_constraint_score(
     if (num_regions == 1 || incumbents.size() == 1)
         return 0;
 
-    // set the reindex for each region to be itself
-    std::iota(region_reindex_vec.begin(), region_reindex_vec.end(), 0);
+    set_identity_reindex(region_reindex_vec, num_regions);
 
     // Now just mark which regions are districts
     for (size_t i = 0; i < num_regions; i++) {
@@ -778,14 +874,7 @@ double PlanIncumbentConstraint::compute_raw_merged_plan_constraint_score(
     if (plan.num_regions == 2 || incumbents.size() == 1)
         return 0;
 
-    // set region2 to reindex to region1
-    for (int region_id = 0; region_id < plan.num_regions; region_id++) {
-        if (region_id == region2_id) {
-            region_reindex_vec[region2_id] = region1_id;
-        } else {
-            region_reindex_vec[region_id] = region_id;
-        }
-    }
+    set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
 
     // Now just mark which regions are districts
     for (size_t i = 0; i < plan.num_regions; i++) {
@@ -820,15 +909,11 @@ double MinGroupFracConstraint::compute_raw_plan_constraint_score(
         return pops_above;
     }
 
-    // set the reindex for each region to be itself
-    std::iota(region_reindex_vec.begin(), region_reindex_vec.end(), 0);
-    std::fill(region_ids_to_count.begin(), region_ids_to_count.end(), false);
+    set_identity_reindex(region_reindex_vec, num_regions);
 
-    // set the reindex for each region to be itself and make all of those ok
-    for (size_t i = 0; i < num_regions; i++) {
-        region_reindex_vec[i] = i;
-        region_ids_to_count[i] = true;
-    }
+    // every region counts
+    std::fill(region_ids_to_count.begin(), region_ids_to_count.end(), false);
+    std::fill_n(region_ids_to_count.begin(), num_regions, true);
 
     auto num_regions_above_threshold = count_min_threshold_regions(
         num_populations, group_pops, total_pops, min_fracs, region_ids_to_count, region_ids,
@@ -861,18 +946,12 @@ double MinGroupFracConstraint::compute_raw_merged_plan_constraint_score(
         return pops_above;
     }
 
-    // set the reindex for each region to be itself
-    std::iota(region_reindex_vec.begin(), region_reindex_vec.end(), 0);
+    set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
+
+    // every region counts except the one merged away, whose population is now
+    // folded into region1
     std::fill(region_ids_to_count.begin(), region_ids_to_count.end(), false);
-
-    // set the reindex for each region to be itself and make all of those ok
-    for (size_t i = 0; i < plan.num_regions; i++) {
-        region_reindex_vec[i] = i;
-        region_ids_to_count[i] = true;
-    }
-
-    // merge region2 into region 1
-    region_reindex_vec[region2_id] = region1_id;
+    std::fill_n(region_ids_to_count.begin(), plan.num_regions, true);
     region_ids_to_count[region2_id] = false;
 
     auto num_regions_above_threshold = count_min_threshold_regions(
@@ -1033,22 +1112,7 @@ ScoringFunction::ScoringFunction(MapParams const &map_params, Rcpp::List const &
 
     if (constraints.containsElementNamed("fry_hold")) {
         Rcpp::List constr = constraints["fry_hold"];
-        throw std::runtime_error("Fry hold constraint not supported right now!\n");
-        for (int i = 0; i < constr.size(); i++) {
-            Rcpp::List constr_inst = constr[i];
-            // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(
-            //     constr_inst, map_params));
-        }
-    }
-
-    if (constraints.containsElementNamed("edges_removed")) {
-        Rcpp::List constr = constraints["edges_removed"];
-        throw std::runtime_error("Edges Removed constraint not supported right now!\n");
-        for (int i = 0; i < constr.size(); i++) {
-            Rcpp::List constr_inst = constr[i];
-            // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(
-            //     constr_inst, map_params));
-        }
+        throw std::runtime_error("Fry Hold constraint is not supported for SMC or non-Flip MCMC!\n");
     }
     
     if (constraints.containsElementNamed("log_st")) {
@@ -1080,6 +1144,14 @@ ScoringFunction::ScoringFunction(MapParams const &map_params, Rcpp::List const &
         }
     }
 
+    if (constraints.containsElementNamed("edges_removed")) {
+        Rcpp::List constr = constraints["edges_removed"];
+        for (int i = 0; i < constr.size(); i++) {
+            Rcpp::List constr_inst = constr[i];
+            plan_constraint_ptrs.emplace_back(std::make_unique<EdgesRemovedCountConstraint>(
+                constr_inst, map_params));
+        }
+    }
     // Now add plan constraints
     // counts splits in the entire plan
     if (constraints.containsElementNamed("plan_splits")) {

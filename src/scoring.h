@@ -606,6 +606,33 @@ class PlanConstraint {
     bool plan_constraint_ok(const Plan &plan) const;
 };
 
+
+// Return the raw count of the number of edges removed 
+class EdgesRemovedCountConstraint : public PlanConstraint {
+  private:
+    const Graph &map_graph;
+    const bool normalize_count;
+    const int num_edges;
+    mutable std::vector<int> region_reindex_vec;
+    
+
+  public:
+    EdgesRemovedCountConstraint(Rcpp::List const &constr_inst, MapParams const &map_params)
+        : PlanConstraint(constr_inst, map_params.ndists), 
+          map_graph(map_params.g),
+          normalize_count(Rcpp::as<bool>(constr_inst["use_frac"])), 
+          num_edges(map_params.num_edges),
+          region_reindex_vec(map_params.ndists) {};
+    // computes score for a plan
+    double
+    compute_raw_plan_constraint_score(int const num_regions, PlanVector const &region_ids,
+                                      RegionSizes const &region_sizes,
+                                      IntPlanAttribute const &region_pops) const override;
+    double compute_raw_merged_plan_constraint_score(const Plan &plan, int const region1_id,
+                                                    int const region2_id) const override;
+};
+
+
 // Splits but on the entire plan
 // assume admin is 1 indexed and only has values 1:num_admin_units
 class PlanSplitsConstraint : public PlanConstraint {
