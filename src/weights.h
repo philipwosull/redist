@@ -5,10 +5,8 @@
 
 
 
-#include <memory>
-#include <vector>
+#include "advanced_types.h" // SamplingSpace
 
-#include "advanced_types.h"
 
 class Plan;
 class PlanMultigraph;
@@ -17,14 +15,6 @@ class ScoringFunction;
 class USTSampler;
 class TreeSplitter;
 class WeightCache;
-class WeightCacheEnsemble;
-class SMCDiagnostics;
-
-namespace RcppThread {
-    class ThreadPool;
-}
-
-class SMCDiagnostics;
 
 // Simple struct for tracking granular time
 struct GranularWeightTimes {
@@ -54,6 +44,8 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
                                              ScoringFunction const &scoring_function,
                                              double rho, bool compute_log_splitting_prob,
                                              double const multidistrict_selection_alpha,
-                                             bool is_final_split);
+                                             bool is_final_split, bool const using_caching,
+                                             WeightCache *weight_cache,
+                                             GranularWeightTimes &granular_times);
 
 #endif

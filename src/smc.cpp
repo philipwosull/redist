@@ -1315,6 +1315,7 @@ void compute_all_plans_log_optimal_incremental_weights(
         for (size_t thread_id = 0; thread_id < num_threads; thread_id++)
         {
             smc_diagnostics.get_valid_smc_pairs_times[smc_step_num] += granular_weight_times[thread_id].get_valid_pairs;
+            smc_diagnostics.retro_splitting_prob_times[smc_step_num] += granular_weight_times[thread_id].splitting_prob;
             smc_diagnostics.plan_scores_times[step_num] += granular_weight_times[thread_id].plan_scores;
             smc_diagnostics.region_scores_times[step_num] += granular_weight_times[thread_id].region_scores;
             smc_diagnostics.log_tau_times[step_num] += granular_weight_times[thread_id].tau_terms;
@@ -1333,7 +1334,9 @@ void compute_all_plans_log_simple_incremental_weights(
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
     bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
     bool is_final_plans,
-    std::vector<double> &log_incremental_weights, int verbosity) {
+    std::vector<double> &log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
+    SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
+    int verbosity) {
     int const nsims = (int)plans_ptr_vec.size();
     const int check_int = 50; // check for interrupts every _ iterations
 
@@ -1354,6 +1357,7 @@ void compute_all_plans_log_simple_incremental_weights(
         plan_multigraphs_vec.emplace_back(map_params,
                                           sampling_space == SamplingSpace::LinkingEdgeSpace);
     }
+    std::vector<GranularWeightTimes> granular_weight_times(num_threads);
 
     RcppThread::ProgressBar bar(nsims, 1);
     // Parallel thread pool where all objects in memory shared by default
@@ -1378,13 +1382,22 @@ void compute_all_plans_log_simple_incremental_weights(
         //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
         // }
 
-        double log_incr_weight = compute_simple_log_incremental_weight(
+        auto total_weight_time = maybe_now(); // optional timing
+
+        log_incremental_weights[i] = compute_simple_log_incremental_weight(
             *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
             ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
             scoring_functions[thread_id], rho, compute_log_splitting_prob, multidistrict_selection_alpha,
-            is_final_plans);
+            is_final_plans, cache_ensemble.using_caching,
+            cache_ensemble.using_caching ? cache_ensemble.weight_cache_ptr_vec[i].get() : nullptr,
+            granular_weight_times[thread_id]);
 
-        log_incremental_weights[i] = log_incr_weight;
+        if constexpr (perf_config::track_granular_times) {
+            add_elapsed(
+                smc_diagnostics.total_plan_smc_weight_times(i, smc_step_num),
+                total_weight_time
+            ); // optional timing
+        }
 
         if (verbosity >= 3) {
             ++bar;
@@ -1395,6 +1408,18 @@ void compute_all_plans_log_simple_incremental_weights(
 
     // Wait for all the threads to finish
     pool.wait();
+
+    // add granular time if that's being tracked
+    if constexpr (perf_config::track_granular_times){
+        for (size_t thread_id = 0; thread_id < num_threads; thread_id++)
+        {
+            smc_diagnostics.get_valid_smc_pairs_times[smc_step_num] += granular_weight_times[thread_id].get_valid_pairs;
+            smc_diagnostics.retro_splitting_prob_times[smc_step_num] += granular_weight_times[thread_id].splitting_prob;
+            smc_diagnostics.plan_scores_times[step_num] += granular_weight_times[thread_id].plan_scores;
+            smc_diagnostics.region_scores_times[step_num] += granular_weight_times[thread_id].region_scores;
+            smc_diagnostics.log_tau_times[step_num] += granular_weight_times[thread_id].tau_terms;
+        }
+    }
 
     return;
 }
@@ -2019,6 +2044,8 @@ Rcpp::List run_redist_smc(
                             multidistrict_selection_alpha,
                             is_final_splitting_step,
                             log_incremental_weights,
+                            *cache_ensemble_ptr,
+                            smc_diagnostics, smc_step_num, step_num,
                             verbosity);
                     } else {
                         throw Rcpp::exception("invalid weight type!");
