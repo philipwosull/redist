@@ -6,17 +6,34 @@
  ********************************************************/
 
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <iterator>
 
 #include <Rcpp.h>
+#include <numeric>
+#include <queue>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "base_plan_type.h"
 
 
-#include "map_calc.h"
+#include "R_ext/Print.h"
+#include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 #include "sparse_logdet.h"
 #include "scoring.h"
 #include "splitting_schedule_types.h"
+#include "tree_op.h"
 #include "utils.h"
 #include "random.h"
 #include "wilson.h"

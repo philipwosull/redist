@@ -1,14 +1,20 @@
 #ifndef TREE_OP_H
 #define TREE_OP_H
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include <iostream> 
-#include <limits>
-#include <queue>
-#include <stack>
+#include <utility>
 #include <vector>
 #include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 
 class RNGState;
 

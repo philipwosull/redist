@@ -2,15 +2,21 @@
 #ifndef BASE_PLAN_TYPE_H
 #define BASE_PLAN_TYPE_H
 
+#include <algorithm>
+#include <array>
 #include <cassert>
-#include <iostream>
-#include <map>
+#include <cstddef>
+#include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
+
 #include <string_view>
 #include <unordered_set>
 
 #include "advanced_types.h"
+#include "redist_types.h"
 #include "tree_op.h"
 
 class USTSampler;

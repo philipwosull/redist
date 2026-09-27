@@ -1,9 +1,20 @@
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <R_ext/Print.h>
+#include <utility>
+#include <vector>
 
 #include "tree_op.h"
-#include "random.h"
+#include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 
 
 

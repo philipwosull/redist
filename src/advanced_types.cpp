@@ -8,9 +8,20 @@
  ********************************************************/
 
 #include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace{
 
