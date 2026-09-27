@@ -165,10 +165,6 @@ get_region_laplacian <- function(adj_list, region_ids) {
     .Call(`_redist_get_region_laplacian`, adj_list, region_ids)
 }
 
-resample_plans_lowvar <- function(normalized_weights, plans_mat, region_pops_mat, region_sizes_mat, reorder_sizes_mat) {
-    .Call(`_redist_resample_plans_lowvar`, normalized_weights, plans_mat, region_pops_mat, region_sizes_mat, reorder_sizes_mat)
-}
-
 resample_lowvar <- function(wgts) {
     .Call(`_redist_resample_lowvar`, wgts)
 }
