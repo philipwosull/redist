@@ -15,7 +15,7 @@ redist_mergesplit(
   compactness = 1,
   constraints = list(),
   constraint_fn = function(m) rep(0, ncol(m)),
-  sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+  sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
   split_method = NULL,
   split_params = NULL,
   pair_rule = "uniform",

@@ -16,8 +16,8 @@
 \alias{add_constr_polsby}
 \alias{add_constr_fry_hold}
 \alias{add_constr_log_st}
-\alias{add_constr_edges_rem}
 \alias{add_constr_custom}
+\alias{add_constr_edges_rem}
 \alias{add_constr_plan_splits}
 \alias{add_constr_total_plan_splits}
 \alias{add_constr_plan_incumbency}
@@ -163,20 +163,20 @@ add_constr_log_st(
   thresh = NULL
 )
 
-add_constr_edges_rem(
-  constr,
-  strength,
-  only_nregions = FALSE,
-  only_nseats = FALSE,
-  thresh = NULL
-)
-
 add_constr_custom(
   constr,
   strength,
   fn,
   only_nregions = FALSE,
   only_nseats = FALSE,
+  thresh = NULL
+)
+
+add_constr_edges_rem(
+  constr,
+  strength,
+  use_frac = FALSE,
+  only_nregions = FALSE,
   thresh = NULL
 )
 
@@ -268,6 +268,10 @@ having two or more incumbents be in the same district.}
 \item{denominator}{Fryer Holden minimum value to normalize by. Default is 1 (no normalization).}
 
 \item{fn}{A function}
+
+\item{use_frac}{Whether or not to normalize the number of edges removed by
+the total number of edges in the graph. If \code{TRUE} then the raw score will be
+bounded between 0 and 1.}
 
 \item{group_pops}{A list of vectors of target group populations}
 
