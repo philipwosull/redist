@@ -882,27 +882,31 @@ void validate_init_seats_cpp(Rcpp::IntegerMatrix const &init_seats, int const nu
     }
 
     // now check each column
+    // `init_seats` is regions by plans, so a plan is a column: region j of plan
+    // i is init_seats(j, i). Everything below reads through `seat` rather than
+    // indexing again, since indexing it the other way round both checks the
+    // wrong entry and runs off the end of the matrix whenever there are more
+    // plans than regions.
     pool.parallelFor(0, num_cols, [&](int i) {
         // check each value is positive and sums to nseats
         int seat_sum = 0;
-        for (size_t j = 0; j < num_regions; j++) {
-            int const seat = init_seats(static_cast<int>(j), i);
-            if (init_seats(i, j) <= 0) {
-                REprintf("Region %zu of plan %i does not have a positive seat count (%d)!\n",
-                         j + 1, i + 1, init_seats(i, j));
-                throw Rcpp::exception("Non-positive seat values in `init_seats`!\n");
-            } else if (init_seats(i, j) < min_district_size) {
-                REprintf("Region %zu of plan %i has a seat size smaller than the smallest "
-                         "district seat size!\n",
-                         j + 1, i + 1);
-                throw Rcpp::exception(
-                    "Seat values in `init_seats` smaller than smallest district seat size!\n");
-            } else if (init_seats(i, j) > nseats) {
-                REprintf(
-                    "Region %zu of plan %i has %d seats, more than `nseats` (%d) number of "
-                    "seats!\n",
-                    j + 1, i + 1, init_seats(i, j), nseats);
-                throw Rcpp::exception("Seat values greater than `nseats` in `init_seats`!\n");
+        for (int j = 0; j < num_regions; j++) {
+            int const seat = init_seats(j, i);
+            std::ostringstream oss;
+            if (seat <= 0) {
+                oss << "Region " << (j + 1) << " of plan " << (i + 1)
+                    << " does not have a positive seat count (" << seat << ")! "
+                    << "Non-positive seat values in `init_seats`!\n";
+                throw Rcpp::exception(oss.str().c_str());
+            } else if (seat < min_district_size) {
+                oss << "Region " << (j + 1) << " of plan " << (i + 1) << " has " << seat
+                    << " seats, smaller than the smallest district seat size ("
+                    << min_district_size << ")!\n";
+                throw Rcpp::exception(oss.str().c_str());
+            } else if (seat > nseats) {
+                oss << "Region " << (j + 1) << " of plan " << (i + 1) << " has " << seat
+                    << " seats, more than `nseats` (" << nseats << ")!\n";
+                throw Rcpp::exception(oss.str().c_str());
             }
 
             if (
@@ -910,19 +914,19 @@ void validate_init_seats_cpp(Rcpp::IntegerMatrix const &init_seats, int const nu
                 j + 1 != num_regions &&
                 !is_district[seat]
             ) {
-                throw Rcpp::exception(
-                    "Non-remainder region is not a district!\n"
-                );
+                oss << "Region " << (j + 1) << " of plan " << (i + 1) << " has " << seat
+                    << " seats, which is not a district size, but only the final region may "
+                       "be a non-district remainder!\n";
+                throw Rcpp::exception(oss.str().c_str());
             }
-            seat_sum += init_seats(i, j);
+            seat_sum += seat;
         }
 
         if (seat_sum != nseats) {
-            REprintf(
-                "The sum of seats in plan %i is %d, which is not equal to `nseats` values %d\n",
-                i + 1, seat_sum, nseats);
-            throw Rcpp::exception(
-                "Sum of seat values in a plan is not equal to `nseats` in `init_seats`!\n");
+            std::ostringstream oss;
+            oss << "The sum of seats in plan " << (i + 1) << " is " << seat_sum
+                << ", which is not equal to `nseats` (" << nseats << ")!\n";
+            throw Rcpp::exception(oss.str().c_str());
         }
     });
 

@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <sstream>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -64,11 +66,47 @@ void set_merged_region_reindex_vec(int const num_regions, std::vector<int> &regi
 
 
 
+int check_ensemble_dims(MapParams const &map_params, int const nsims,
+                        SamplingSpace const sampling_space) {
+    if (nsims <= 0) {
+        throw Rcpp::exception("Tried to create a plan ensemble with no plans!\n");
+    }
+
+    constexpr std::int64_t max_elements =
+        static_cast<std::int64_t>(std::numeric_limits<int>::max());
+
+    auto check_buffer = [&](int const per_plan, char const *what) {
+        if (per_plan <= 0) return; // buffer is unused for this sampling space
+        std::int64_t const total =
+            static_cast<std::int64_t>(per_plan) * static_cast<std::int64_t>(nsims);
+        if (total > max_elements) {
+            std::ostringstream oss;
+            oss << "Cannot create an ensemble of " << nsims << " plans: the " << what
+                << " buffer would need " << total << " elements, more than the "
+                << max_elements << " an int offset can address.\n"
+                << "Reduce the number of plans to at most " << (max_elements / per_plan)
+                << ".\n";
+            throw Rcpp::exception(oss.str().c_str());
+        }
+    };
+
+    check_buffer(map_params.V, "plan region id");
+    check_buffer(map_params.ndists, "per region");
+    if (sampling_space == SamplingSpace::ForestSpace ||
+        sampling_space == SamplingSpace::LinkingEdgeSpace) {
+        check_buffer(map_params.num_edge_bit_words, "forest edge bit");
+    }
+
+    return nsims;
+}
+
 // creates plan ensemble of blank plans
 PlanEnsemble::PlanEnsemble(MapParams const &map_params, int const total_pop, int const nsims,
                            SamplingSpace const sampling_space, RcppThread::ThreadPool &pool,
                            int const verbosity)
-    : nsims(nsims), V(map_params.V), ndists(map_params.ndists),
+    // `nsims` is the first member, so this check runs before any buffer below is sized
+    : nsims(check_ensemble_dims(map_params, nsims, sampling_space)), V(map_params.V),
+      ndists(map_params.ndists),
       total_seats(map_params.total_seats), sampling_space(sampling_space),
       flattened_all_plans(V * nsims, 0),
       flattened_all_region_sizes(ndists * nsims, 0),
@@ -148,7 +186,9 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
                            Rcpp::IntegerMatrix const &region_sizes_mat,
                            std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool,
                            int const verbosity)
-    : nsims(nsims), V(map_params.V), ndists(map_params.ndists),
+    // `nsims` is the first member, so this check runs before any buffer below is sized
+    : nsims(check_ensemble_dims(map_params, nsims, sampling_space)), V(map_params.V),
+      ndists(map_params.ndists),
       total_seats(map_params.total_seats), sampling_space(sampling_space),
       flattened_all_plans(plans_mat.begin(), plans_mat.end()),
       flattened_all_region_sizes(ndists * nsims, 0),

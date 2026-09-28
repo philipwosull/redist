@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <functional>
+#include <sstream>
 #include <string>
 
 #include "map_calc.h"
@@ -135,6 +136,12 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
             thread_generation_counter = generation;
         }
 
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
         std::vector<bool> &county_component_lookup = county_component_lookup_buffers[thread_id];
         CircularQueue<int> &vertex_queue = vertex_queue_buffers[thread_id];
@@ -340,6 +347,12 @@ std::vector<double> compute_plans_log_optimal_weights(
     NaiveTopKSplitter tree_splitter(map_params.V, 1);
 
     std::vector<double> log_weights(num_plans);
+    // Each worker formats into its own slot and the main thread prints them
+    // after `wait()`. Printing from a worker is not thread safe, and
+    // RcppThread's buffered alternative delivers nothing useful here: it only
+    // drains inside `ThreadPool::wait()`, and streaming a RegionID (an
+    // unsigned char) writes it as a character rather than a number.
+    std::vector<std::string> plan_msgs(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -361,12 +374,21 @@ std::vector<double> compute_plans_log_optimal_weights(
             thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
             thread_generation_counter = generation;
         }
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
+        std::ostringstream plan_msg;
 
         // build the multigraph
         plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
                                               plan_ensemble.plan_ptr_vec[i]->num_regions);
-        plan_multigraph.Rprint_detailed(*plan_ensemble.plan_ptr_vec[i]);
+        // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
+        // and must not be touched from a worker thread; take the string instead.
+        plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);
         // plan_multigraph.pair_map.Rprint();
         // // remove invalid hierarchical merges
         // plan_multigraph.remove_invalid_hierarchical_merge_pairs(*plan_ensemble.plan_ptr_vec[i]);
@@ -392,8 +414,9 @@ std::vector<double> compute_plans_log_optimal_weights(
             }
 
             incremental_weight += std::exp(log_boundary_len);
-            REprintf("(%u, %u) - %.4f \n", key_val_pair.first.first, key_val_pair.first.second,
-                     std::exp(log_boundary_len));
+            plan_msg << "(" << static_cast<unsigned>(key_val_pair.first.first) << ", "
+                     << static_cast<unsigned>(key_val_pair.first.second) << ") - "
+                     << std::exp(log_boundary_len) << " \n";
         }
 
         // REprintf("I=%d\n", i);
@@ -404,8 +427,9 @@ std::vector<double> compute_plans_log_optimal_weights(
         //     rho, true, is_final
         // );
 
-        REprintf("%f vs %f \n", 1.0 / static_cast<double>(incremental_weight),
-                 std::exp(log_weights[i]));
+        plan_msg << (1.0 / static_cast<double>(incremental_weight)) << " vs "
+                 << std::exp(log_weights[i]) << " \n";
+        plan_msgs[i] = plan_msg.str();
 
         ++bar;
 
@@ -414,6 +438,8 @@ std::vector<double> compute_plans_log_optimal_weights(
 
     // Wait for all the threads to finish
     pool.wait();
+    // main thread, so REprintf is safe here
+    for (auto const &msg : plan_msgs) REprintf("%s", msg.c_str());
     return log_weights;
 }
 
@@ -469,6 +495,12 @@ std::vector<double> compute_plans_log_simple_weights(
     NaiveTopKSplitter tree_splitter(map_params.V, 1);
 
     std::vector<double> log_weights(num_plans);
+    // Each worker formats into its own slot and the main thread prints them
+    // after `wait()`. Printing from a worker is not thread safe, and
+    // RcppThread's buffered alternative delivers nothing useful here: it only
+    // drains inside `ThreadPool::wait()`, and streaming a RegionID (an
+    // unsigned char) writes it as a character rather than a number.
+    std::vector<std::string> plan_msgs(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -490,12 +522,21 @@ std::vector<double> compute_plans_log_simple_weights(
             thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
             thread_generation_counter = generation;
         }
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
+        std::ostringstream plan_msg;
 
         // build the multigraph
         plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
                                               plan_ensemble.plan_ptr_vec[i]->num_regions);
-        plan_multigraph.Rprint_detailed(*plan_ensemble.plan_ptr_vec[i]);
+        // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
+        // and must not be touched from a worker thread; take the string instead.
+        plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);
         // plan_multigraph.pair_map.Rprint();
         // // remove invalid hierarchical merges
         // plan_multigraph.remove_invalid_hierarchical_merge_pairs(*plan_ensemble.plan_ptr_vec[i]);
@@ -521,8 +562,9 @@ std::vector<double> compute_plans_log_simple_weights(
             }
 
             incremental_weight += std::exp(log_boundary_len);
-            REprintf("(%u, %u) - %.4f \n", key_val_pair.first.first, key_val_pair.first.second,
-                     std::exp(log_boundary_len));
+            plan_msg << "(" << static_cast<unsigned>(key_val_pair.first.first) << ", "
+                     << static_cast<unsigned>(key_val_pair.first.second) << ") - "
+                     << std::exp(log_boundary_len) << " \n";
         }
 
         // REprintf("I=%d\n", i);
@@ -533,8 +575,9 @@ std::vector<double> compute_plans_log_simple_weights(
         //     rho, true, is_final
         // );
 
-        REprintf("%f vs %f \n", 1.0 / static_cast<double>(incremental_weight),
-                 std::exp(log_weights[i]));
+        plan_msg << (1.0 / static_cast<double>(incremental_weight)) << " vs "
+                 << std::exp(log_weights[i]) << " \n";
+        plan_msgs[i] = plan_msg.str();
 
         ++bar;
 
@@ -543,5 +586,7 @@ std::vector<double> compute_plans_log_simple_weights(
 
     // Wait for all the threads to finish
     pool.wait();
+    // main thread, so REprintf is safe here
+    for (auto const &msg : plan_msgs) REprintf("%s", msg.c_str());
     return log_weights;
 }

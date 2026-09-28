@@ -251,6 +251,22 @@ get_tree_splitter_ptrs(MapParams const &map_params, SplittingMethodType const sp
                        SamplingSpace const sampling_space,
                        Rcpp::List const &control, int const nsims, int const num_threads);
 
+/*
+ *  Checks that an ensemble of `nsims` plans can actually be addressed, throwing
+ *  if not, and returns `nsims` unchanged so it can be called from a member
+ *  initializer list.
+ *
+ *  Every plan attribute lives in one flat buffer indexed by `int` offsets (see
+ *  `PlanAttribute`), so each buffer's element count has to fit in an `int`. The
+ *  products are formed in 64 bits here because computing them the natural way,
+ *  as `V * nsims`, is exactly the signed overflow this guards against - that
+ *  would be undefined behaviour and would silently under-allocate rather than
+ *  fail. R cannot hold a matrix of more than INT_MAX elements either, so a run
+ *  past this limit could never return its plans in any case.
+ */
+int check_ensemble_dims(MapParams const &map_params, int const nsims,
+                        SamplingSpace const sampling_space);
+
 // lightweight container for plans
 class PlanEnsemble {
 
