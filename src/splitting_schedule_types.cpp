@@ -517,11 +517,8 @@ PureMSSplittingSchedule::PureMSSplittingSchedule(const int ndists, const int tot
     : SplittingSchedule(SplittingSizeScheduleType::PureMergeSplitSize, ndists, total_size,
                         district_seat_sizes) {
 
-    for (int district_size1 = smallest_district_size; district_size1 <= largest_district_size;
-         district_size1++) {
-
-        for (int district_size2 = smallest_district_size;
-             district_size2 <= largest_district_size; district_size2++) {
+    for (int const district_size1: district_seat_sizes) {
+        for (int const district_size2: district_seat_sizes) {
 
             if (district_size1 + district_size2 <= total_seats) {
                 valid_split_region_sizes[district_size1] = true;
@@ -540,7 +537,7 @@ PureMSSplittingSchedule::PureMSSplittingSchedule(const int ndists, const int tot
     // make smaller cut sizes unique and sort
     // get min and max sizes
 
-    // NOT TESTED
+
     for (size_t region_size = 1; region_size <= total_seats; region_size++) {
         if (!valid_region_sizes_to_split[region_size])
             continue;
