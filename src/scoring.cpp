@@ -602,6 +602,27 @@ double PolsbyConstraint::compute_raw_merged_region_constraint_score(
     return raw_score;
 }
 
+
+double RegionSizeConstraint::compute_raw_region_constraint_score(
+    int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
+    IntPlanAttribute const &region_pops, int region_id) const {
+
+    auto region_size = region_sizes[region_id];
+
+    return static_cast<int>(size_to_count[region_size]);
+}
+// log constraint for region made by merging region 1 and 2
+double RegionSizeConstraint::compute_raw_merged_region_constraint_score(
+    int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
+    IntPlanAttribute const &region_pops, int const region1_id, int const region2_id) const {
+
+    auto merged_size = region_sizes[region1_id] + region_sizes[region2_id];
+
+    return static_cast<int>(size_to_count[merged_size]);
+}
+
+
+
 double CustomRegionConstraint::compute_raw_region_constraint_score(
     int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
     IntPlanAttribute const &region_pops, int region_id) const {
@@ -1123,6 +1144,15 @@ ScoringFunction::ScoringFunction(MapParams const &map_params, Rcpp::List const &
             Rcpp::List constr_inst = constr[i];
             // region_constraint_ptrs.emplace_back(std::make_unique<PolsbyConstraint>(
             //     constr_inst, map_params));
+        }
+    }
+
+    if (constraints.containsElementNamed("seats")) {
+        Rcpp::List constr = constraints["seats"];
+        for (int i = 0; i < constr.size(); i++) {
+            Rcpp::List constr_inst = constr[i];
+            region_constraint_ptrs.emplace_back(std::make_unique<RegionSizeConstraint>(
+                constr_inst, map_params));
         }
     }
 

@@ -383,8 +383,7 @@ validate_population_vector <- function(V, pop_vector) {
 #' small, given that the underlying values are counts.
 #'
 #' The `edges_rem` constraint adds a term counting the number of edges removed from the
-#' adjacency graph. This is only usable with `redist_flip()`, as other algorithms
-#' implicitly use this via the `compactness` parameter. Values of `strength` should
+#' adjacency graph. Values of `strength` should
 #' generally be small, given that the underlying values are counts.
 #'
 #' The `log_st` constraint constraint adds a term counting the log number of spanning
@@ -403,6 +402,10 @@ validate_population_vector <- function(V, pop_vector) {
 #'
 #' The `pop_dev` constraint adds a term encouraging plans to have smaller population deviations
 #' from the target population.
+#'
+#' The `seats` constraint adds an indicator term for regions with the desired
+#' number of seats. Values of `strength` may be of moderate size.
+#'
 #'
 #' The `custom` constraint allows the user to specify their own constraint using
 #' a function which evaluates districts one at a time. The provided function
@@ -1012,6 +1015,46 @@ add_constr_log_st <- function(
     add_to_constr(constr, "log_st", new_constr)
 }
 
+
+#' @rdname constraints
+#' @param seats The desired seat values. These must be between 1 and `nseats`.
+#' Any region whose seat count is in `seats` will return a raw score of 1.
+#' @export
+add_constr_seats <- function(
+        constr,
+        strength,
+        seats,
+        only_nregions = FALSE,
+        only_nseats = FALSE,
+        thresh = NULL
+) {
+    new_constr <- get_base_region_constraint_list(
+        constr = constr, strength = strength,
+        only_nregions = only_nregions,
+        only_nseats = only_nseats, thresh = thresh
+    )
+
+    data <- attr(constr, "data")
+    nseats <- attr(data, "nseats")
+    smallest_seat_size <- attr(data, "seats_range") |> min()
+
+    # check seats is integers and between smallest district and `nseats`
+    if (!rlang::is_integerish(seats)) {
+        cli::cli_abort("{.arg seats} must be integers")
+    } else if (any(seats < smallest_seat_size) || any(seats > nseats)) {
+        cli::cli_abort("{.arg seats} must be between {smallest_seat_size} and {.arg nseats}")
+    }
+    # sort and remove duplicates
+    seats <- sort(unique(seats))
+
+    new_constr <- c(new_constr,
+                    list(
+                        seats_to_score = seats
+                    ))
+
+    add_to_constr(constr, "seats", new_constr)
+}
+
 #' @param fn A function
 #' @rdname constraints
 #' @export
@@ -1420,6 +1463,7 @@ constr_type_labels <- c(
     log_st            = "A (log-spanning-tree-type) compactness constraint",
     polsby            = "A (Polsby-Popper-type) compactness constraint",
     fry_hold          = "A (Fryer-Holden-type) compactness constraint",
+    seats      = "A region seats constraint",
     custom_plan       = "A custom plan constraint",
     custom            = "A custom constraint"
 )

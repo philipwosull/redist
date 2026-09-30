@@ -39,6 +39,7 @@ Constraints may be added by using one of the following functions:
 \item \code{\link[=add_constr_plan_splits]{add_constr_plan_splits()}}
 \item \code{\link[=add_constr_polsby]{add_constr_polsby()}}
 \item \code{\link[=add_constr_pop_dev]{add_constr_pop_dev()}}
+\item \code{\link[=add_constr_seats]{add_constr_seats()}}
 \item \code{\link[=add_constr_segregation]{add_constr_segregation()}}
 \item \code{\link[=add_constr_splits]{add_constr_splits()}}
 \item \code{\link[=add_constr_status_quo]{add_constr_status_quo()}}

@@ -506,6 +506,42 @@ class PolsbyConstraint : public RegionConstraint {
                                                       int const region2_id) const override;
 };
 
+
+class RegionSizeConstraint : public RegionConstraint {
+  private:
+    std::vector<bool> const size_to_count;
+
+  public:
+    RegionSizeConstraint(Rcpp::List const &constr_inst, MapParams const &map_params)
+        : RegionConstraint(constr_inst, map_params.ndists, map_params.total_seats), 
+        size_to_count([&map_params, &constr_inst]() {
+
+            std::vector<int> count_sizes = Rcpp::as<std::vector<int>>(constr_inst["seats_to_score"]);
+            // vector where index i is true iff i seats should be counted
+            std::vector<bool> size_to_count(map_params.total_seats + 1, false);
+
+                for (auto const &a_size : count_sizes) {
+                    // mark this as a district size
+                    size_to_count[a_size] = true;
+                }
+
+            return size_to_count;
+        }()) {}
+
+    double compute_raw_region_constraint_score(int const num_regions,
+                                               PlanVector const &region_ids,
+                                               RegionSizes const &region_sizes,
+                                               IntPlanAttribute const &region_pops,
+                                               int region_id) const override;
+    // log constraint for region made by merging region 1 and 2
+    double compute_raw_merged_region_constraint_score(int const num_regions,
+                                                      PlanVector const &region_ids,
+                                                      RegionSizes const &region_sizes,
+                                                      IntPlanAttribute const &region_pops,
+                                                      int const region1_id,
+                                                      int const region2_id) const override;
+};
+
 class CustomRegionConstraint : public RegionConstraint {
   private:
     Rcpp::Function const fn;
