@@ -102,7 +102,6 @@ std::vector<std::pair<int, int>> get_intial_linking_edges(PlanMultigraph &plan_m
     return initial_edges;
 }
 
-Tree LinkingEdgePlan::get_forest_adj() { throw std::runtime_error("get_forest_adj not supported right now!\n"); }
 
 LinkingEdgePlan::LinkingEdgePlan(int const total_seats, int const total_pop,
                                  PlanVector &this_plan_region_ids,

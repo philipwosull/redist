@@ -836,6 +836,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// graph_edge_list
+Rcpp::IntegerMatrix graph_edge_list(Rcpp::List const& adj_list);
+RcppExport SEXP _redist_graph_edge_list(SEXP adj_listSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List const& >::type adj_list(adj_listSEXP);
+    rcpp_result_gen = Rcpp::wrap(graph_edge_list(adj_list));
+    return rcpp_result_gen;
+END_RCPP
+}
 // plan_joint
 NumericMatrix plan_joint(IntegerVector m1, IntegerVector m2, NumericVector pop);
 RcppExport SEXP _redist_plan_joint(SEXP m1SEXP, SEXP m2SEXP, SEXP popSEXP) {
@@ -1099,6 +1110,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_redist_rint1", (DL_FUNC) &_redist_rint1, 2},
     {"_redist_runif1", (DL_FUNC) &_redist_runif1, 2},
     {"_redist_maximum_input_sizes", (DL_FUNC) &_redist_maximum_input_sizes, 0},
+    {"_redist_graph_edge_list", (DL_FUNC) &_redist_graph_edge_list, 1},
     {"_redist_plan_joint", (DL_FUNC) &_redist_plan_joint, 3},
     {"_redist_renumber_matrix", (DL_FUNC) &_redist_renumber_matrix, 2},
     {"_redist_solve_hungarian", (DL_FUNC) &_redist_solve_hungarian, 1},

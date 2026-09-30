@@ -157,8 +157,10 @@ class SMCDiagnostics {
 
     // level 3
     std::vector<Rcpp::IntegerMatrix> all_steps_plan_region_ids_list;
-    std::vector<std::vector<Tree>> all_steps_forests_adj_list;
-    std::vector<std::vector<std::vector<std::array<double, 3>>>> all_steps_linking_edge_list;
+    // num_edges by nsims logical matrices, see PlanEnsemble::get_R_forest_matrix
+    std::vector<Rcpp::LogicalMatrix> all_steps_forests_list;
+    // long format data frames, see PlanEnsemble::get_R_linking_edges
+    std::vector<Rcpp::DataFrame> all_steps_linking_edge_list;
     std::vector<std::vector<int>> all_steps_valid_region_sizes_to_split;
     std::vector<std::vector<int>> all_steps_valid_split_region_sizes;
     std::vector<Rcpp::IntegerMatrix> region_sizes_mat_list;
@@ -191,10 +193,19 @@ class SMCDiagnostics {
     void add_full_step_diagnostics(int const total_steps, bool const splitting_all_the_way,
                                    int const step_num, int const merge_split_step_num,
                                    int const smc_step_num, bool const is_smc_step,
-                                   SamplingSpace const sampling_space,
+                                   SamplingSpace const sampling_space, MapParams const &map_params,
                                    RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble,
                                    PlanEnsemble &new_plans_ensemble,
                                    SplittingSchedule const &splitting_schedule);
+
+    // adds full diagnostics for the plans after the final resample as an extra
+    // entry after the last step's
+    void add_final_resample_full_diagnostics(bool const splitting_all_the_way,
+                                             SamplingSpace const sampling_space,
+                                             MapParams const &map_params,
+                                             RcppThread::ThreadPool &pool,
+                                             PlanEnsemble &plan_ensemble,
+                                             SplittingSchedule const &splitting_schedule);
 
     // Updates the out list with all the diagnostics
     void add_diagnostics_to_out_list(Rcpp::List &out);
@@ -281,7 +292,7 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
     bool diagnostic_mode = diagnostic_level == 1;
     // level 3
     all_steps_plan_region_ids_list.reserve(diagnostic_mode ? total_steps : 0);
-    all_steps_forests_adj_list.resize(
+    all_steps_forests_list.resize(
         (diagnostic_mode && sampling_space != SamplingSpace::GraphSpace) ? total_steps : 0);
     all_steps_linking_edge_list.resize(
         (diagnostic_mode && sampling_space == SamplingSpace::LinkingEdgeSpace) ? total_steps
@@ -340,8 +351,8 @@ void SMCDiagnostics::record_final_resample(std::vector<int> const &resample_inde
 void SMCDiagnostics::add_full_step_diagnostics(
     int const total_steps, bool const splitting_all_the_way, int const step_num,
     int const merge_split_step_num, int const smc_step_num, bool const is_smc_step,
-    SamplingSpace const sampling_space, RcppThread::ThreadPool &pool,
-    PlanEnsemble &plan_ensemble, PlanEnsemble &new_plans_ensemble,
+    SamplingSpace const sampling_space, MapParams const &map_params,
+    RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble, PlanEnsemble &new_plans_ensemble,
     SplittingSchedule const &splitting_schedule) {
     // if(diagnostic_mode){ // record if in diagnostic mode and generalized splits
     //  reorder the plans by oldest split if either we'vxe done any merge split or
@@ -376,21 +387,14 @@ void SMCDiagnostics::add_full_step_diagnostics(
     // Copy the vertex plan matrix
     all_steps_plan_region_ids_list.at(step_num) = plan_ensemble.get_R_plans_matrix();
 
-    // store the
-    if (!(sampling_space == SamplingSpace::GraphSpace)) {
-        all_steps_forests_adj_list.at(step_num).reserve(nsims);
-        for (size_t i = 0; i < nsims; i++) {
-            // add the forests from each plan at this step
-            all_steps_forests_adj_list.at(step_num).push_back(
-                plan_ensemble.plan_ptr_vec[i]->get_forest_adj());
-        }
-        if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
-            for (size_t i = 0; i < nsims; i++) {
-                // add the forests from each plan at this step
-                all_steps_linking_edge_list.at(step_num).push_back(
-                    plan_ensemble.plan_ptr_vec[i]->get_linking_edges());
-            }
-        }
+    // store the spanning forests and linking edges if the sampling space has them
+    if (sampling_space != SamplingSpace::GraphSpace) {
+        all_steps_forests_list.at(step_num) =
+            plan_ensemble.get_R_forest_matrix(map_params.num_edges, pool);
+    }
+    if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
+        all_steps_linking_edge_list.at(step_num) =
+            plan_ensemble.get_R_linking_edges(map_params.graph_edge_index);
     }
 
     // Copy the sizes if neccesary
@@ -399,6 +403,32 @@ void SMCDiagnostics::add_full_step_diagnostics(
     }
 
     return;
+}
+
+void SMCDiagnostics::add_final_resample_full_diagnostics(
+    bool const splitting_all_the_way, SamplingSpace const sampling_space,
+    MapParams const &map_params, RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble,
+    SplittingSchedule const &splitting_schedule) {
+    if (!final_resample) {
+        throw Rcpp::exception(
+            "SMCDiagnostics was not sized for a final resampling step!\n");
+    }
+    bool const split_district_only =
+        splitting_schedule.schedule_type == SplittingSizeScheduleType::DistrictOnlySMD;
+
+    all_steps_plan_region_ids_list.push_back(plan_ensemble.get_R_plans_matrix());
+    if (sampling_space != SamplingSpace::GraphSpace) {
+        all_steps_forests_list.push_back(
+            plan_ensemble.get_R_forest_matrix(map_params.num_edges, pool));
+    }
+    if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
+        all_steps_linking_edge_list.push_back(
+            plan_ensemble.get_R_linking_edges(map_params.graph_edge_index));
+    }
+    // same rule as the last step, sizes are only needed for partial plans
+    if (!split_district_only && !splitting_all_the_way) {
+        region_sizes_mat_list.push_back(plan_ensemble.get_R_sizes_matrix(pool));
+    }
 }
 
 void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
@@ -466,7 +496,7 @@ void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
     out["granular_times"] = granular_timing;
     out["region_ids_mat_list"] = all_steps_plan_region_ids_list;
     out["region_seats_mat_list"] = region_sizes_mat_list;
-    out["forest_adjs_list"] = all_steps_forests_adj_list;
+    out["forest_adjs_list"] = all_steps_forests_list;
     out["linking_edges_list"] = all_steps_linking_edge_list;
     out["valid_split_region_sizes_list"] = all_steps_valid_split_region_sizes;
     out["valid_region_sizes_to_split_list"] = all_steps_valid_region_sizes_to_split;
@@ -1620,6 +1650,13 @@ Rcpp::List run_redist_smc(
     bool const estimated_unbiased_normalizing_constant = Rcpp::as<bool>(control["est_norm_unbiased"]);
     // whether to resample the plans once the run is over
     bool const final_resample = Rcpp::as<bool>(control["resample"]);
+    // whether to return the final spanning forests and linking edges
+    bool const return_augmented_samples =
+        control.containsElementNamed("return_augmented_samples") &&
+        Rcpp::as<bool>(control["return_augmented_samples"]);
+    if (return_augmented_samples && sampling_space == SamplingSpace::GraphSpace) {
+        throw Rcpp::exception("Augmented samples are not available in graph space!\n");
+    }
     double tmp_multidistrict_selection_alpha;
     // custom multidistrict selection alpha
     if(control.containsElementNamed("md_alpha")){
@@ -2277,7 +2314,8 @@ Rcpp::List run_redist_smc(
                     }
                     smc_diagnostics.add_full_step_diagnostics(
                         total_steps, splitting_all_the_way, step_num, merge_split_step_num,
-                        smc_step_num, !merge_split_step_vec[step_num], sampling_space, pool,
+                        smc_step_num, !merge_split_step_vec[step_num], sampling_space,
+                        map_params, pool,
                         *plan_ensemble_ptr, *dummy_plan_ensemble_ptr, *splitting_schedule_ptr);
                 }
 
@@ -2320,6 +2358,11 @@ Rcpp::List run_redist_smc(
                 dummy_plan_ensemble_ptr);
             smc_diagnostics.record_final_resample(
                 resample_index, plan_ensemble_ptr->count_unique_plans(pool));
+            if (diagnostic_mode) {
+                smc_diagnostics.add_final_resample_full_diagnostics(
+                    splitting_all_the_way, sampling_space, map_params, pool,
+                    *plan_ensemble_ptr, *splitting_schedule_ptr);
+            }
         }
         // end of scope
     }
@@ -2355,6 +2398,17 @@ Rcpp::List run_redist_smc(
                                         ? plan_ensemble_ptr->get_R_sizes_matrix(pool)
                                         : Rcpp::IntegerMatrix(1, 1);
     Rcpp::IntegerMatrix region_pops_mat = plan_ensemble_ptr->get_region_pops_matrix(pool);
+    // The forests and linking edges have to be exported before the ensemble
+    // releases them. This is after any final resampling so they match the plans.
+    // RObject keeps these protected from R's GC while the plans matrix is made
+    Rcpp::RObject spanning_forests;
+    Rcpp::RObject linking_edges;
+    if (return_augmented_samples) {
+        spanning_forests = plan_ensemble_ptr->get_R_forest_matrix(map_params.num_edges, pool);
+        if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
+            linking_edges = plan_ensemble_ptr->get_R_linking_edges(map_params.graph_edge_index);
+        }
+    }
     plan_ensemble_ptr->release_all_but_plan_ids();
 
     Rcpp::IntegerMatrix plans_mat = plan_ensemble_ptr->get_R_plans_matrix();
@@ -2370,8 +2424,10 @@ Rcpp::List run_redist_smc(
         Rcpp::_["step_types"] = step_types,
         Rcpp::_["merge_split_steps"] = merge_split_step_vec,
         Rcpp::_["log_blank_map_target_density"] = log_blank_map_target_density,
-        Rcpp::_["multidistrict_selection_alpha"] = multidistrict_selection_alpha 
+        Rcpp::_["multidistrict_selection_alpha"] = multidistrict_selection_alpha
     );
+    out["spanning_forests"] = spanning_forests;
+    out["linking_edges"] = linking_edges;
 
     // add all the diagnostics
     smc_diagnostics.add_diagnostics_to_out_list(out);

@@ -199,6 +199,10 @@
 #'  extra plan. The number of attempts can be used with the weights to form an
 #'  unbiased estimator, as opposed to the biased normalizing
 #'  constant estimators that are obtained with the weights alone.
+#'  \item \code{return_augmented_samples} Whether or not to return the spanning
+#'  forests and linking edges associated with the sampled plans (if applicable).
+#'  Setting this value to `TRUE` can substantially increase the size of the
+#'  `redist_plans` object returned.
 #'  \item \code{md_alpha} What power to use for multidistrict selection
 #'  probability. When choosing a multidistrict to split, one will be chosen with
 #'  probability proportional to <size>^md_alpha.
@@ -468,6 +472,14 @@ redist_smc <- function(
     cache_weights <- control_params_list[["cache_weights"]]
     max_split_tries <- control_params_list[["max_split_tries"]]
     est_norm_unbiased <- control_params_list[["est_norm_unbiased"]]
+    return_augmented_samples <- control_params_list[["return_augmented_samples"]]
+
+    if (return_augmented_samples && sampling_space == GRAPH_PLAN_SPACE_SAMPLING) {
+        cli::cli_abort(c(
+            "{.arg return_augmented_samples} is not available for graph space sampling.",
+            "i" = "Only spanning forest and linking edge space plans have augmented samples."
+        ))
+    }
 
     multiprocess <- nproc > 1
     # make sure we're not spawning more proccesses than runs
@@ -533,6 +545,7 @@ redist_smc <- function(
     cache_weights = cache_weights,
     max_split_tries = max_split_tries,
     est_norm_unbiased = est_norm_unbiased,
+    return_augmented_samples = return_augmented_samples,
     resample = resample,
     seq_alpha = seq_alpha,
     pop_temper = pop_temper,
@@ -627,6 +640,25 @@ redist_smc <- function(
             num_ms_steps <- sum(
                 algout$step_split_types == "ms"
             )
+
+            # name the per step diagnostic lists (smc_step1, smc_step2,
+            # ms_step1, ...) so the plans, forests, and linking edges from a
+            # step can be matched by name or index. If the plans were resampled
+            # at the end there is an extra final `resample` entry holding the
+            # plans after resampling.
+            step_type_counts <- stats::ave(
+                seq_along(algout$step_split_types), algout$step_split_types,
+                FUN = seq_along
+            )
+            step_names <- paste0(algout$step_split_types, "_step", step_type_counts)
+            if (resample) {
+                step_names <- c(step_names, "resample")
+            }
+            for (step_list in c("region_ids_mat_list", "forest_adjs_list", "linking_edges_list")) {
+                if (length(algout[[step_list]]) == length(step_names)) {
+                    names(algout[[step_list]]) <- step_names
+                }
+            }
 
             # pull out the log weights
             lr <- algout$log_weights
@@ -820,6 +852,27 @@ redist_smc <- function(
         internal_diagnostics <- list(all_out[[1]]$internal_diagnostics)
     }
 
+    # Spanning forests and linking edges of the final plans, indexed by the
+    # sampled draws (the plans matrix columns that are not reference plans, see
+    # `subset_augmented_samples`). The linking edge `draw` column is the sampled
+    # draw so each run is offset by the draws of the runs before it.
+    augmented_samples <- NULL
+    if (return_augmented_samples) {
+        linking_edges <- NULL
+        if (sampling_space == LINKING_EDGE_SPACE_SAMPLING) {
+            linking_edges <- do.call(rbind, lapply(seq_along(all_out), function(i) {
+                run_linking_edges <- all_out[[i]]$linking_edges
+                run_linking_edges$draw <- run_linking_edges$draw + (i - 1L) * nsims
+                run_linking_edges
+            }))
+        }
+        augmented_samples <- list(
+            edge_list = graph_edge_list(adj_list),
+            spanning_forests = do.call(cbind, lapply(all_out, function(x) x$spanning_forests)),
+            linking_edges = linking_edges
+        )
+    }
+
     n_dist_act <- dplyr::n_distinct(plans[, 1]) # actual number (for partial plans)
 
     alg_type <- ifelse(run_ms, "smc_ms", "smc")
@@ -843,6 +896,7 @@ redist_smc <- function(
         diagnostics = l_diag,
         run_information = run_information,
         internal_diagnostics = internal_diagnostics,
+        augmented_samples = augmented_samples,
         num_admin_units = num_admin_units,
         total_runtime = as.numeric(t2 - t1, units = "secs")
     )
@@ -1050,7 +1104,7 @@ get_init_plan_params <- function(
 extract_control_params <- function(control, compactness) {
     control_param_names <- c("nproc", "weight_type",
                              "cache_weights", "max_split_tries",
-                             "est_norm_unbiased")
+                             "est_norm_unbiased", "return_augmented_samples")
 
     default_nproc <- 1L
     default_weight_type <- "optimal"
@@ -1121,12 +1175,23 @@ extract_control_params <- function(control, compactness) {
         est_norm_unbiased <- default_est_norm_unbiased
     }
 
+    if ("return_augmented_samples" %in% names(control)) {
+        return_augmented_samples <- control[["return_augmented_samples"]]
+        if (!rlang::is_scalar_logical(return_augmented_samples) ||
+            is.na(return_augmented_samples)) {
+            cli::cli_abort("{.arg return_augmented_samples} must be a scalar boolean")
+        }
+    } else {
+        return_augmented_samples <- FALSE
+    }
+
     control_params <- list(
     nproc = nproc,
     weight_type = weight_type,
     cache_weights = cache_weights,
     max_split_tries = max_split_tries,
-    est_norm_unbiased = est_norm_unbiased
+    est_norm_unbiased = est_norm_unbiased,
+    return_augmented_samples = return_augmented_samples
   )
 
     if ("md_alpha" %in% names(control)){

@@ -55,7 +55,6 @@ ForestPlan::ForestPlan(int const ndists, int const num_regions, const std::vecto
 
 }
 
-Tree ForestPlan::get_forest_adj() { throw std::runtime_error("get_forest_adj not supported right now!\n") ; }
 
 // IT IS VERY IMPORTANT THAT FOR SMC split_region1_id is the id of the multidistrict
 // The idea is any other split regions have not actually been updated yet 

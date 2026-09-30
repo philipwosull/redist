@@ -48,11 +48,6 @@ class LinkingEdge {
     int vertex2;         // Second vertex
     double log_prob;     // Log Probability this edge was chosen to split in the tree
     bool valid_log_prob; // Whether the log prob is current or needs to be computed again
-
-    // Gets the information on the two regions formed from an edge cut by reference
-    std::array<double, 3> export_linking_edge() const {
-        return {static_cast<double>(vertex1), static_cast<double>(vertex2), log_prob};
-    };
 };
 
 
@@ -124,14 +119,8 @@ class Plan {
     std::pair<int, int> get_most_recently_split_regions() const;
     std::pair<int, int> get_num_district_and_multidistricts() const;
 
-    virtual Tree get_forest_adj() {
-        throw std::runtime_error("Get Forest Adj not Supported for this!\n");
-    };
-
-    virtual std::vector<std::array<double, 3>> get_linking_edges() {
-        throw std::runtime_error(
-            "Get Linking edges not Supported for this concrete Plan class!\n");
-    };
+    // Empty unless the plan is in linking edge space
+    std::vector<LinkingEdge> const &get_linking_edges_ref() const { return linking_edges; }
 
     EdgeBitset const &get_forest_edges() const {
         return forest_edges;

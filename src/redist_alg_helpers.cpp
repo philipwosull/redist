@@ -539,6 +539,86 @@ Rcpp::IntegerMatrix PlanEnsemble::get_region_pops_matrix(RcppThread::ThreadPool 
     return pops_mat;
 }
 
+Rcpp::LogicalMatrix PlanEnsemble::get_R_forest_matrix(int const num_edges,
+                                                      RcppThread::ThreadPool &pool) {
+    if (num_forest_edge_bit_words_per_plan == 0) {
+        throw Rcpp::exception(
+            "Spanning forests are only stored in forest or linking edge space!\n");
+    }
+    if (compute_num_edge_bit_words(num_edges) != num_forest_edge_bit_words_per_plan ||
+        flattened_all_forest_edge_bits.size() !=
+            static_cast<std::size_t>(nsims) * num_forest_edge_bit_words_per_plan) {
+        throw Rcpp::exception("Forest edge bits do not match the number of graph edges!\n");
+    }
+
+    Rcpp::LogicalMatrix forest_mat(num_edges, nsims);
+    // take the raw pointer up front so the threads never touch the R API
+    int *const forest_mat_ptr = LOGICAL(forest_mat);
+
+    // plan i's forest is the i-th run of words in the flattened buffer, with
+    // edge id e stored in bit e % 64 of word e / 64
+    pool.parallelFor(0, nsims, [&](int i) {
+        EdgeBitWord const *plan_words =
+            flattened_all_forest_edge_bits.data() +
+            static_cast<std::size_t>(i) * num_forest_edge_bit_words_per_plan;
+        int *const plan_col = forest_mat_ptr + static_cast<std::size_t>(i) * num_edges;
+
+        for (int edge_id = 0; edge_id < num_edges; ++edge_id) {
+            plan_col[edge_id] = static_cast<int>(
+                (plan_words[edge_id / EDGE_BITS_PER_WORD] >> (edge_id % EDGE_BITS_PER_WORD)) &
+                EdgeBitWord{1});
+        }
+    });
+    pool.wait();
+
+    return forest_mat;
+}
+
+Rcpp::DataFrame PlanEnsemble::get_R_linking_edges(GraphEdgeIndex const &edge_index) {
+    if (sampling_space != SamplingSpace::LinkingEdgeSpace) {
+        throw Rcpp::exception("Linking edges are only stored in linking edge space!\n");
+    }
+
+    // Plans are not assumed to all have the same number of linking edges
+    std::size_t total_linking_edges = 0;
+    for (int i = 0; i < nsims; ++i) {
+        total_linking_edges += plan_ptr_vec[i]->get_linking_edges_ref().size();
+    }
+
+    Rcpp::IntegerVector draw(total_linking_edges);
+    Rcpp::IntegerVector edge_id(total_linking_edges);
+    Rcpp::IntegerVector vertex1(total_linking_edges);
+    Rcpp::IntegerVector vertex2(total_linking_edges);
+    Rcpp::NumericVector log_prob(total_linking_edges);
+
+    std::size_t row = 0;
+    std::vector<std::pair<EdgeID, LinkingEdge const *>> plan_edges;
+    for (int i = 0; i < nsims; ++i) {
+        // sort by edge id so the output only depends on the linking edge set
+        plan_edges.clear();
+        for (auto const &linking_edge : plan_ptr_vec[i]->get_linking_edges_ref()) {
+            plan_edges.emplace_back(
+                edge_index.get_edge_id(linking_edge.vertex1, linking_edge.vertex2),
+                &linking_edge);
+        }
+        std::sort(plan_edges.begin(), plan_edges.end(),
+                  [](auto const &a, auto const &b) { return a.first < b.first; });
+
+        for (auto const &[plan_edge_id, linking_edge] : plan_edges) {
+            draw[row] = i + 1;
+            edge_id[row] = static_cast<int>(plan_edge_id) + 1;
+            vertex1[row] = linking_edge->vertex1;
+            vertex2[row] = linking_edge->vertex2;
+            log_prob[row] = linking_edge->valid_log_prob ? linking_edge->log_prob : NA_REAL;
+            ++row;
+        }
+    }
+
+    return Rcpp::DataFrame::create(Rcpp::_["draw"] = draw, Rcpp::_["edge_id"] = edge_id,
+                                   Rcpp::_["vertex1"] = vertex1, Rcpp::_["vertex2"] = vertex2,
+                                   Rcpp::_["log_prob"] = log_prob);
+}
+
 PlanEnsemble get_plan_ensemble(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
@@ -938,22 +1018,26 @@ std::vector<bool> vector_tree_to_edge_vector(
     return edge_vec;
 }
 
-Rcpp::List graph_edge_index_to_list(
+Rcpp::IntegerMatrix graph_edge_index_to_matrix(
     GraphEdgeIndex const &edge_index
 ) {
-    Rcpp::List edge_list(edge_index.num_edges);
+    Rcpp::IntegerMatrix edge_mat(edge_index.num_edges, 2);
 
     for (int edge_id = 0; edge_id < edge_index.num_edges; ++edge_id) {
         auto const [u, v] = edge_index.get_edge_endpoints(
             static_cast<EdgeID>(edge_id)
         );
 
-        edge_list[edge_id] = Rcpp::IntegerVector::create(
-            static_cast<int>(u) + 1,
-            static_cast<int>(v) + 1
-        );
+        edge_mat(edge_id, 0) = static_cast<int>(u) + 1;
+        edge_mat(edge_id, 1) = static_cast<int>(v) + 1;
     }
 
-    return edge_list;
+    return edge_mat;
+}
+
+// [[Rcpp::export]]
+Rcpp::IntegerMatrix graph_edge_list(Rcpp::List const &adj_list) {
+    Graph const g = list_to_graph(adj_list);
+    return graph_edge_index_to_matrix(GraphEdgeIndex(g, count_undirected_edges(g)));
 }
 

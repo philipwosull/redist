@@ -32,7 +32,6 @@ class LinkingEdgePlan : public Plan {
                     const Rcpp::List &initial_forest_adj_list = {},
                     const std::vector<std::array<double, 3>> &input_initial_linking_edges = {});
 
-    Tree get_forest_adj() override;
 
     std::string linking_edges_to_string() const;
     std::string debug_string(bool print_region_ids = true) const override;
@@ -77,15 +76,6 @@ class LinkingEdgePlan : public Plan {
     std::vector<std::pair<RegionID, RegionID>> get_valid_smc_merge_regions(
         PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule,
         ScoringFunction const &scoring_function, bool const is_final_split) const override;
-
-    std::vector<std::array<double, 3>> get_linking_edges() override {
-        std::vector<std::array<double, 3>> output;
-        output.reserve(linking_edges.size());
-        for (auto const &an_edge : linking_edges) {
-            output.push_back(an_edge.export_linking_edge());
-        }
-        return output;
-    };
 };
 
 #endif

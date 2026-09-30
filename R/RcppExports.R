@@ -209,6 +209,10 @@ maximum_input_sizes <- function() {
     .Call(`_redist_maximum_input_sizes`)
 }
 
+graph_edge_list <- function(adj_list) {
+    .Call(`_redist_graph_edge_list`, adj_list)
+}
+
 plan_joint <- function(m1, m2, pop) {
     .Call(`_redist_plan_joint`, m1, m2, pop)
 }

@@ -302,6 +302,19 @@ class PlanEnsemble {
     Rcpp::IntegerMatrix get_R_sizes_matrix(RcppThread::ThreadPool &pool);
     // export current region populations to Rcpp matrix
     Rcpp::IntegerMatrix get_region_pops_matrix(RcppThread::ThreadPool &pool);
+    // export current spanning forests to a num_edges by nsims logical matrix
+    // where entry (e, i) is whether edge id e is in plan i's forest. Only
+    // valid in forest or linking edge space.
+    Rcpp::LogicalMatrix get_R_forest_matrix(int const num_edges, RcppThread::ThreadPool &pool);
+    // export current linking edges in long format as a data frame with one row
+    // per linking edge and columns `draw` (1-indexed plan), `edge_id`
+    // (1-indexed canonical edge id), `vertex1` and `vertex2` (the 0-indexed
+    // endpoints as stored in the plan) and `log_prob` (the cached log
+    // probability the edge is chosen when splitting the merged regions, NA if
+    // stale). Rows are grouped by draw and sorted by edge id within a draw.
+    // Plans may have different numbers of linking edges. Only valid in
+    // linking edge space.
+    Rcpp::DataFrame get_R_linking_edges(GraphEdgeIndex const &edge_index);
     // One entry per distinct plan in the ensemble: a representative particle,
     // how many particles carry that plan, and the hash collision chain.
     std::vector<PlanTallyEntry> get_unique_plan_tally(RcppThread::ThreadPool &pool) const;
@@ -343,13 +356,16 @@ std::vector<bool> vector_tree_to_edge_vector(
     Tree const &tree
 );
 
-// Converts a graph edge index to an R deciperable list
-// where its a list of length edge_index.num_edges
-// and each element is the pair (u,v) of the vertices in the 
-// edge it represents 
-Rcpp::List graph_edge_index_to_list(
+// Converts a graph edge index to an R num_edges by 2 matrix where
+// row e (1-indexed e + 1) is the 1-indexed vertex pair (u, v), u < v,
+// for edge id e
+Rcpp::IntegerMatrix graph_edge_index_to_matrix(
     GraphEdgeIndex const &edge_index
 );
+
+// Returns the canonical edge list of a 0-indexed adjacency list as a
+// num_edges by 2 1-indexed matrix. Row e is the edge with edge id e - 1.
+Rcpp::IntegerMatrix graph_edge_list(Rcpp::List const &adj_list);
 
 
 #endif

@@ -142,6 +142,8 @@ Graph build_restricted_county_graph(Graph const &g, std::vector<unsigned int> co
 }
 
 
+} // namespace
+
 // Counts the number of undirected edges in a graph. 
 // It also checks the graph is actually symmetric 
 int count_undirected_edges(Graph const &g) {
@@ -176,7 +178,6 @@ int count_undirected_edges(Graph const &g) {
     return edge_count;
 }
 
-}
 
 void EdgeCut::get_split_regions_info(int &split_region1_tree_root, int &split_region1_dval,
                                      int &split_region1_pop, int &split_region2_tree_root,
@@ -338,12 +339,16 @@ GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
         throw std::invalid_argument("Too many vertices for VertexID in GraphEdgeIndex!");
     }
 
-    std::unordered_set<std::uint64_t> seen_edges;
-    seen_edges.reserve(static_cast<std::size_t>(num_edges) * 2);
-
     int const V = static_cast<int>(g.size());
     max_num_edges = 1;
 
+    // Edge ids are canonical: edge e is the e-th (v, u) pair with v < u in
+    // lexicographic order. This makes ids depend only on the graph and not on
+    // the order neighbors appear in the adjacency list, so edge-indexed output
+    // (spanning forests, linking edges) is comparable across runs and maps.
+    //
+    // First pass validates the adjacency list and collects the (v, u) pairs.
+    edges.reserve(num_edges);
     for (int v = 0; v < V; ++v) {
         auto num_v_edges = g[v].size();
         incident_edges[v].reserve(num_v_edges);
@@ -352,7 +357,6 @@ GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
         if (num_v_edges > max_num_edges){
             max_num_edges = num_v_edges;
         }
-        
 
         std::unordered_set<int> seen_neighbors_for_v;
         seen_neighbors_for_v.reserve(g[v].size());
@@ -366,44 +370,50 @@ GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
                 std::ostringstream oss;
                 oss << "Duplicate neighbor in graph adjacency list: "
                     << "vertex " << v << " has neighbor " << u << " more than once.";
-                
+
                 throw std::runtime_error(oss.str());
             }
 
             if (v < u) {
-                std::uint64_t const key =
-                    (static_cast<std::uint64_t>(v) << 32) |
-                    static_cast<std::uint32_t>(u);
-
-                if (!seen_edges.insert(key).second) {
-                    std::ostringstream oss;
-                    oss << "Duplicate undirected edge in GraphEdgeIndex: ("
-                        << v << ", " << u << ")";
-                    
-                    throw std::runtime_error(oss.str());
-                }
-
-                if (edges.size() > std::numeric_limits<EdgeID>::max()) {
-                    throw std::runtime_error("Too many graph edges for EdgeID!");
-                }
-
-                EdgeID const eid = static_cast<EdgeID>(edges.size());
-
                 edges.push_back({
                     static_cast<VertexID>(v),
                     static_cast<VertexID>(u)
                 });
-
-                incident_edges[v].push_back({
-                    static_cast<VertexID>(u),
-                    eid
-                });
-
-                incident_edges[u].push_back({
-                    static_cast<VertexID>(v),
-                    eid
-                });
             }
+        }
+    }
+
+    if (!edges.empty() &&
+        edges.size() - 1 > static_cast<std::size_t>(std::numeric_limits<EdgeID>::max())) {
+        throw std::runtime_error("Too many graph edges for EdgeID!");
+    }
+
+    std::sort(edges.begin(), edges.end());
+
+    // Second pass fills incident_edges. The traversal order here is kept
+    // identical to the order used before ids were canonicalized (neighbors are
+    // appended as each smaller endpoint is visited) since samplers walk
+    // incident_edges and changing it would change results for a given seed.
+    for (int v = 0; v < V; ++v) {
+        for (int u : g[v]) {
+            if (v >= u) continue;
+
+            std::pair<VertexID, VertexID> const edge{
+                static_cast<VertexID>(v), static_cast<VertexID>(u)
+            };
+            EdgeID const eid = static_cast<EdgeID>(
+                std::lower_bound(edges.begin(), edges.end(), edge) - edges.begin()
+            );
+
+            incident_edges[v].push_back({
+                static_cast<VertexID>(u),
+                eid
+            });
+
+            incident_edges[u].push_back({
+                static_cast<VertexID>(v),
+                eid
+            });
         }
     }
 

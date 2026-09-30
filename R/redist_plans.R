@@ -334,6 +334,72 @@ set_plan_matrix <- function(x, mat) {
     x
 }
 
+# internal -- the augmented samples (spanning forests and linking edges, used
+# to restart sampling) are indexed by the sampled draws, i.e. the columns of
+# the plans matrix that are not reference plans, in order. When the plans
+# matrix `plans_m` is subset to the columns `idxs` this subsets the augmented
+# samples to the sampled draws that are kept.
+subset_augmented_samples <- function(x, plans_m, idxs) {
+    aug <- attr(x, "augmented_samples")
+    if (is.null(aug)) {
+        return(x)
+    }
+
+    is_sampled <- if (is.null(colnames(plans_m))) {
+        rep(TRUE, ncol(plans_m))
+    } else {
+        nchar(colnames(plans_m)) == 0
+    }
+    kept_sampled_draws <- cumsum(is_sampled)[idxs[is_sampled[idxs]]]
+
+    aug$spanning_forests <- aug$spanning_forests[, kept_sampled_draws, drop = FALSE]
+    if (!is.null(aug$linking_edges)) {
+        linking_edges <- aug$linking_edges[
+            aug$linking_edges$draw %in% kept_sampled_draws, , drop = FALSE
+        ]
+        linking_edges$draw <- match(linking_edges$draw, kept_sampled_draws)
+        # stable ordering keeps the edge id ordering within each draw
+        linking_edges <- linking_edges[order(linking_edges$draw), , drop = FALSE]
+        rownames(linking_edges) <- NULL
+        aug$linking_edges <- linking_edges
+    }
+
+    attr(x, "augmented_samples") <- aug
+    x
+}
+
+# internal -- appends the augmented samples of several sets of plans in the
+# same order as their plans matrices are combined. Returns NULL unless every
+# set has augmented samples on the same graph. Linking edges are kept only if
+# every set has them.
+rbind_augmented_samples <- function(objs) {
+    augs <- lapply(objs, function(x) attr(x, "augmented_samples"))
+    if (any(vapply(augs, is.null, logical(1)))) {
+        return(NULL)
+    }
+    edge_list <- augs[[1]]$edge_list
+    if (!all(vapply(augs, function(aug) identical(aug$edge_list, edge_list), logical(1)))) {
+        return(NULL)
+    }
+
+    linking_edges <- NULL
+    if (!any(vapply(augs, function(aug) is.null(aug$linking_edges), logical(1)))) {
+        n_sampled_draws <- vapply(augs, function(aug) ncol(aug$spanning_forests), integer(1))
+        draw_offsets <- cumsum(c(0L, n_sampled_draws))[seq_along(augs)]
+        linking_edges <- do.call(rbind, Map(function(aug, offset) {
+            aug$linking_edges$draw <- aug$linking_edges$draw + offset
+            aug$linking_edges
+        }, augs, draw_offsets))
+        rownames(linking_edges) <- NULL
+    }
+
+    list(
+        edge_list = edge_list,
+        spanning_forests = do.call(cbind, lapply(augs, function(aug) aug$spanning_forests)),
+        linking_edges = linking_edges
+    )
+}
+
 
 #' Extract the matrix of the number of seats for each district from a redistricting simulation
 #'
@@ -679,6 +745,7 @@ subset_sampled <- function(plans, matrix = TRUE) {
     attr(out, "wgt") <- attr(out, "wgt")[idxs]
     if (isTRUE(matrix)) {
         out <- set_plan_matrix(out, plans_m[, idxs, drop = FALSE])
+        out <- subset_augmented_samples(out, plans_m, idxs)
     }
 
     # set the chain back to NA if needed
@@ -737,6 +804,7 @@ subset_ref <- function(plans, matrix = TRUE) {
     idxs <- which(nm_lengths[unique(draw_ints)] > 0)
     attr(out, "wgt") <- attr(out, "wgt")[idxs]
     out <- set_plan_matrix(out, plans_m[, idxs, drop = FALSE])
+    out <- subset_augmented_samples(out, plans_m, idxs)
 
     # set the chain back to NA if needed
     if (any_na_chains) {
@@ -798,6 +866,7 @@ dplyr_row_slice.redist_plans <- function(data, i, ...) {
     if (length(draws_left) != ncol(plans_m)) {
         attr(y, "wgt") <- attr(y, "wgt")[draws_left]
         y <- set_plan_matrix(y, plans_m[, draws_left, drop = FALSE])
+        y <- subset_augmented_samples(y, plans_m, draws_left)
     }
 
     if (is.factor(y$draw)) {
@@ -1066,6 +1135,8 @@ rbind.redist_plans <- function(..., deparse.level = 1) {
         lapply(objs, function(x) get_plans_matrix(x))
     )
     attr(ret, "wgt") <- do.call(c, lapply(objs, function(x) get_plans_weights(x)))
+    # appended in the same order as the plans matrices above
+    attr(ret, "augmented_samples") <- rbind_augmented_samples(objs)
 
     # Only carry `n_eff` if some input actually had one. Summing a list of
     # NULLs yields 0, which would invent an effective sample size of zero.

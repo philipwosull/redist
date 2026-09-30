@@ -24,6 +24,8 @@ pullback <- function(plans, map = NULL) {
     }
 
     attr(plans, "merge_idx") <- NULL
+    # the spanning forests and linking edges are on the merged map's graph
+    attr(plans, "augmented_samples") <- NULL
     if (inherits(map, "redist_map")) {
         attr(plans, "prec_pop") <- map[[attr(map, "pop_col")]]
     } else {

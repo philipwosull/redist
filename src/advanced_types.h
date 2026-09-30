@@ -188,8 +188,13 @@ inline int index_from_ordered_pair(int x, int y, int container_size) {
 // j is the column index so j < row_length
 inline int mat_index_from_pair(int i, int j, int row_length) { return i * row_length + j; }
 
-// Class for storing the graph as a long vector of edges 
-// Allows you to take a vertex and get neighbors 
+// Counts the number of undirected edges in a graph
+int count_undirected_edges(Graph const &g);
+
+// Class for storing the graph as a long vector of edges
+// Allows you to take a vertex and get neighbors
+// Edge ids are canonical: edge e is the e-th (v, u) pair with v < u in
+// lexicographic order, independent of adjacency list neighbor order.
 class GraphEdgeIndex {
   public:
   // incident edge stores both the vertex adjacent to v and the edge_id associated with this edge
