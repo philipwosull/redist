@@ -2090,9 +2090,17 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
         int component1_id = county_component[pair_region1];
         int component2_id = county_component[pair_region2];
 
-        //
+        // pairs from curr_index on were sorted to be across components
         if (pair_val.same_admin_component) {
-            REprintf("BIG ERROR SAME COMPONENT WHEN SHOULD BE DIFF!\n");
+            std::ostringstream oss;
+            oss << "ERROR in compute_hierarchical_log_multigraph_tau: region pair ("
+                << static_cast<int>(pair_region1) << ", " << static_cast<int>(pair_region2)
+                << ") at sorted index " << i << " (first across component index "
+                << curr_index << ") is marked as in the same administrative component "
+                << "but should be across components " << component1_id << " and "
+                << component2_id << ".\n"
+                << debug_string();
+            throw std::runtime_error(oss.str());
         }
 
         double edges = static_cast<double>(pair_val.across_county_edges);
@@ -2619,9 +2627,17 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
         int component1_id = county_component_reindex[county_component[pair_region1]];
         int component2_id = county_component_reindex[county_component[pair_region2]];
 
-        //
+        // pairs from curr_index on were sorted to be across components
         if (pair_val.same_admin_component) {
-            REprintf("BIG ERROR SAME COMPONENT WHEN SHOULD BE DIFF!\n");
+            std::ostringstream oss;
+            oss << "ERROR in compute_hierarchical_merged_log_multigraph_tau: region pair ("
+                << static_cast<int>(pair_region1) << ", " << static_cast<int>(pair_region2)
+                << ") at sorted index " << i << " (first across component index "
+                << curr_index << ") is marked as in the same administrative component "
+                << "but should be across merged components " << component1_id << " and "
+                << component2_id << ".\n"
+                << debug_string();
+            throw std::runtime_error(oss.str());
         }
 
         double edges = static_cast<double>(pair_val.across_county_edges);

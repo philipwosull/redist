@@ -281,7 +281,7 @@ SplittingMethodType get_splitting_type(std::string const &splitting_type_str) {
     } else if (splitting_type_str == "constraint") {
         return SplittingMethodType::Constraint;
     } else {
-        throw std::invalid_argument("Invalid splitting_type_str");
+        throw std::invalid_argument("Invalid splitting method \"" + splitting_type_str + "\".");
     }
 }
 

@@ -149,9 +149,15 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
         int v_admin_unit = admin_units[v] - 1;
         // skip if we've visitied this county before
         if (admin_unit_visited[v_admin_unit]) {
-            // sanity check can delete later
-            if (!visited[v])
-                throw std::runtime_error("Should have visitied this vertex already!\n");
+            // the tree built on this county from its first vertex didn't reach v
+            if (!visited[v]) {
+                throw std::runtime_error(
+                    "build_admin_forest: administrative unit " +
+                    std::to_string(v_admin_unit + 1) + " is not connected in the adjacency "
+                    "graph (vertex " + std::to_string(v + 1) + " can't be reached from vertex " +
+                    std::to_string(admin_forest_roots[v_admin_unit] + 1) +
+                    " within the unit). Every administrative unit must be contiguous.\n");
+            }
             continue;
         }
 
@@ -172,10 +178,13 @@ std::pair<Tree, std::vector<int>> build_admin_forest(const Graph &g,
             // mark as visited since it has to share this county
             visited[u] = true;
             int u_admin_unit = admin_units[u] - 1;
-            // sanity check delete later
+            // sanity check, only vertices in v's unit are ever queued
             if (u_admin_unit != v_admin_unit) {
-                REprintf("v county %d, u county %d", v_admin_unit, (int)admin_units[u] - 1);
-                throw std::runtime_error("County forest went wrong!!\n");
+                throw std::runtime_error(
+                    "build_admin_forest: the tree on administrative unit " +
+                    std::to_string(v_admin_unit + 1) + " reached vertex " +
+                    std::to_string(u + 1) + " in administrative unit " +
+                    std::to_string(u_admin_unit + 1) + ".\n");
             }
 
             // see if any children in the same county

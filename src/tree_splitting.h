@@ -128,12 +128,18 @@ class TreeSplitter {
 
     // used to update the k parameter for top k splitter
     virtual void update_single_int_param(int int_param) {
-        throw std::runtime_error("Update single int param not implemented!\n");
+        throw std::runtime_error(
+            "TreeSplitter::update_single_int_param is not implemented for this splitting "
+            "method. Only splitters with a single integer parameter (the top k splitter) "
+            "support it.\n");
     };
 
     // used to get the k parameter for top k splitter
     virtual int get_single_int_param() const {
-        throw std::runtime_error("Update single int param not implemented!\n");
+        throw std::runtime_error(
+            "TreeSplitter::get_single_int_param is not implemented for this splitting "
+            "method. Only splitters with a single integer parameter (the top k splitter) "
+            "support it.\n");
         return -1;
     };
 
@@ -146,7 +152,9 @@ class TreeSplitter {
     ) const;
 
     virtual double compute_unnormalized_edge_cut_weight(EdgeCut const &edge_cut) const {
-        throw std::runtime_error("Not implemented for this class!");
+        throw std::runtime_error(
+            "TreeSplitter::compute_unnormalized_edge_cut_weight is not implemented for this "
+            "splitting method.");
     };
 };
 

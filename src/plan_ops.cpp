@@ -10,6 +10,7 @@
 // #include <Rcpp.h>
 #include <atomic>
 #include <functional>
+#include <sstream>
 #include <thread>
 
 #include <Rcpp.h>
@@ -218,13 +219,13 @@ Rcpp::IntegerMatrix infer_region_seats(Rcpp::IntegerMatrix const &region_pops,
                     }
                 }
                 if (!size_selected) {
-                    // RcppThread::Rcerr is the thread safe route to R's
-                    // output; REprintf from a worker is not. The throw is
-                    // fine as is, RcppThread rethrows it on the main thread.
-                    RcppThread::Rcerr
-                        << "No valid size could be found for Plan "
-                        << (i + 1) << "\n";
-                    throw Rcpp::exception("No valid size could be inferred!\n");
+                    std::ostringstream oss;
+                    oss << "Could not infer the number of seats for region " << (j + 1)
+                        << " of plan " << (i + 1) << ": its population " << region_pop
+                        << " is not between " << lower << " * seats and " << upper
+                        << " * seats for any number of seats from 1 to " << total_seats
+                        << ". Pass the seats in explicitly or check the population bounds.\n";
+                    throw std::runtime_error(oss.str());
                 }
 
                 region_sizes(j, i) = region_size;

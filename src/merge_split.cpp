@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <sstream>
 #include <string>
 #include <Rcpp.h>
 
@@ -73,7 +74,11 @@ Rcpp::List ms_plans(
 
     // make sure both are 1 column matrix
     if (init_plan.ncol() > 1 || init_seats.ncol() > 1) {
-        throw Rcpp::exception("Error!\n");
+        std::ostringstream oss;
+        oss << "Mergesplit takes a single initial plan, so `init_plan` and `init_seats` must "
+            << "each have exactly 1 column, but `init_plan` has " << init_plan.ncol()
+            << " columns and `init_seats` has " << init_seats.ncol() << " columns.\n";
+        throw Rcpp::exception(oss.str().c_str());
     }
 
     // Create map level graph and county level multigraph

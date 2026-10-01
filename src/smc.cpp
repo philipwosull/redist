@@ -1680,9 +1680,10 @@ Rcpp::List run_redist_smc(
             merge_split_step_vec.at(i) = true;
             total_ms_steps++;
         } else {
-            REprintf("Invalid step type: %s\n",
-                     static_cast<std::string>(step_types.at(i)).c_str());
-            throw Rcpp::exception("Invalid step type passed!");
+            throw std::runtime_error("Invalid step type \"" +
+                                     static_cast<std::string>(step_types.at(i)) +
+                                     "\" at step " + std::to_string(i + 1) +
+                                     ". Step types must be \"smc\" or \"ms\".\n");
         }
     }
     // sanity check we're not splitting more than ndists districts
@@ -2098,7 +2099,9 @@ Rcpp::List run_redist_smc(
                             smc_diagnostics, smc_step_num, step_num,
                             verbosity);
                     } else {
-                        throw Rcpp::exception("invalid weight type!");
+                        throw std::runtime_error("Invalid weight type \"" + wgt_type +
+                                                 "\". Weight type must be \"optimal\" or "
+                                                 "\"simple\".\n");
                     }
                     // save this step's incremental weights into the diagnostics
                     std::copy(

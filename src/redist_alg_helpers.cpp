@@ -167,7 +167,11 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params, int const total_pop, int
                 total_seats, total_pop, plan_region_ids, plan_sizes, plan_pops,
                 plan_region_order_added, plan_forest_edge_bits);
         } else {
-            throw Rcpp::exception("Input is invalid\n");
+            throw std::runtime_error(
+                "PlanEnsemble: can't create blank plans in the " +
+                sampling_space_to_str(sampling_space) +
+                " sampling space. Supported spaces are graph, LCT graph, spanning forest, "
+                "and linking edge.\n");
         }
         if (verbosity >= 3) {
             ++bar;
@@ -356,7 +360,11 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
                 *tree_ptr, ust_sampler, plan_multigraph, region_graph,
                 rng_states[thread_id], initial_forest_words, initial_linking_edges);
         } else {
-            throw Rcpp::exception("This plan type not supported!\n");
+            throw std::runtime_error(
+                "PlanEnsemble: can't create partial plans in the " +
+                sampling_space_to_str(sampling_space) +
+                " sampling space. Supported spaces are graph, LCT graph, spanning forest, "
+                "and linking edge.\n");
         }
         if (verbosity >= 3) {
             ++bar;
@@ -1048,7 +1056,9 @@ get_tree_splitter_ptrs(MapParams const &map_params, SplittingMethodType const sp
                             return std::make_unique<ExperimentalSplitter>(map_graph, epsilon, target);
                         });
     } else {
-        throw Rcpp::exception("Invalid Splitting Method!");
+        throw std::runtime_error("get_tree_splitter_ptrs: no tree splitter for the " +
+                                 splitting_method_to_str(splitting_method) +
+                                 " splitting method.\n");
     }
 
     return tree_splitters_ptr_vec;

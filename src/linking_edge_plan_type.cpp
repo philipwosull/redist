@@ -93,10 +93,12 @@ std::vector<std::pair<int, int>> get_intial_linking_edges(PlanMultigraph &plan_m
     }
 
     if (static_cast<int>(tree_edges.size()) != num_regions - 1) {
-        throw std::runtime_error(
-            "The valid region adjacency graph is "
-            "disconnected; no linking tree exists."
-        );
+        std::ostringstream oss;
+        oss << "get_intial_linking_edges: the valid region adjacency graph is disconnected "
+            << "so no linking tree exists. Found " << tree_edges.size()
+            << " linking edges but a plan with " << num_regions << " regions needs "
+            << num_regions - 1 << ".\n";
+        throw std::runtime_error(oss.str());
     }
 
     return initial_edges;
@@ -247,9 +249,14 @@ void LinkingEdgePlan::update_vertex_and_plan_specific_info_from_cut(
         if (need_to_erase) {
             linking_edges.erase(linking_edges.begin() + erase_index);
         } else {
-            Rprint(true);
-            REprintf("Error could not find old edge!!\n");
-            throw std::runtime_error("NOOOO");
+            std::ostringstream oss;
+            oss << "LinkingEdgePlan::update_vertex_and_plan_specific_info_from_cut: "
+                << "could not find the linking edge between the regions being merged.\n"
+                << "split_region1_id=" << split_region1_id
+                << ", split_region2_id=" << split_region2_id
+                << ", num_regions=" << num_regions << "\n"
+                << debug_string(true);
+            throw std::runtime_error(oss.str());
         }
     }
 
@@ -323,7 +330,12 @@ double LinkingEdgePlan::get_log_eff_boundary_len(
             return edge_pair.log_prob;
         }
     }
-    throw std::runtime_error("Linking Pair not found!\n");
+    std::ostringstream oss;
+    oss << "LinkingEdgePlan::get_log_eff_boundary_len: no linking edge between regions "
+        << region1_id << " and " << region2_id << " (num_regions=" << num_regions
+        << "). Regions passed in must be linked and ordered with region1_id < region2_id.\n"
+        << debug_string(true);
+    throw std::runtime_error(oss.str());
 }
 
 // - for linking edge sampling its the edge selection probability PLUS
@@ -364,16 +376,22 @@ LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens(
         if (splitting_schedule.valid_merge_pair_sizes[edge_region1_size][edge_region2_size]) {
             // sanity check that we never get invalid pair
             auto search_result = plan_multigraph.pair_map.get_value(edge_region1, edge_region2);
-            if (!search_result.first) {
-                REprintf("BIG BIG ERROR: A pair of regions with linking edge is somehow "
-                         "hierarchically invalid now!\n");
-                throw std::runtime_error("A pair of regions with linking edge is somehow "
-                                      "hierarchically invalid now!\n");
-            } else if (!search_result.second.merge_is_hier_valid) {
-                REprintf("ERROR: A pair of regions with linking edge is somehow hierarchically "
-                         "invalid now!\n");
-                throw std::runtime_error("A pair of regions with linking edge is somehow "
-                                      "hierarchically invalid now!\n");
+            if (!search_result.first || !search_result.second.merge_is_hier_valid) {
+                std::ostringstream oss;
+                oss << "LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens: "
+                    << "regions " << edge_region1 << " and " << edge_region2
+                    << " (sizes " << edge_region1_size << " and " << edge_region2_size
+                    << ") share the linking edge (" << edge_pair.vertex1 << ", "
+                    << edge_pair.vertex2 << ") but ";
+                if (!search_result.first) {
+                    oss << "the pair is not in the plan multigraph. Either the regions are "
+                        << "not adjacent or merging them violates a hard constraint.\n";
+                } else {
+                    oss << "merging them is not hierarchically valid with respect to the "
+                        << "administrative units.\n";
+                }
+                oss << debug_string(true);
+                throw std::runtime_error(oss.str());
             }
 
             // check if we need to recompute selection probability
@@ -387,12 +405,15 @@ LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens(
             }
 
             if (DEBUG_L_EDGE_PLANS_VERBOSE && std::isinf(edge_pair.log_prob)) {
-                REprintf("Error Infinite Prob!\n");
-                REprintf("Edge (%d, %d) | Region (%d, %d) | Size (%d, %d) | Log Prob %f \n",
-                         edge_pair.vertex1, edge_pair.vertex2, edge_region1, edge_region2,
-                         edge_region1_size, edge_region2_size, edge_pair.log_prob);
-                Rprint(true);
-                throw std::runtime_error("INFINITE PROB!\n");
+                std::ostringstream oss;
+                oss << "LinkingEdgePlan::get_valid_adj_regions_and_eff_log_boundary_lens: "
+                    << "infinite log splitting probability " << edge_pair.log_prob
+                    << " for the linking edge (" << edge_pair.vertex1 << ", "
+                    << edge_pair.vertex2 << ") between regions " << edge_region1 << " and "
+                    << edge_region2 << " (sizes " << edge_region1_size << " and "
+                    << edge_region2_size << ").\n"
+                    << debug_string(true);
+                throw std::runtime_error(oss.str());
             }
 
             if (num_regions > 2) {
@@ -485,10 +506,15 @@ std::vector<std::pair<RegionID, RegionID>> LinkingEdgePlan::get_valid_smc_merge_
             // sanity check that we never get invalid pair
             auto search_result = plan_multigraph.pair_map.get_value(edge_region1, edge_region2);
             if (!search_result.first) {
-                REprintf("A pair of regions with linking edge is somehow hierarchically "
-                         "invalid now!\n");
-                throw std::runtime_error("A pair of regions with linking edge is somehow "
-                                      "hierarchically invalid now!\n");
+                std::ostringstream oss;
+                oss << "LinkingEdgePlan::get_valid_smc_merge_regions: regions " << edge_region1
+                    << " and " << edge_region2 << " (sizes " << edge_region1_size << " and "
+                    << edge_region2_size << ") share the linking edge (" << edge_pair.vertex1
+                    << ", " << edge_pair.vertex2 << ") but the pair is not in the plan "
+                    << "multigraph. Either the regions are not adjacent or merging them "
+                    << "violates a hard constraint.\n"
+                    << debug_string(true);
+                throw std::runtime_error(oss.str());
             }
 
             // add
@@ -535,13 +561,16 @@ LinkingEdgePlan::attempt_to_get_valid_mergesplit_pairs(
             // sanity check that we never get invalid pair
             auto search_result = plan_multigraph.pair_map.get_value(edge_region1, edge_region2);
             if (!search_result.first) {
-                Rprint(true);
-                plan_multigraph.Rprint();
-                REprintf("Getting Mergesplit Pairs: the pair of regions (%d, %d) with linking "
-                         "edge is somehow hierarchically invalid now!\n",
-                         edge_region1, edge_region2);
-                throw std::runtime_error("Getting Mergesplit Pairs: A pair of regions with "
-                                      "linking edge is somehow hierarchically invalid now!\n");
+                std::ostringstream oss;
+                oss << "LinkingEdgePlan::attempt_to_get_valid_mergesplit_pairs: regions "
+                    << edge_region1 << " and " << edge_region2 << " (sizes "
+                    << edge_region1_size << " and " << edge_region2_size
+                    << ") share the linking edge (" << edge_pair.vertex1 << ", "
+                    << edge_pair.vertex2 << ") but the pair is not in the plan multigraph. "
+                    << "Either the regions are not adjacent or merging them violates a hard "
+                    << "constraint.\n"
+                    << debug_string(true) << plan_multigraph.debug_string();
+                throw std::runtime_error(oss.str());
             }
 
             valid_adj_region.push_back({edge_region1, edge_region2});

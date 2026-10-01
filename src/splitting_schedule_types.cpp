@@ -13,6 +13,7 @@
 #include <cmath>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <string>
 
 constexpr bool DEBUG_SPLITTING_SCHEDULES_VERBOSE = false;
@@ -199,26 +200,42 @@ DistrictOnlyMMDSplittingSchedule::DistrictOnlyMMDSplittingSchedule(
                         district_seat_sizes) {
 
     // right now only ranges are supported
+    auto not_a_range_error = [&]() {
+        std::ostringstream oss;
+        oss << "For multi-member districting with district only splits the district seat "
+            << "sizes must be a consecutive range of sizes with no gaps, but got sizes: ";
+        for (int const size : district_seat_sizes) oss << size << " ";
+        oss << "\n";
+        return std::runtime_error(oss.str());
+    };
     int cur_index = 0;
     for (int i = smallest_district_size; i < largest_district_size; i++) {
         if (district_seat_sizes[cur_index] != i) {
-            throw std::runtime_error("For MMD only ranges of sizes are supported!\n");
+            throw not_a_range_error();
         }
         cur_index++;
     }
     if (largest_district_size - smallest_district_size + 1 != district_seat_sizes.size()) {
-        throw std::runtime_error("For MMD only ranges of sizes are supported!\n");
+        throw not_a_range_error();
     }
 
     // For a range it must be smallest_district_size <= total_seats/ndists <=
     // largest_district_size
     if (smallest_district_size > total_seats / static_cast<double>(ndists)) {
-        throw std::runtime_error("It is not possible to split this map with the given district "
-                              "sizes! The district sizes are too large\n");
+        std::ostringstream oss;
+        oss << "It is not possible to split " << total_seats << " seats into " << ndists
+            << " districts: the smallest district size (" << smallest_district_size
+            << " seats) is larger than the average of " << total_seats / static_cast<double>(ndists)
+            << " seats per district.\n";
+        throw std::runtime_error(oss.str());
     }
     if (largest_district_size < total_seats / static_cast<double>(ndists)) {
-        throw std::runtime_error("It is not possible to split this map with the given district "
-                              "sizes! There's not enough regions\n");
+        std::ostringstream oss;
+        oss << "It is not possible to split " << total_seats << " seats into " << ndists
+            << " districts: the largest district size (" << largest_district_size
+            << " seats) is smaller than the average of " << total_seats / static_cast<double>(ndists)
+            << " seats per district.\n";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -230,6 +247,18 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
     // which is the number of districts minus the number of districts currently
     int remainder_ndists = ndists - presplit_ndists;
     // Define largest and smallest possible remainder sizes
+
+    // the context shared by the errors below
+    auto schedule_error = [&](std::string const &problem) {
+        std::ostringstream oss;
+        oss << "DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_size: "
+            << problem << "\n"
+            << "split_num=" << split_num << ", presplit_num_regions=" << presplit_num_regions
+            << ", total_seats=" << total_seats << ", ndists=" << ndists
+            << ", district sizes " << smallest_district_size << " to " << largest_district_size
+            << ", remainder region must hold " << remainder_ndists << " districts.\n";
+        return std::runtime_error(oss.str());
+    };
 
     // the biggest remainder size assumes we split smallest district each time
     int presplit_biggest_possible_size = total_seats - presplit_ndists * smallest_district_size;
@@ -253,9 +282,10 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
         presplit_biggest_possible_size--;
         if (presplit_biggest_possible_size <= 0 ||
             presplit_biggest_possible_size >= total_seats) {
-            REprintf("WE'RE BREAKING FREE!\n");
-            throw std::runtime_error(
-                "We got MMD remainder size issue with the presplit biggest possible size!\n");
+            throw schedule_error(
+                "no remainder region size can be split into the remaining districts when "
+                "searching down from the biggest possible remainder size (reached " +
+                std::to_string(presplit_biggest_possible_size) + " seats).");
         }
     }
     // REprintf("Biggest Remainder Size: %d\n", presplit_biggest_possible_size);
@@ -276,19 +306,21 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
             REprintf("%d\n", presplit_smallest_possible_size);
         presplit_smallest_possible_size++;
         if (presplit_smallest_possible_size >= total_seats) {
-            REprintf("WE'RE BREAKING FREE!\n");
-            throw std::runtime_error("We got MMD remainder size issue!\n");
+            throw schedule_error(
+                "no remainder region size can be split into the remaining districts when "
+                "searching up from the smallest possible remainder size (reached " +
+                std::to_string(presplit_smallest_possible_size) + " seats).");
         }
     }
     // REprintf("Smallest Remainder Size: %d\n", presplit_smallest_possible_size);
 
     // Don't think this should be possible but just adding a flag
     if (presplit_biggest_possible_size < largest_district_size) {
-        // This 
-        REprintf("BIG PROBLEM: Biggest remainder size is %d but that is less than largest "
-                 "district %d!\n",
-                 presplit_biggest_possible_size, largest_district_size);
-        throw std::runtime_error("Error in MMD Split district only!!\n");
+        throw schedule_error(
+            "the biggest possible remainder region size (" +
+            std::to_string(presplit_biggest_possible_size) +
+            " seats) is less than the largest district size (" +
+            std::to_string(largest_district_size) + " seats).");
     }
 
     // reset all regions split and merge booleans
@@ -579,9 +611,10 @@ get_splitting_schedule(const int num_splits, const int ndists, const int total_s
         return std::make_unique<AnyRegionMMDSplittingSchedule>(num_splits, ndists, total_seats,
                                                                district_seat_sizes);
     } else if (schedule_type == SplittingSizeScheduleType::CustomSizes) {
-        Rprintf("Not implemented!");
-        throw std::runtime_error("Schedule not impliemented yet!");
+        throw std::runtime_error("The custom sizes splitting schedule is not implemented yet.");
     } else {
-        throw std::runtime_error("Schedule not implemented yet!");
+        throw std::runtime_error("No splitting schedule is implemented for splitting schedule "
+                                 "type " +
+                                 std::to_string(static_cast<int>(schedule_type)) + ".");
     }
 }

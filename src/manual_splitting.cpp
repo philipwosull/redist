@@ -230,7 +230,8 @@ Rcpp::List perform_a_valid_multidistrict_split(Rcpp::List adj_list, const Rcpp::
                                          Rcpp::IntegerMatrix const &region_sizes,
                                          int split_dval_min, int split_dval_max,
                                          bool split_district_only, bool verbose, int k_param) {
-    throw Rcpp::exception("Not working right now!");
+    throw Rcpp::exception("perform_a_valid_multidistrict_split is currently disabled and "
+                          "not available.");
     if (split_dval_min > split_dval_max)
         throw Rcpp::exception("Split min must be less than split max!\n");
 

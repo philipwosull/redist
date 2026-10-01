@@ -187,7 +187,9 @@ class PureMSSplittingSchedule : public SplittingSchedule {
 
     void set_potential_cut_sizes_for_each_valid_size(int split_num,
                                                      int presplit_num_regions) override {
-        throw std::runtime_error("Dont call this method for pure MS!");
+        throw std::runtime_error(
+            "PureMSSplittingSchedule::set_potential_cut_sizes_for_each_valid_size was called, "
+            "but a pure mergesplit schedule never splits plans with SMC so has no cut sizes.");
     };
 };
 

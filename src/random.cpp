@@ -264,8 +264,9 @@ void partition_vec(std::vector<double> &x, std::vector<int> &idxs, int left, int
 // TESTED
 int global_rng_select_k(std::vector<double> x, int k) {
     if (k > x.size()) {
-        REprintf("k=%d bigger than number of edges=%d!\n", k, (int)x.size());
-        throw Rcpp::exception("k bigger than number of edges!\n");
+        throw std::runtime_error("global_rng_select_k: k=" + std::to_string(k) +
+                                 " is bigger than the number of edges=" +
+                                 std::to_string(x.size()) + ".\n");
     }
     int right = x.size() - 1;
     int left = 0;
