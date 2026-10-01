@@ -1561,7 +1561,7 @@ Rcpp::List run_redist_smc(
     Rcpp::List const &control, // control has pop temper, and k parameter value, and splitting method are allowed
     Rcpp::List const &constraints, // constraints
     int const verbosity, int const diagnostic_level, Rcpp::IntegerMatrix const &region_id_mat,
-    Rcpp::IntegerMatrix const &region_sizes_mat, std::vector<double> log_weights) {
+    Rcpp::IntegerMatrix const &region_sizes_mat) {
     if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
         REprintf("Inside c++ code!\n");
     bool diagnostic_mode = diagnostic_level == 1;
@@ -1755,15 +1755,21 @@ Rcpp::List run_redist_smc(
         pool.setNumThreads(0);
     }
 
+    // The log weights of the plans carried between steps. Any initial weights
+    // are only used to sample the parents of the first step so the particles
+    // after that are equally weighted and these start at 0.
+    std::vector<double> log_weights(nsims, 0.0);
+
     // Now we add everything here to a scope since it won't be needed for the end
-    // create the ensemble
+    // create the ensemble, using any saved forests and linking edges passed in
     std::unique_ptr<PlanEnsemble> plan_ensemble_ptr = get_plan_ensemble_ptr(
         map_params, *splitting_schedule_ptr, initial_num_regions, nsims, sampling_space,
-        region_id_mat, region_sizes_mat, rng_states, pool, verbosity);
+        region_id_mat, region_sizes_mat, rng_states, pool, verbosity,
+        get_initial_augmented_samples(control, map_params, nsims));
 
     // compute the log of the unnormalized density of the entire map 
     // which is log spanning tree count  - score 
-    double log_blank_map_target_density;
+    double log_blank_map_target_density = NA_REAL;
 
     {
         // Ensemble of dummy plans for copying
@@ -1792,9 +1798,14 @@ Rcpp::List run_redist_smc(
             }
         }
 
-        // Start off all the unnormalized weights at at exp of log weights
-        std::vector<double> unnormalized_sampling_weights(nsims);
-        fill_shifted_exp_weights(log_weights, 1.0, unnormalized_sampling_weights);
+        // The first step samples parents with the initial weights if they are
+        // passed in through control (assumed to already be normalized) else
+        // all plans are weighted equally
+        std::vector<double> unnormalized_sampling_weights(nsims, 1.0);
+        if (control.containsElementNamed("initial_weights")) {
+            unnormalized_sampling_weights =
+                Rcpp::as<std::vector<double>>(control["initial_weights"]);
+        }
         // Reused each SMC step to collect that step's incremental weights before
         // they are copied into the diagnostics matrix.
         std::vector<double> log_incremental_weights(nsims);

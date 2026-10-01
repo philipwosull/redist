@@ -120,13 +120,20 @@ LinkingEdgePlan::LinkingEdgePlan(
     IntPlanAttribute &this_plan_region_pops, IntPlanAttribute &this_plan_order_added,
     PlanEdgeBits &this_plan_forest_edge_bits,
     TreeSplitter const &tree_splitter, USTSampler &ust_sampler, PlanMultigraph &plan_multigraph,
-    Graph &region_graph, RNGState &rng_state, const Rcpp::List &initial_forest_adj_list,
-    const std::vector<std::array<double, 3>> &input_initial_linking_edges)
+    Graph &region_graph, RNGState &rng_state, EdgeBitWord const *initial_forest_words,
+    std::vector<LinkingEdge> const *initial_linking_edges)
     : Plan(num_regions, pop, this_plan_region_ids, this_plan_region_sizes,
            this_plan_region_pops, this_plan_order_added, this_plan_forest_edge_bits) {
 
-    if (initial_forest_adj_list.size() > 1) {
-        throw std::runtime_error("Input Forest list not supported right now\n");
+    // reserve space for ndists - 1 linking edges
+    linking_edges.reserve(ndists - 1);
+
+    if (initial_forest_words != nullptr && initial_linking_edges != nullptr) {
+        // use the inputted forest and linking edges as is. The linking edge log
+        // probabilities are marked invalid so they are recomputed when needed
+        forest_edges.copy_words(initial_forest_words);
+        linking_edges.assign(initial_linking_edges->begin(), initial_linking_edges->end());
+        return;
     } else {
         // else just build a forest at random
         for (size_t region_id = 0; region_id < num_regions; region_id++) {
@@ -161,13 +168,10 @@ LinkingEdgePlan::LinkingEdgePlan(
     }
 
 
-    auto initial_linking_edges =
+    auto random_linking_edges =
         get_intial_linking_edges(plan_multigraph, region_ids, num_regions, region_graph);
 
-    // reserve space for ndists - 1 linking edges
-    linking_edges.reserve(ndists - 1);
-
-    for (auto const a_pair : initial_linking_edges) {
+    for (auto const a_pair : random_linking_edges) {
         // REprintf("(%d, %d)\n", a_pair.first, a_pair.second);
         linking_edges.push_back({a_pair.first, a_pair.second});
     }

@@ -97,6 +97,11 @@ class EdgeBitset {
         edge_bits.copy(other.edge_bits);
     }
 
+    // copies size_words() packed words starting at `words` into this forest
+    void copy_words(EdgeBitWord const *words) {
+        std::copy(words, words + edge_bits.size(), edge_bits.begin());
+    }
+
     bool test_edge_id(EdgeID edge_id) const {
         if constexpr (perf_config::supposedly_safe_input_checks){
             int const word = word_index(edge_id);

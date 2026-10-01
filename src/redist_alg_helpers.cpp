@@ -185,7 +185,8 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
                            Rcpp::IntegerMatrix const &plans_mat,
                            Rcpp::IntegerMatrix const &region_sizes_mat,
                            std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool,
-                           int const verbosity)
+                           int const verbosity,
+                           InitialAugmentedSamples const &initial_augmented_samples)
     // `nsims` is the first member, so this check runs before any buffer below is sized
     : nsims(check_ensemble_dims(map_params, nsims, sampling_space)), V(map_params.V),
       ndists(map_params.ndists),
@@ -322,6 +323,17 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
         std::copy(region_sizes_mat.begin() + i * num_regions,
                   region_sizes_mat.begin() + (i + 1) * num_regions, plan_sizes.begin());
 
+        // the saved forest and linking edges for this plan if there are any
+        EdgeBitWord const *initial_forest_words =
+            initial_augmented_samples.forest_words.empty()
+                ? nullptr
+                : initial_augmented_samples.forest_words.data() +
+                      static_cast<std::size_t>(i) * num_forest_edge_bit_words_per_plan;
+        std::vector<LinkingEdge> const *initial_linking_edges =
+            initial_augmented_samples.linking_edges.empty()
+                ? nullptr
+                : &initial_augmented_samples.linking_edges[i];
+
         // create the plans
         if (use_graph_space) {
             plan_ptr_vec[i] =
@@ -334,15 +346,15 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
         } else if (use_forest_space) {
             plan_ptr_vec[i] = std::make_unique<ForestPlan>(
                 ndists, num_regions, map_params.pop, plan_region_ids, plan_sizes, plan_pops,
-                plan_region_order_added, plan_forest_edge_bits, 
+                plan_region_order_added, plan_forest_edge_bits,
                 ust_sampler_buffers[thread_id],
-                rng_states[thread_id]);
+                rng_states[thread_id], initial_forest_words);
         } else if (use_linking_edge_space) {
             plan_ptr_vec[i] = std::make_unique<LinkingEdgePlan>(
                 ndists, num_regions, map_params.pop, plan_region_ids, plan_sizes, plan_pops,
-                plan_region_order_added, plan_forest_edge_bits, 
+                plan_region_order_added, plan_forest_edge_bits,
                 *tree_ptr, ust_sampler, plan_multigraph, region_graph,
-                rng_states[thread_id]);
+                rng_states[thread_id], initial_forest_words, initial_linking_edges);
         } else {
             throw Rcpp::exception("This plan type not supported!\n");
         }
@@ -619,6 +631,47 @@ Rcpp::DataFrame PlanEnsemble::get_R_linking_edges(GraphEdgeIndex const &edge_ind
                                    Rcpp::_["log_prob"] = log_prob);
 }
 
+InitialAugmentedSamples get_initial_augmented_samples(Rcpp::List const &control,
+                                                      MapParams const &map_params,
+                                                      int const nsims) {
+    InitialAugmentedSamples initial_augmented_samples;
+
+    if (control.containsElementNamed("initial_spanning_forests")) {
+        Rcpp::LogicalMatrix const forests = control["initial_spanning_forests"];
+        int const num_edge_bit_words = map_params.num_edge_bit_words;
+        initial_augmented_samples.forest_words.assign(
+            static_cast<std::size_t>(nsims) * num_edge_bit_words, EdgeBitWord{0});
+
+        // same packing as the ensemble, edge id e is bit e % 64 of word e / 64
+        for (int i = 0; i < nsims; ++i) {
+            EdgeBitWord *plan_words = initial_augmented_samples.forest_words.data() +
+                                      static_cast<std::size_t>(i) * num_edge_bit_words;
+            for (int edge_id = 0; edge_id < map_params.num_edges; ++edge_id) {
+                if (forests(edge_id, i) == TRUE) {
+                    plan_words[edge_id / EDGE_BITS_PER_WORD] |=
+                        EdgeBitWord{1} << (edge_id % EDGE_BITS_PER_WORD);
+                }
+            }
+        }
+    }
+
+    if (control.containsElementNamed("initial_linking_edges")) {
+        Rcpp::List const linking_edges = Rcpp::as<Rcpp::List>(control["initial_linking_edges"]);
+        Rcpp::IntegerVector const draw = linking_edges["draw"];
+        Rcpp::IntegerVector const vertex1 = linking_edges["vertex1"];
+        Rcpp::IntegerVector const vertex2 = linking_edges["vertex2"];
+
+        initial_augmented_samples.linking_edges.resize(nsims);
+        for (R_xlen_t k = 0; k < draw.size(); ++k) {
+            // no log probability so it is marked invalid and recomputed when needed
+            initial_augmented_samples.linking_edges.at(draw[k] - 1).emplace_back(vertex1[k],
+                                                                                vertex2[k]);
+        }
+    }
+
+    return initial_augmented_samples;
+}
+
 PlanEnsemble get_plan_ensemble(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
@@ -639,15 +692,17 @@ std::unique_ptr<PlanEnsemble> get_plan_ensemble_ptr(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
     Rcpp::IntegerMatrix const &plans_mat, Rcpp::IntegerMatrix const &region_sizes_mat,
-    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity) {
+    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity,
+    InitialAugmentedSamples const &initial_augmented_samples) {
     if (num_regions == 1) {
-        return std::make_unique<PlanEnsemble>(map_params, 
-            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0), 
+        return std::make_unique<PlanEnsemble>(map_params,
+            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0),
             nsims, sampling_space, pool, verbosity);
     } else {
         return std::make_unique<PlanEnsemble>(map_params, splitting_schedule, num_regions,
                                               nsims, sampling_space, plans_mat,
-                                              region_sizes_mat, rng_states, pool, verbosity);
+                                              region_sizes_mat, rng_states, pool, verbosity,
+                                              initial_augmented_samples);
     }
 }
 

@@ -13,12 +13,13 @@ ForestPlan::ForestPlan(int const ndists, int const num_regions, const std::vecto
                        IntPlanAttribute &this_plan_order_added, 
                        PlanEdgeBits &this_plan_forest_edge_bits,
                        USTSampler &ust_sampler,
-                       RNGState &rng_state, const Rcpp::List &initial_forest_adj_list)
+                       RNGState &rng_state, EdgeBitWord const *initial_forest_words)
     : Plan(num_regions, pop, this_plan_region_ids, this_plan_region_sizes,
            this_plan_region_pops, this_plan_order_added, this_plan_forest_edge_bits) {
 
-    if (initial_forest_adj_list.size() > 1) {
-        throw std::runtime_error("Input Forest list not supported right now\n");
+    if (initial_forest_words != nullptr) {
+        // use the inputted forest as is
+        forest_edges.copy_words(initial_forest_words);
     } else {
         // else just build a forest at random
         for (size_t region_id = 0; region_id < num_regions; region_id++) {
@@ -42,15 +43,15 @@ ForestPlan::ForestPlan(int const ndists, int const num_regions, const std::vecto
                 throw std::runtime_error(oss.str());
             }
         }
-    }
 
-    if constexpr(perf_config::object_integrity_checking){
-        check_forest_equality(
-            ust_sampler.get_undirected_vertex_tree(),
-            forest_edges.get_graph_tree(ust_sampler.map_params.graph_edge_index),
-            ust_sampler.map_params.graph_edge_index,
-            "IN Partial Forest Plan Constructor, checking forest_graph vs forest edges (through get_graph_tree)"
-        );
+        if constexpr(perf_config::object_integrity_checking){
+            check_forest_equality(
+                ust_sampler.get_undirected_vertex_tree(),
+                forest_edges.get_graph_tree(ust_sampler.map_params.graph_edge_index),
+                ust_sampler.map_params.graph_edge_index,
+                "IN Partial Forest Plan Constructor, checking forest_graph vs forest edges (through get_graph_tree)"
+            );
+        }
     }
 
 }

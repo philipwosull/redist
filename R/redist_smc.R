@@ -76,11 +76,13 @@
 #' if `init_particles` is a [redist_plans] object. If `init_particles` are passed
 #' but not `init_seats` then the number of seats will be attempted
 #' to be inferred.
-#' @param init_weights A vector of length `nsims` of unnormalized plan weights
-#' associated with `init_particles`. The weights must all be strictly positive.
-#' If no weights are passed in then they will all be set to 1. If the
-#' `init_plans` were not resampled then it is recommended to pass their weights in.
-#' Not needed if `init_particles` is a [redist_plans] object.
+#' @param init_weights A vector of length `nsims` of plan weights associated
+#' with `init_particles`. The weights must all be strictly positive and are
+#' normalized to sum to 1, so they may be passed in on any scale. If no weights
+#' are passed in then the plans are weighted equally, unless `init_particles` is
+#' a [redist_plans] object that was not resampled, in which case its weights
+#' are used. If `init_particles` is a matrix of plans that were not resampled
+#' then it is recommended to pass their weights in.
 #' @param sampling_space The space to sample the plans on. This does not affect
 #' the plans output by the function but the sample space used can have a large
 #' impact on computational cost/runtime and convergence. Current spaces supported
@@ -364,7 +366,7 @@ redist_smc <- function(
     )
     init_particles <- initial_plan_params$init_particles
     init_seats <- initial_plan_params$init_seats
-    initial_log_weights <- initial_plan_params$initial_log_weights
+    initial_weights <- initial_plan_params$initial_weights
     init_num_regions <- initial_plan_params$init_num_regions
 
     if (is.null(n_steps)) {
@@ -569,6 +571,26 @@ redist_smc <- function(
     # add the splitting parameters
     cpp_control_list <- c(cpp_control_list, forward_kernel_params)
 
+    # normalized initial plan weights, if not passed in all plans start with
+    # the same weight
+    if (!is.null(initial_weights)) {
+        cpp_control_list$initial_weights <- initial_weights
+    }
+
+    # Initialize the plans with their saved spanning forests (and linking
+    # edges) if the sampling space can use them, else they are drawn at random.
+    # Spanning forest space ignores any linking edges.
+    init_augmented_samples <- initial_plan_params$init_augmented_samples
+    if (!is.null(init_augmented_samples)) {
+        if (sampling_space == FOREST_SPACE_SAMPLING) {
+            cpp_control_list$initial_spanning_forests <- init_augmented_samples$spanning_forests
+        } else if (sampling_space == LINKING_EDGE_SPACE_SAMPLING &&
+                   !is.null(init_augmented_samples$linking_edges)) {
+            cpp_control_list$initial_spanning_forests <- init_augmented_samples$spanning_forests
+            cpp_control_list$initial_linking_edges <- init_augmented_samples$linking_edges
+        }
+    }
+
     t1 <- Sys.time()
     all_out <- foreach(
         chain = seq_len(runs),
@@ -606,8 +628,7 @@ redist_smc <- function(
                 verbosity = run_verbosity,
                 diagnostic_level = diagnostic_level,
                 region_id_mat = init_particles,
-                region_sizes_mat = init_seats,
-                log_weights = initial_log_weights
+                region_sizes_mat = init_seats
             )
 
             if (length(algout) == 0) {
@@ -995,8 +1016,12 @@ get_splitting_schedule <- function(split_params, districting_scheme) {
 #' @returns A list with the following
 #'     - `init_particles`: A 0-indexed initial plans matrix
 #'     - `init_seats`: A matrix of region seat counts
-#'     - `initial_log_weights`: A vector of initial log weights
+#'     - `initial_weights`: A vector of initial weights normalized to sum to 1,
+#'     or `NULL` if all plans start with the same weight
 #'     - `init_num_regions`: The number of initial regions
+#'     - `init_augmented_samples`: The saved spanning forests and linking edges
+#'     of `init_particles` if it is a [redist_plans] object that has them, else
+#'     `NULL`
 #' @noRd
 get_init_plan_params <- function(
     nsims,
@@ -1007,6 +1032,9 @@ get_init_plan_params <- function(
     init_seats,
     init_weights
 ) {
+    # saved spanning forests and linking edges of the initial plans, if any
+    init_augmented_samples <- NULL
+
     # handle particle, seats, and weights inits
     if (is.null(init_particles)) {
         # if no initial plans passed in then create empty matrix
@@ -1015,18 +1043,20 @@ get_init_plan_params <- function(
         init_num_regions <- 1L
     } else {
         if (inherits(init_particles, "redist_plans")) {
+            init_particles <- subset_sampled(init_particles)
             if (is.null(init_seats)) {
                 init_seats <- get_seats_matrix(init_particles)
             }
             if (is.null(init_weights)) {
-                # get weights if not resampled, else just set all equal to 1
+                # get weights if not resampled, else leave them equal. The
+                # stored weights of resampled plans are the weights from before
+                # resampling so they don't correspond to the plans.
                 init_plan_weights <- get_plans_weights(init_particles)
                 if (isFALSE(attr(init_plan_weights, "resampled"))) {
-                    init_weights <- rep(1, nsims)
-                } else {
                     init_weights <- as.vector(init_plan_weights)
                 }
             }
+            init_augmented_samples <- attr(init_particles, "augmented_samples")
             init_particles <- get_plans_matrix(init_particles)
         } else if (is.matrix(init_particles)) {
             if (is.null(init_seats)) {
@@ -1076,16 +1106,23 @@ get_init_plan_params <- function(
         "All elements of {.arg init_weights} must be of length positive!"
       )
         }
+
+        if(sum(init_weights) != 1){
+            initial_weights <- init_weights / sum(init_weights)
+        }else{
+            initial_weights <- init_weights
+        }
     } else {
-        init_weights <- rep(1, nsims)
+        # all plans start with the same weight
+        initial_weights <- NULL
     }
-    initial_log_weights <- log(init_weights)
 
     init_plans_params <- list(
     init_particles = init_particles,
     init_seats = init_seats,
-    initial_log_weights = initial_log_weights,
-    init_num_regions = init_num_regions
+    initial_weights = initial_weights,
+    init_num_regions = init_num_regions,
+    init_augmented_samples = init_augmented_samples
   )
 
     init_plans_params

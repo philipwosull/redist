@@ -267,6 +267,25 @@ get_tree_splitter_ptrs(MapParams const &map_params, SplittingMethodType const sp
 int check_ensemble_dims(MapParams const &map_params, int const nsims,
                         SamplingSpace const sampling_space);
 
+// Saved spanning forests and linking edges (from `return_augmented_samples`)
+// used to initialize partial plans instead of drawing them at random. They
+// are not checked. Empty members mean draw at random.
+struct InitialAugmentedSamples {
+    // num_edge_bit_words packed words per plan, plan i's words starting at
+    // i * num_edge_bit_words
+    std::vector<EdgeBitWord> forest_words;
+    // the linking edges of each plan
+    std::vector<std::vector<LinkingEdge>> linking_edges;
+};
+
+// Reads the saved spanning forests (a num_edges by nsims logical matrix) and
+// linking edges (a long data frame with 1-indexed `draw` and 0-indexed
+// `vertex1` and `vertex2` columns) out of the `control` list elements
+// `initial_spanning_forests` and `initial_linking_edges` if present.
+InitialAugmentedSamples get_initial_augmented_samples(Rcpp::List const &control,
+                                                      MapParams const &map_params,
+                                                      int const nsims);
+
 // lightweight container for plans
 class PlanEnsemble {
 
@@ -280,7 +299,8 @@ class PlanEnsemble {
                  int const num_regions, int const nsims, SamplingSpace const sampling_space,
                  Rcpp::IntegerMatrix const &plans_mat,
                  Rcpp::IntegerMatrix const &region_sizes_mat, std::vector<RNGState> &rng_states,
-                 RcppThread::ThreadPool &pool, int const verbosity = 3);
+                 RcppThread::ThreadPool &pool, int const verbosity = 3,
+                 InitialAugmentedSamples const &initial_augmented_samples = {});
 
     int const nsims;
     int const V;
@@ -346,7 +366,8 @@ std::unique_ptr<PlanEnsemble> get_plan_ensemble_ptr(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
     Rcpp::IntegerMatrix const &plans_mat, Rcpp::IntegerMatrix const &region_sizes_mat,
-    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity);
+    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity,
+    InitialAugmentedSamples const &initial_augmented_samples = {});
 
 
 // converts trees to compact edge list form 

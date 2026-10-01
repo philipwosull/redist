@@ -200,3 +200,83 @@ test_that("full diagnostics store named per step forests and linking edges", {
         }
     }
 })
+
+# vertices whose region in `child` is exactly a region of `parent`
+untouched_vertices <- function(child, parent) {
+    untouched <- logical(length(child))
+    for (vertices in split(seq_along(child), child)) {
+        parent_region <- unique(parent[vertices])
+        if (length(parent_region) == 1 && sum(parent == parent_region) == length(vertices)) {
+            untouched[vertices] <- TRUE
+        }
+    }
+    untouched
+}
+
+# Restarts `init` for one step and returns, for each new plan, whether the
+# forest on its untouched regions and the linking edges between them are the
+# same as its parent's saved ones
+restart_keeps_augmented_samples <- function(init, init_aug, sampling_space) {
+    restarted <- redist_smc(
+        iowa_map, 30, init_particles = init, n_steps = 1, sampling_space = sampling_space,
+        silent = TRUE, resample = FALSE, diagnostics = "all",
+        control = list(return_augmented_samples = TRUE)
+    )
+    restarted_aug <- attr(restarted, "augmented_samples")
+    parents <- attr(restarted, "internal_diagnostics")[[1]]$parent_index_mat[, 1]
+    init_m <- get_plans_matrix(init)
+    restarted_m <- get_plans_matrix(subset_sampled(restarted))
+
+    forests_kept <- linking_edges_kept <- logical(ncol(restarted_m))
+    for (i in seq_len(ncol(restarted_m))) {
+        parent <- parents[i]
+        untouched <- untouched_vertices(restarted_m[, i], init_m[, parent])
+        untouched_edges <- untouched[iowa_edges[, 1]] & untouched[iowa_edges[, 2]]
+        forests_kept[i] <- identical(
+            init_aug$spanning_forests[untouched_edges, parent],
+            restarted_aug$spanning_forests[untouched_edges, i]
+        )
+        if (!is.null(init_aug$linking_edges)) {
+            parent_edges <- init_aug$linking_edges[init_aug$linking_edges$draw == parent, ]
+            parent_edges <- parent_edges[
+                untouched[parent_edges$vertex1 + 1] & untouched[parent_edges$vertex2 + 1],
+            ]
+            restarted_edges <- restarted_aug$linking_edges[restarted_aug$linking_edges$draw == i, ]
+            linking_edges_kept[i] <- all(parent_edges$edge_id %in% restarted_edges$edge_id)
+        }
+    }
+    list(forests = forests_kept, linking_edges = linking_edges_kept)
+}
+
+test_that("restarting from partial plans uses their augmented samples", {
+    forest_init <- redist_smc(
+        iowa_map, 30, n_steps = 2, sampling_space = "spanning_forest", silent = TRUE,
+        control = list(return_augmented_samples = TRUE)
+    )
+    forest_aug <- attr(forest_init, "augmented_samples")
+    kept <- restart_keeps_augmented_samples(forest_init, forest_aug, "spanning_forest")
+    expect_true(all(kept$forests))
+
+    # without them the forests are drawn at random
+    no_aug <- forest_init
+    attr(no_aug, "augmented_samples") <- NULL
+    kept <- restart_keeps_augmented_samples(no_aug, forest_aug, "spanning_forest")
+    expect_false(any(kept$forests))
+
+    # linking edge space needs linking edges, so forest space samples are not used
+    kept <- restart_keeps_augmented_samples(forest_init, forest_aug, "linking_edge")
+    expect_false(any(kept$forests))
+
+    linking_init <- redist_smc(
+        iowa_map, 30, n_steps = 2, sampling_space = "linking_edge", silent = TRUE,
+        control = list(return_augmented_samples = TRUE)
+    )
+    linking_aug <- attr(linking_init, "augmented_samples")
+    kept <- restart_keeps_augmented_samples(linking_init, linking_aug, "linking_edge")
+    expect_true(all(kept$forests))
+    expect_true(all(kept$linking_edges))
+
+    # spanning forest space uses the forests and ignores the linking edges
+    kept <- restart_keeps_augmented_samples(linking_init, linking_aug, "spanning_forest")
+    expect_true(all(kept$forests))
+})

@@ -136,7 +136,7 @@ validate_constraints <- function(map, constraints, compactness = 1L) {
       ">" = "Adjust using {.arg compactness} instead."
     ))
     }
-    if (any(c("poslby") %in% names(constraints)) && compactness == 1) {
+    if (any(c("polsby") %in% names(constraints)) && compactness == 1) {
         cli::cli_warn(
       "{.var polsby} constraint found in {.arg constraints}
                  with {.arg compactness == 1). This may disrupt efficient sampling."

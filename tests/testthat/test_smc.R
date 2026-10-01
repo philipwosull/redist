@@ -489,3 +489,53 @@ test_that("est_norm_unbiased handles a hard thresholding constraint", {
     expect_equal(pooled, truth, tolerance = 0.01)
     expect_lt(pooled, log(sum(exp(log_st_all))))
 })
+
+test_that("initial plan weights are normalized and default to equal", {
+    iowa_map <- suppressMessages(redist_map(iowa, existing_plan = cd_2010, pop_tol = 0.05))
+    init_weights_of <- function(init_particles, init_weights = NULL) {
+        get_init_plan_params(
+            10, attr(iowa_map, "nseats"), iowa_map$pop, attr(iowa_map, "pop_bounds"),
+            init_particles, NULL, init_weights
+        )$initial_weights
+    }
+
+    # no initial plans or weights means all plans start equally weighted
+    expect_null(init_weights_of(NULL))
+
+    resampled <- redist_smc(iowa_map, 10, n_steps = 2, silent = TRUE)
+    expect_null(init_weights_of(resampled))
+
+    # the weights of plans that were not resampled are used, normalized
+    not_resampled <- redist_smc(iowa_map, 10, n_steps = 2, silent = TRUE, resample = FALSE)
+    stored_weights <- as.vector(get_plans_weights(not_resampled))
+    expect_equal(init_weights_of(not_resampled), stored_weights / sum(stored_weights))
+
+    # passed in weights are used, normalized
+    expect_equal(init_weights_of(not_resampled, 1:10), 1:10 / sum(1:10))
+})
+
+test_that("initial plan weights are only used to sample the first step's parents", {
+    iowa_map <- suppressMessages(redist_map(iowa, existing_plan = cd_2010, pop_tol = 0.05))
+    init <- redist_smc(iowa_map, 20, n_steps = 2, silent = TRUE)
+
+    # nearly all the weight on plan 3 means every first step parent is plan 3
+    restarted <- redist_smc(
+        iowa_map, 20, init_particles = init, init_weights = c(1e-12, 1e-12, 1, rep(1e-12, 17)),
+        n_steps = 1, silent = TRUE, resample = FALSE
+    )
+    parents <- attr(restarted, "internal_diagnostics")[[1]]$parent_index_mat[, 1]
+    expect_true(all(parents == 3))
+
+    # with seq_alpha the initial weights are not carried into the final weights,
+    # which are then just the incremental weights of the one step
+    restarted <- redist_smc(
+        iowa_map, 20, init_particles = init, init_weights = seq_len(20),
+        n_steps = 1, seq_alpha = 0.5, silent = TRUE, resample = FALSE
+    )
+    log_incremental_weights <- attr(restarted, "internal_diagnostics")[[1]]$log_incremental_weights_mat[, 1]
+    log_final_weights <- log(get_plans_weights(subset_sampled(restarted)))
+    expect_equal(
+        as.vector(log_final_weights - mean(log_final_weights)),
+        log_incremental_weights - mean(log_incremental_weights)
+    )
+})

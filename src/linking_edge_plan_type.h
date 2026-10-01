@@ -21,7 +21,10 @@ class LinkingEdgePlan : public Plan {
                     IntPlanAttribute &this_plan_order_added,
                     PlanEdgeBits &this_plan_forest_edge_bits);
 
-    // constructor for partial plan (more than 1 region)
+    // constructor for partial plan (more than 1 region). If
+    // `initial_forest_words` and `initial_linking_edges` are passed the forest
+    // is copied from those packed words and the linking edges are used as is
+    // (both unchecked), otherwise they are drawn at random.
     LinkingEdgePlan(int const ndists, int const num_regions, const std::vector<unsigned int> &pop,
                     PlanVector &this_plan_region_ids, RegionSizes &this_plan_region_sizes,
                     IntPlanAttribute &this_plan_region_pops,
@@ -29,8 +32,8 @@ class LinkingEdgePlan : public Plan {
                     TreeSplitter const &tree_splitter,
                     USTSampler &ust_sampler, PlanMultigraph &plan_multigraph,
                     Graph &region_graph, RNGState &rng_state,
-                    const Rcpp::List &initial_forest_adj_list = {},
-                    const std::vector<std::array<double, 3>> &input_initial_linking_edges = {});
+                    EdgeBitWord const *initial_forest_words = nullptr,
+                    std::vector<LinkingEdge> const *initial_linking_edges = nullptr);
 
 
     std::string linking_edges_to_string() const;

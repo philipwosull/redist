@@ -22,15 +22,17 @@ class ForestPlan : public Plan {
                this_plan_region_pops, this_plan_order_added, this_plan_forest_edge_bits) {
     };
 
-    // constructor for partial plan (more than 1 region)
+    // constructor for partial plan (more than 1 region). If
+    // `initial_forest_words` is passed the forest is copied from those packed
+    // words (unchecked), otherwise a tree is drawn on each region at random.
     ForestPlan(int const ndists, int const num_regions, const std::vector<unsigned int> &pop,
                        PlanVector &this_plan_region_ids, RegionSizes &this_plan_region_sizes,
                        IntPlanAttribute &this_plan_region_pops,
-                       IntPlanAttribute &this_plan_order_added, 
+                       IntPlanAttribute &this_plan_order_added,
                        PlanEdgeBits &this_plan_forest_edge_bits,
                        USTSampler &ust_sampler,
-                       RNGState &rng_state, 
-               const Rcpp::List &initial_forest_adj_list = {});
+                       RNGState &rng_state,
+               EdgeBitWord const *initial_forest_words = nullptr);
 
     // We now need to keep track of trees as undirected graphs
 
