@@ -271,7 +271,13 @@ Rcpp::List ms_plans(
             }
             if (scoring_function.total_soft_constraints > 0) {
                 Rcpp::Rcout << "Applying " << scoring_function.total_soft_constraints
-                      << " constraints" << std::endl;
+                      << " soft constraints." << std::endl;
+            }
+            int const num_hard_constraints = scoring_function.num_hard_region_constraints +
+                                             scoring_function.num_hard_plan_constraints;
+            if (num_hard_constraints > 0) {
+                Rcpp::Rcout << "Applying " << num_hard_constraints << " hard constraints."
+                      << std::endl;
             }
         }
 

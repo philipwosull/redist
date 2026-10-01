@@ -1883,9 +1883,11 @@ Rcpp::List run_redist_smc(
                     Rcpp::Rcout << "Applying " << scoring_functions[0].total_soft_constraints
                           << " soft constraints.\n";
                 }
-                if (scoring_functions[0].num_hard_plan_constraints > 0) {
-                    Rcpp::Rcout << "Applying " << scoring_functions[0].num_hard_plan_constraints
-                          << " hard constraints.\n";
+                int const num_hard_constraints =
+                    scoring_functions[0].num_hard_region_constraints +
+                    scoring_functions[0].num_hard_plan_constraints;
+                if (num_hard_constraints > 0) {
+                    Rcpp::Rcout << "Applying " << num_hard_constraints << " hard constraints.\n";
                 }
             }
         }
