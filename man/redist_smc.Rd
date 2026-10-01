@@ -91,11 +91,13 @@ if \code{init_particles} is a \link{redist_plans} object. If \code{init_particle
 but not \code{init_seats} then the number of seats will be attempted
 to be inferred.}
 
-\item{init_weights}{A vector of length \code{nsims} of unnormalized plan weights
-associated with \code{init_particles}. The weights must all be strictly positive.
-If no weights are passed in then they will all be set to 1. If the
-\code{init_plans} were not resampled then it is recommended to pass their weights in.
-Not needed if \code{init_particles} is a \link{redist_plans} object.}
+\item{init_weights}{A vector of length \code{nsims} of plan weights associated
+with \code{init_particles}. The weights must all be strictly positive and are
+normalized to sum to 1, so they may be passed in on any scale. If no weights
+are passed in then the plans are weighted equally, unless \code{init_particles} is
+a \link{redist_plans} object that was not resampled, in which case its weights
+are used. If \code{init_particles} is a matrix of plans that were not resampled
+then it is recommended to pass their weights in.}
 
 \item{sampling_space}{The space to sample the plans on. This does not affect
 the plans output by the function but the sample space used can have a large
@@ -228,6 +230,10 @@ number of tries before sampling the extra plan, and then discarding the
 extra plan. The number of attempts can be used with the weights to form an
 unbiased estimator, as opposed to the biased normalizing
 constant estimators that are obtained with the weights alone.
+\item \code{return_augmented_samples} Whether or not to return the spanning
+forests and linking edges associated with the sampled plans (if applicable).
+Setting this value to \code{TRUE} can substantially increase the size of the
+\code{redist_plans} object returned.
 \item \code{md_alpha} What power to use for multidistrict selection
 probability. When choosing a multidistrict to split, one will be chosen with
 probability proportional to \if{html}{\out{<size>}}^md_alpha.

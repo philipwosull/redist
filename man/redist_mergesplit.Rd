@@ -181,6 +181,10 @@ number of tries before sampling the extra plan, and then discarding the
 extra plan. The number of attempts can be used with the weights to form an
 unbiased estimator, as opposed to the biased normalizing
 constant estimators that are obtained with the weights alone.
+\item \code{return_augmented_samples} Whether or not to return the spanning
+forests and linking edges associated with the sampled plans (if applicable).
+Setting this value to \code{TRUE} can substantially increase the size of the
+\code{redist_plans} object returned.
 \item \code{md_alpha} What power to use for multidistrict selection
 probability. When choosing a multidistrict to split, one will be chosen with
 probability proportional to \if{html}{\out{<size>}}^md_alpha.

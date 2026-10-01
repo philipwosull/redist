@@ -167,7 +167,7 @@ add_constr_log_st(
 add_constr_seats(
   constr,
   strength,
-  perim_df = NULL,
+  seats,
   only_nregions = FALSE,
   only_nseats = FALSE,
   thresh = NULL
@@ -277,6 +277,9 @@ having two or more incumbents be in the same district.}
 
 \item{denominator}{Fryer Holden minimum value to normalize by. Default is 1 (no normalization).}
 
+\item{seats}{The desired seat values. These must be between 1 and \code{nseats}.
+Any region whose seat count is in \code{seats} will return a raw score of 1.}
+
 \item{fn}{A function}
 
 \item{use_frac}{Whether or not to normalize the number of edges removed by
@@ -289,9 +292,6 @@ bounded between 0 and 1.}
 
 \item{min_fracs}{A vector of minimum fraction thresholds for each of the
 different population sets}
-
-\item{seats}{The desired seat values. These must be between 1 and \code{nseats}.
-Any region whose seat count is in \code{seats} will return a raw score of 1.}
 }
 \description{
 The \code{\link[=redist_smc]{redist_smc()}} and \code{\link[=redist_mergesplit]{redist_mergesplit()}} algorithms in this package allow
@@ -395,7 +395,7 @@ as measured by the dissimilarity index.
 The \code{pop_dev} constraint adds a term encouraging plans to have smaller population deviations
 from the target population.
 
-The \code{region_seats} constraint adds an indicator term for regions with the desired
+The \code{seats} constraint adds an indicator term for regions with the desired
 number of seats. Values of \code{strength} may be of moderate size.
 
 The \code{custom} constraint allows the user to specify their own constraint using
