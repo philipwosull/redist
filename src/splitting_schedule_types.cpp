@@ -260,6 +260,10 @@ void DistrictOnlyMMDSplittingSchedule::set_potential_cut_sizes_for_each_valid_si
         return std::runtime_error(oss.str());
     };
 
+    if (presplit_num_regions < 1 || presplit_num_regions >= ndists) {
+        throw schedule_error("the number of presplit regions must be between 1 and ndists - 1.");
+    }
+
     // the biggest remainder size assumes we split smallest district each time
     int presplit_biggest_possible_size = total_seats - presplit_ndists * smallest_district_size;
 

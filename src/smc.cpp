@@ -1721,9 +1721,12 @@ Rcpp::List run_redist_smc(
         total_smc_steps, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
         splitting_size_regime);
     // it wants presplit number of regions so make initial regions - 1
-    // Needed for initializing linking edge plans
-    splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, initial_num_regions -
-                                                                               1);
+    // Needed for initializing linking edge plans. A blank map has no previous
+    // split so there is nothing to set (and a presplit count of 0 is invalid)
+    if (initial_num_regions > 1) {
+        splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(
+            0, initial_num_regions - 1);
+    }
 
     if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
         REprintf("Splitting Schedule Obj created!\n");
