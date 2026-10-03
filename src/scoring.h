@@ -182,13 +182,12 @@ class PopTemperConstraint : public RegionConstraint {
 
 class PopDevConstraint : public RegionConstraint {
   private:
-    double const parity;
-    std::vector<unsigned int> const total_pop;
+    double const target_per_seat; // target population of a single seat
 
   public:
     PopDevConstraint(Rcpp::List const &constr_inst, MapParams const &map_params)
-        : RegionConstraint(constr_inst, map_params.ndists, map_params.total_seats), 
-        parity(map_params.target), total_pop(map_params.pop) {}
+        : RegionConstraint(constr_inst, map_params.ndists, map_params.total_seats),
+        target_per_seat(map_params.target) {}
 
     double compute_raw_region_constraint_score(int const num_regions,
                                                PlanVector const &region_ids,

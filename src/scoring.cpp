@@ -417,16 +417,18 @@ double PopTemperConstraint::compute_raw_merged_region_constraint_score(
 double PopDevConstraint::compute_raw_region_constraint_score(
     int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
     IntPlanAttribute const &region_pops, int region_id) const {
-    double raw_score = eval_pop_dev(region_ids, region_id, region_id, total_pop, parity);
-
-    return raw_score;
+    // a region's target population scales with its number of seats
+    double const frac = region_pops[region_id] / (target_per_seat * region_sizes[region_id]);
+    return std::pow(frac - 1.0, 2.0);
 }
 // log constraint for region made by merging region 1 and 2
 double PopDevConstraint::compute_raw_merged_region_constraint_score(
     int const num_regions, PlanVector const &region_ids, RegionSizes const &region_sizes,
     IntPlanAttribute const &region_pops, int const region1_id, int const region2_id) const {
-    double raw_score = eval_pop_dev(region_ids, region1_id, region2_id, total_pop, parity);
-    return raw_score;
+    int const merged_pop = region_pops[region1_id] + region_pops[region2_id];
+    int const merged_size = region_sizes[region1_id] + region_sizes[region2_id];
+    double const frac = merged_pop / (target_per_seat * merged_size);
+    return std::pow(frac - 1.0, 2.0);
 }
 
 double StatusQuoConstraint::compute_raw_region_constraint_score(
