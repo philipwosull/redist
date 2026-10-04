@@ -320,7 +320,7 @@ redist_smc <- function(
     )
 
     # validate constraints
-    constraints <- validate_constraints(map, rlang::enquo(constraints))
+    constraints <- validate_constraints(map, rlang::enquo(constraints), compactness)
     # get map params
     map_params <- get_map_parameters(map, !!rlang::enquo(counties))
     map <- map_params$map

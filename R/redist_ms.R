@@ -168,7 +168,8 @@ redist_mergesplit <- function(
     # validate constraints
     constraints <- validate_constraints(
         map = map,
-        constraints = rlang::enquo(constraints)
+        constraints = rlang::enquo(constraints),
+        compactness = compactness
     )
 
     # get map params
