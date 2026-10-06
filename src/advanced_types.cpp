@@ -332,8 +332,41 @@ get_splitting_size_regime(std::string const &splitting_size_regime_str) {
 };
 
 
-GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
-    :  num_edges(num_edges), V(g.size()), incident_edges(g.size()) {
+// Returns the edge weights to store in a GraphEdgeIndex. An empty input means
+// the graph is unweighted so every edge gets weight 1.
+static std::vector<double> build_edge_weights(std::vector<double> const &edge_weights,
+                                              int const num_edges) {
+    if (edge_weights.empty()) {
+        return std::vector<double>(num_edges, 1.0);
+    }
+
+    if (static_cast<int>(edge_weights.size()) != num_edges) {
+        std::ostringstream oss;
+        oss << "GraphEdgeIndex edge weight count mismatch. "
+            << "expected " << num_edges
+            << ", got " << edge_weights.size();
+        throw std::invalid_argument(oss.str());
+    }
+
+    for (std::size_t edge_id = 0; edge_id < edge_weights.size(); ++edge_id) {
+        double const weight = edge_weights[edge_id];
+        if (!std::isfinite(weight) || weight <= 0) {
+            std::ostringstream oss;
+            oss << "GraphEdgeIndex edge weights must be strictly positive and finite, "
+                << "but edge " << edge_id << " has weight " << weight;
+            throw std::invalid_argument(oss.str());
+        }
+    }
+
+    return edge_weights;
+}
+
+GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges,
+                               std::vector<double> const &edge_weights)
+    :  num_edges(num_edges), V(g.size()),
+       edge_weights(build_edge_weights(edge_weights, num_edges)),
+       is_weighted(!edge_weights.empty()),
+       incident_edges(g.size()) {
 
     if (g.size() > MAX_SUPPORTED_NUM_VERTICES) {
         throw std::invalid_argument("Too many vertices for VertexID in GraphEdgeIndex!");
@@ -499,10 +532,13 @@ MapParams::MapParams(Graph const &g,
             double const lower,
             double const target, double const upper,
             SamplingSpace const sampling_space,
-            bool const plans_may_be_non_hierarchical)
+            bool const plans_may_be_non_hierarchical,
+            std::vector<double> const &edge_weights)
     : g(g), map_graph(g),
     num_edges(count_undirected_edges(g)),
-    graph_edge_index(g, num_edges), num_edge_bit_words(compute_num_edge_bit_words(num_edges)),
+    graph_edge_index(g, num_edges, edge_weights),
+    is_weighted(graph_edge_index.is_weighted),
+    num_edge_bit_words(compute_num_edge_bit_words(num_edges)),
         counties(counties.begin(), counties.end()), 
         num_counties(*std::max_element(counties.begin(), counties.end())), 
         plans_may_be_non_hierarchical(plans_may_be_non_hierarchical && num_counties > 1),
@@ -577,7 +613,8 @@ MapParams::MapParams(Graph const &g,
 MapParams::MapParams(Graph const &g, 
     const std::vector<unsigned int> &counties, 
     const std::vector<unsigned int> &pop,
-    double const lower, double const upper
+    double const lower, double const upper,
+    std::vector<double> const &edge_weights
 ): MapParams(g, counties, pop,
         6, 6, std::vector<int>{1}, lower,
-                         42.0, upper, SamplingSpace::GraphSpace) {};
+                         42.0, upper, SamplingSpace::GraphSpace, false, edge_weights) {};
