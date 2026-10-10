@@ -161,8 +161,6 @@ class SMCDiagnostics {
     std::vector<Rcpp::LogicalMatrix> all_steps_forests_list;
     // long format data frames, see PlanEnsemble::get_R_linking_edges
     std::vector<Rcpp::DataFrame> all_steps_linking_edge_list;
-    std::vector<std::vector<int>> all_steps_valid_region_sizes_to_split;
-    std::vector<std::vector<int>> all_steps_valid_split_region_sizes;
     std::vector<Rcpp::IntegerMatrix> region_sizes_mat_list;
 
     // These are granular time stuff that is only tracked when 
@@ -192,7 +190,6 @@ class SMCDiagnostics {
     // adds full diagnostics (takes a lot of memory)
     void add_full_step_diagnostics(int const total_steps, bool const splitting_all_the_way,
                                    int const step_num, int const merge_split_step_num,
-                                   int const smc_step_num, bool const is_smc_step,
                                    SamplingSpace const sampling_space, MapParams const &map_params,
                                    RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble,
                                    PlanEnsemble &new_plans_ensemble,
@@ -297,8 +294,6 @@ SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
     all_steps_linking_edge_list.resize(
         (diagnostic_mode && sampling_space == SamplingSpace::LinkingEdgeSpace) ? total_steps
                                                                                : 0);
-    all_steps_valid_region_sizes_to_split.resize(diagnostic_mode ? total_smc_steps : 0);
-    all_steps_valid_split_region_sizes.resize(diagnostic_mode ? total_smc_steps : 0);
 
     // Store size at every step but last one if needed
     int plan_dval_list_size = (diagnostic_mode & !split_district_only) ? total_steps - 1 : 0;
@@ -350,7 +345,7 @@ void SMCDiagnostics::record_final_resample(std::vector<int> const &resample_inde
 
 void SMCDiagnostics::add_full_step_diagnostics(
     int const total_steps, bool const splitting_all_the_way, int const step_num,
-    int const merge_split_step_num, int const smc_step_num, bool const is_smc_step,
+    int const merge_split_step_num,
     SamplingSpace const sampling_space, MapParams const &map_params,
     RcppThread::ThreadPool &pool, PlanEnsemble &plan_ensemble, PlanEnsemble &new_plans_ensemble,
     SplittingSchedule const &splitting_schedule) {
@@ -360,26 +355,6 @@ void SMCDiagnostics::add_full_step_diagnostics(
 
     bool const split_district_only =
         splitting_schedule.schedule_type == SplittingSizeScheduleType::DistrictOnlySMD;
-    int const nsims = plan_ensemble.nsims;
-
-    // if smc step update splitting step info
-    if (is_smc_step) {
-        int current_num_regions = plan_ensemble.plan_ptr_vec[0]->num_regions;
-        // save the acceptable split sizes
-        for (int region_size = 1;
-             region_size <= splitting_schedule.total_seats - current_num_regions + 2;
-             region_size++) {
-            if (splitting_schedule.valid_split_region_sizes[region_size]) {
-                all_steps_valid_split_region_sizes[smc_step_num].push_back(region_size);
-            }
-            if (splitting_schedule.valid_region_sizes_to_split[region_size]) {
-
-                all_steps_valid_region_sizes_to_split[smc_step_num].push_back(region_size);
-                ;
-            }
-        }
-    }
-
     if (merge_split_step_num > 0 || !split_district_only) {
         reorder_all_plans(pool, plan_ensemble.plan_ptr_vec, new_plans_ensemble.plan_ptr_vec);
     }
@@ -498,8 +473,6 @@ void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
     out["region_seats_mat_list"] = region_sizes_mat_list;
     out["forest_adjs_list"] = all_steps_forests_list;
     out["linking_edges_list"] = all_steps_linking_edge_list;
-    out["valid_split_region_sizes_list"] = all_steps_valid_split_region_sizes;
-    out["valid_region_sizes_to_split_list"] = all_steps_valid_region_sizes_to_split;
 
 
     return;
@@ -1650,6 +1623,33 @@ Rcpp::List run_redist_smc(
     bool const estimated_unbiased_normalizing_constant = Rcpp::as<bool>(control["est_norm_unbiased"]);
     // whether to resample the plans once the run is over
     bool const final_resample = Rcpp::as<bool>(control["resample"]);
+    // Values carried over from an earlier run that this run continues
+    // (`keep_init_plan_info`) so it behaves like a single run through every step.
+    // - continue_from_init_plans: the initial weights are what a single run would
+    //   carry into this step, so they are split between sampling and carrying
+    //   with seq_alpha like any other step
+    // - initial_last_cut_k: the earlier run's last estimated cut k, which the
+    //   first cut k estimate starts its search from
+    // - initial_ms_acceptance_rate: the earlier run's last mergesplit acceptance
+    //   rate, which sets the number of steps in this run's first mergesplit round
+    bool const continue_from_init_plans =
+        control.containsElementNamed("continue_from_init_plans") &&
+        Rcpp::as<bool>(control["continue_from_init_plans"]);
+    // where the first cut k estimate starts its search
+    int const initial_last_cut_k = control.containsElementNamed("initial_last_cut_k")
+                                       ? Rcpp::as<int>(control["initial_last_cut_k"])
+                                       : std::max(1, V - 5);
+    bool const has_initial_ms_acceptance_rate =
+        control.containsElementNamed("initial_ms_acceptance_rate");
+    double const initial_ms_acceptance_rate =
+        has_initial_ms_acceptance_rate
+            ? Rcpp::as<double>(control["initial_ms_acceptance_rate"])
+            : 0.0;
+    // The acceptance rate of the most recent mergesplit round, which sets the
+    // number of steps in the next round. Before any mergesplit round has been
+    // run (here or in an earlier run this continues) the previous step is used.
+    bool have_last_ms_acceptance_rate = has_initial_ms_acceptance_rate;
+    double last_ms_acceptance_rate = initial_ms_acceptance_rate;
     // whether to return the final spanning forests and linking edges
     bool const return_augmented_samples =
         control.containsElementNamed("return_augmented_samples") &&
@@ -1761,7 +1761,8 @@ Rcpp::List run_redist_smc(
 
     // The log weights of the plans carried between steps. Any initial weights
     // are only used to sample the parents of the first step so the particles
-    // after that are equally weighted and these start at 0.
+    // after that are equally weighted and these start at 0, unless this run
+    // continues an earlier one with seq_alpha (see the initial sampling weights).
     std::vector<double> log_weights(nsims, 0.0);
 
     // Now we add everything here to a scope since it won't be needed for the end
@@ -1809,6 +1810,19 @@ Rcpp::List run_redist_smc(
         if (control.containsElementNamed("initial_weights")) {
             unnormalized_sampling_weights =
                 Rcpp::as<std::vector<double>>(control["initial_weights"]);
+            // When continuing an earlier run the initial weights are the full
+            // weights a single run would have after this point, so like any other
+            // step the parents are sampled proportional to w^alpha and
+            // (1 - alpha) * log(w) is carried forward
+            if (continue_from_init_plans && apply_weights_alpha) {
+                for (int i = 0; i < nsims; i++) {
+                    double const log_initial_weight =
+                        std::log(unnormalized_sampling_weights[i]);
+                    log_weights[i] = (1 - weights_alpha) * log_initial_weight;
+                    unnormalized_sampling_weights[i] =
+                        std::exp(weights_alpha * log_initial_weight);
+                }
+            }
         }
         // Reused each SMC step to collect that step's incremental weights before
         // they are copied into the diagnostics matrix.
@@ -1943,7 +1957,7 @@ Rcpp::List run_redist_smc(
                             auto smc_param_estimation_start_time = std::chrono::steady_clock::now();
                             // est k
                             int est_cut_k;
-                            int last_k = smc_step_num == 0 ? std::max(1, V - 5)
+                            int last_k = smc_step_num == 0 ? initial_last_cut_k
                                                            : k_params.at(smc_step_num - 1);
                             if constexpr (DEBUG_GSMC_PLANS_VERBOSE)
                                 Rprintf("About to try to estimate cut k!\n");
@@ -2196,10 +2210,13 @@ Rcpp::List run_redist_smc(
                     // run merge split
                     // Set the number of steps to run at 1 over previous stage acceptance rate
                     // if not 0
-                    int prev_acceptance_index =
-                        merge_split_step_num == 0 ? step_num - 1 : step_num - 2;
+                    // The first mergesplit round of a run continuing an earlier one
+                    // uses the earlier run's last mergesplit acceptance rate if it had
+                    // any mergesplit rounds
                     double prev_acceptance_rate =
-                        smc_diagnostics.acceptance_rates.at(prev_acceptance_index);
+                        have_last_ms_acceptance_rate
+                            ? last_ms_acceptance_rate
+                            : smc_diagnostics.acceptance_rates.at(step_num - 1);
                     // if the acceptance is zero just default to 5
                     prev_acceptance_rate = prev_acceptance_rate > 0 ? prev_acceptance_rate : .1;
 
@@ -2299,6 +2316,9 @@ Rcpp::List run_redist_smc(
                     smc_diagnostics.acceptance_rates.at(step_num) =
                         static_cast<double>(total_ms_successes) /
                         static_cast<double>(total_ms_attempts);
+                    // the next mergesplit round is sized off this one
+                    last_ms_acceptance_rate = smc_diagnostics.acceptance_rates.at(step_num);
+                    have_last_ms_acceptance_rate = true;
 
                     // add number of unique plans
                     smc_diagnostics.nunique_plans[step_num] =
@@ -2333,8 +2353,7 @@ Rcpp::List run_redist_smc(
                     }
                     smc_diagnostics.add_full_step_diagnostics(
                         total_steps, splitting_all_the_way, step_num, merge_split_step_num,
-                        smc_step_num, !merge_split_step_vec[step_num], sampling_space,
-                        map_params, pool,
+                        sampling_space, map_params, pool,
                         *plan_ensemble_ptr, *dummy_plan_ensemble_ptr, *splitting_schedule_ptr);
                 }
 

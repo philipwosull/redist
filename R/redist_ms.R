@@ -489,8 +489,6 @@ redist_mergesplit <- function(
 
             # Information about the run
             algout$run_information <- list(
-        valid_region_sizes_to_split_list = algout$valid_region_sizes_to_split_list,
-        valid_split_region_sizes_list = algout$valid_split_region_sizes_list,
         sampling_space = sampling_space,
         split_method = split_method,
         pair_rule = pair_rule,

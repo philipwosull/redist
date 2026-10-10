@@ -205,6 +205,12 @@
 #'  forests and linking edges associated with the sampled plans (if applicable).
 #'  Setting this value to `TRUE` can substantially increase the size of the
 #'  `redist_plans` object returned.
+#'  \item \code{keep_init_plan_info} If `init_particles` is a [redist_plans]
+#'  object sampled with `redist_smc()`, whether to combine its diagnostics with
+#'  those of this run, so the output has the diagnostics of every step as if
+#'  all the steps had been run at once. Requires `runs = 1` both here and for
+#'  the initial plans, the same `nsims`, and initial plans sampled with
+#'  `resample = FALSE`. Defaults to `FALSE`.
 #'  \item \code{md_alpha} What power to use for multidistrict selection
 #'  probability. When choosing a multidistrict to split, one will be chosen with
 #'  probability proportional to <size>^md_alpha.
@@ -355,6 +361,8 @@ redist_smc <- function(
     )
 
     # get initial plan parameters
+    # kept so its diagnostics can be combined with this run's if requested
+    init_plans_object <- init_particles
     initial_plan_params <- get_init_plan_params(
         nsims,
         nseats,
@@ -483,6 +491,44 @@ redist_smc <- function(
         ))
     }
 
+    # The diagnostics of the initial plans, combined with this run's at the end
+    # so the output looks like a single run through all the steps
+    init_plans_info <- NULL
+    if (control_params_list[["keep_init_plan_info"]] &&
+        inherits(init_plans_object, "redist_plans")) {
+        if (!attr(init_plans_object, "algorithm") %in% c("smc", "smc_ms")) {
+            cli::cli_abort(
+                "{.arg keep_init_plan_info} requires initial plans sampled with {.fn redist_smc}."
+            )
+        }
+        if (runs != 1 || length(attr(init_plans_object, "diagnostics")) != 1) {
+            cli::cli_abort(
+                "{.arg keep_init_plan_info} is only supported when both the initial plans
+                and this call use {.code runs = 1}."
+            )
+        }
+        if (!isFALSE(attr(init_plans_object, "resampled"))) {
+            cli::cli_abort(c(
+                "Combining diagnostics with {.arg keep_init_plan_info} is not supported when
+                the partial plans have already been resampled.",
+                "i" = "Sample the initial plans with {.code resample = FALSE}."
+            ))
+        }
+        init_internal_diagnostics <- attr(init_plans_object, "internal_diagnostics")[[1]]
+        if (nrow(init_internal_diagnostics$parent_index_mat) != nsims) {
+            cli::cli_abort(
+                "{.arg keep_init_plan_info} requires {.arg nsims} to equal the number of
+                plans the initial plans were sampled with."
+            )
+        }
+        init_plans_info <- list(
+            diagnostics = attr(init_plans_object, "diagnostics")[[1]],
+            run_information = attr(init_plans_object, "run_information")[[1]],
+            internal_diagnostics = init_internal_diagnostics,
+            total_runtime = attr(init_plans_object, "total_runtime")
+        )
+    }
+
     multiprocess <- nproc > 1
     # make sure we're not spawning more proccesses than runs
     if (multiprocess) {
@@ -577,6 +623,28 @@ redist_smc <- function(
         cpp_control_list$initial_weights <- initial_weights
     }
 
+    # When continuing an earlier run, pass in what it would have carried into
+    # this run's first step if it had kept going: its weights are split with
+    # seq_alpha, its last estimated cut k starts the next estimate, and its last
+    # mergesplit acceptance rate sets the size of the first mergesplit round
+    if (!is.null(init_plans_info)) {
+        cpp_control_list$continue_from_init_plans <- TRUE
+        init_step_types <- init_plans_info$run_information$step_types
+        init_cut_k <- init_plans_info$diagnostics$forward_kernel_params$cut_k_used[
+            init_step_types == "smc"
+        ]
+        init_cut_k <- init_cut_k[init_cut_k > 0]
+        if (length(init_cut_k) > 0) {
+            cpp_control_list$initial_last_cut_k <- as.integer(utils::tail(init_cut_k, 1))
+        }
+        init_ms_accept_rates <- init_plans_info$diagnostics$accept_rate[
+            init_step_types == "ms"
+        ]
+        if (length(init_ms_accept_rates) > 0) {
+            cpp_control_list$initial_ms_acceptance_rate <- utils::tail(init_ms_accept_rates, 1)
+        }
+    }
+
     # Initialize the plans with their saved spanning forests (and linking
     # edges) if the sampling space can use them, else they are drawn at random.
     # Spanning forest space ignores any linking edges.
@@ -667,14 +735,7 @@ redist_smc <- function(
             # step can be matched by name or index. If the plans were resampled
             # at the end there is an extra final `resample` entry holding the
             # plans after resampling.
-            step_type_counts <- stats::ave(
-                seq_along(algout$step_split_types), algout$step_split_types,
-                FUN = seq_along
-            )
-            step_names <- paste0(algout$step_split_types, "_step", step_type_counts)
-            if (resample) {
-                step_names <- c(step_names, "resample")
-            }
+            step_names <- get_step_list_names(algout$step_split_types, resample)
             for (step_list in c("region_ids_mat_list", "forest_adjs_list", "linking_edges_list")) {
                 if (length(algout[[step_list]]) == length(step_names)) {
                     names(algout[[step_list]]) <- step_names
@@ -785,8 +846,6 @@ redist_smc <- function(
         nproc = nproc,
         ncores = ncores,
         custom_size_split_list = list(),
-        valid_region_sizes_to_split_list = algout$valid_region_sizes_to_split_list,
-        valid_split_region_sizes_list = algout$valid_split_region_sizes_list,
         sampling_space = sampling_space,
         split_method = split_method,
         splitting_schedule = splitting_size_regime,
@@ -838,6 +897,11 @@ redist_smc <- function(
       "{format(nsims*runs, big.mark=',')} plans sampled in
                  {format(t2-t1, digits=2)}"
     )
+    }
+
+    # combine the initial plans' diagnostics with this run's (runs is 1 here)
+    if (!is.null(init_plans_info) && !is.null(all_out[[1]])) {
+        all_out[[1]] <- combine_init_plan_info(init_plans_info, all_out[[1]], resample)
     }
 
     bad_runs <- sapply(all_out, is.null)
@@ -919,7 +983,9 @@ redist_smc <- function(
         internal_diagnostics = internal_diagnostics,
         augmented_samples = augmented_samples,
         num_admin_units = num_admin_units,
-        total_runtime = as.numeric(t2 - t1, units = "secs")
+        # includes the initial plans' sampling time if their diagnostics were kept
+        total_runtime = as.numeric(t2 - t1, units = "secs") +
+            sum(init_plans_info$total_runtime)
     )
 
     if (runs > 1) {
@@ -1005,6 +1071,138 @@ get_splitting_schedule <- function(split_params, districting_scheme) {
     }
 
     splitting_size_regime
+}
+
+
+#' Names of the per step diagnostic lists
+#'
+#' The steps are named by type and counted separately (`smc_step1`,
+#' `smc_step2`, `ms_step1`, ...), with an extra final `resample` entry if the
+#' plans were resampled at the end.
+#'
+#' @param step_types Character vector of `"smc"` and `"ms"` step types
+#' @param resampled Whether the plans were resampled after the last step
+#'
+#' @returns A character vector of names
+#' @noRd
+get_step_list_names <- function(step_types, resampled) {
+    step_type_counts <- stats::ave(seq_along(step_types), step_types, FUN = seq_along)
+    step_names <- paste0(step_types, "_step", step_type_counts)
+    if (resampled) {
+        step_names <- c(step_names, "resample")
+    }
+    step_names
+}
+
+
+#' Combines the diagnostics of initial plans with a run started from them
+#'
+#' Used for `keep_init_plan_info` so that the output of a run started from
+#' partial plans has the diagnostics of every step, as if it had been sampled
+#' in a single run. The per step diagnostics of the initial plans' run come
+#' first, followed by this run's. The initial plans must not have been
+#' resampled, so their run has no final resampling step.
+#'
+#' @param init_info A list of the `diagnostics`, `run_information`, and
+#' `internal_diagnostics` of the initial plans' run
+#' @param algout The output of the run started from the initial plans after
+#' its `l_diag`, `run_information`, and `internal_diagnostics` are created
+#' @param resampled Whether this run resampled the plans after its last step
+#'
+#' @returns `algout` with the combined diagnostics
+#' @noRd
+combine_init_plan_info <- function(init_info, algout, resampled) {
+    init_diag <- init_info$diagnostics
+    init_run_info <- init_info$run_information
+    init_internal <- init_info$internal_diagnostics
+
+    # Merges two lists of timings element by element, so per step vectors are
+    # concatenated, per plan by step matrices are bound, and nested lists are
+    # merged the same way. Anything else, like flags, is taken from `new`.
+    combine_by_name <- function(old, new) {
+        for (name in names(new)) {
+            old_val <- old[[name]]
+            new_val <- new[[name]]
+            if (is.null(old_val)) next
+            if (is.list(new_val)) {
+                new[[name]] <- combine_by_name(old_val, new_val)
+            } else if (is.matrix(new_val)) {
+                new[[name]] <- cbind(old_val, new_val)
+            } else if (is.numeric(new_val)) {
+                new[[name]] <- c(old_val, new_val)
+            }
+        }
+        new
+    }
+
+    # names for this run's per step list entries continue the initial run's
+    step_types <- c(init_run_info$step_types, algout$run_information$step_types)
+    new_step_names <- get_step_list_names(step_types, resampled)[
+        -seq_along(init_run_info$step_types)
+    ]
+    combine_step_list <- function(old, new) {
+        if (length(new) == length(new_step_names)) {
+            names(new) <- new_step_names
+        }
+        c(old, new)
+    }
+
+    # high level diagnostics
+    diag <- algout$l_diag
+    for (name in c("step_n_eff", "accept_rate", "sd_lp", "unique_survive",
+                   "nunique_plans", "ms_step_counts")) {
+        diag[name] <- list(c(init_diag[[name]], diag[[name]]))
+    }
+    if (!is.null(diag$forward_kernel_params$cut_k_used)) {
+        diag$forward_kernel_params$cut_k_used <- c(
+            init_diag$forward_kernel_params$cut_k_used,
+            diag$forward_kernel_params$cut_k_used
+        )
+    }
+    diag$runtime <- init_diag$runtime + diag$runtime
+
+    # information about the steps run
+    run_info <- algout$run_information
+    run_info$step_types <- step_types
+    run_info$merge_split_step_vec <- c(
+        init_run_info$merge_split_step_vec, run_info$merge_split_step_vec
+    )
+
+    # internal diagnostics, `[<-` with a list keeps NULL entries in place
+    internal <- algout$internal_diagnostics
+    for (name in c("parent_index_mat", "log_incremental_weights_mat", "draw_tries_mat",
+                   "tree_sizes", "successful_tree_sizes", "parent_unsuccessful_tries_mat",
+                   "merge_split_success_mat")) {
+        internal[name] <- list(cbind(init_internal[[name]], internal[[name]]))
+    }
+    # only usable if tracked for every step
+    internal["tries_before_extra_particle"] <- list(
+        if (is.null(init_internal$tries_before_extra_particle) ||
+            is.null(internal$tries_before_extra_particle)) {
+            NULL
+        } else {
+            c(init_internal$tries_before_extra_particle, internal$tries_before_extra_particle)
+        }
+    )
+    # only the run that started from a blank map can compute it
+    internal$log_blank_map_target_density <- init_internal$log_blank_map_target_density
+    internal$time_breakdowns <- combine_by_name(
+        init_internal$time_breakdowns, internal$time_breakdowns
+    )
+    internal$granular_times <- combine_by_name(
+        init_internal$granular_times, internal$granular_times
+    )
+    for (name in c("region_ids_mat_list", "forest_adjs_list", "linking_edges_list")) {
+        internal[name] <- list(combine_step_list(init_internal[[name]], internal[[name]]))
+    }
+    internal["region_seats_mat_list"] <- list(
+        c(init_internal$region_seats_mat_list, internal$region_seats_mat_list)
+    )
+
+    algout$l_diag <- diag
+    algout$run_information <- run_info
+    algout$internal_diagnostics <- internal
+    algout
 }
 
 
@@ -1141,7 +1339,8 @@ get_init_plan_params <- function(
 extract_control_params <- function(control, compactness) {
     control_param_names <- c("nproc", "weight_type",
                              "cache_weights", "max_split_tries",
-                             "est_norm_unbiased", "return_augmented_samples")
+                             "est_norm_unbiased", "return_augmented_samples",
+                             "keep_init_plan_info")
 
     default_nproc <- 1L
     default_weight_type <- "optimal"
@@ -1222,13 +1421,23 @@ extract_control_params <- function(control, compactness) {
         return_augmented_samples <- FALSE
     }
 
+    if ("keep_init_plan_info" %in% names(control)) {
+        keep_init_plan_info <- control[["keep_init_plan_info"]]
+        if (!rlang::is_scalar_logical(keep_init_plan_info) || is.na(keep_init_plan_info)) {
+            cli::cli_abort("{.arg keep_init_plan_info} must be a scalar boolean")
+        }
+    } else {
+        keep_init_plan_info <- FALSE
+    }
+
     control_params <- list(
     nproc = nproc,
     weight_type = weight_type,
     cache_weights = cache_weights,
     max_split_tries = max_split_tries,
     est_norm_unbiased = est_norm_unbiased,
-    return_augmented_samples = return_augmented_samples
+    return_augmented_samples = return_augmented_samples,
+    keep_init_plan_info = keep_init_plan_info
   )
 
     if ("md_alpha" %in% names(control)){

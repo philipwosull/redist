@@ -539,3 +539,22 @@ test_that("initial plan weights are only used to sample the first step's parents
         log_incremental_weights - mean(log_incremental_weights)
     )
 })
+
+test_that("mergesplit rounds are sized off the previous mergesplit round", {
+    iowa_map <- suppressMessages(redist_map(iowa, ndists = 6, pop_tol = 0.2))
+    # mergesplit after every second split, so a round is two steps after the
+    # split before it and three after the previous round
+    plans <- redist_smc(
+        iowa_map, 20, silent = TRUE,
+        ms_params = list(frequency = 2, mh_accept_per_smc = 2)
+    )
+    diag <- attr(plans, "diagnostics")[[1]]
+    step_types <- attr(plans, "run_information")[[1]]$step_types
+    expect_equal(step_types, c("smc", "smc", "ms", "smc", "smc", "ms", "smc"))
+
+    expected_steps <- function(rate) ceiling(2 * ceiling(1 / ifelse(rate > 0, rate, 0.1)))
+    # the first round is sized off the split before it, later ones off the
+    # previous mergesplit round
+    expect_equal(diag$ms_step_counts[1], expected_steps(diag$accept_rate[2]))
+    expect_equal(diag$ms_step_counts[2], expected_steps(diag$accept_rate[3]))
+})

@@ -280,3 +280,166 @@ test_that("restarting from partial plans uses their augmented samples", {
     kept <- restart_keeps_augmented_samples(linking_init, linking_aug, "spanning_forest")
     expect_true(all(kept$forests))
 })
+
+# `keep_init_plan_info` combines the diagnostics of initial `redist_plans` with
+# those of the run started from them
+
+ms_every_step <- list(frequency = 1, mh_accept_per_smc = 1)
+
+# the length or dimensions of every element, recursively
+diagnostic_shape <- function(x) {
+    if (is.list(x) && !is.data.frame(x)) {
+        lapply(x, diagnostic_shape)
+    } else if (!is.null(dim(x))) {
+        dim(x)
+    } else {
+        length(x)
+    }
+}
+
+test_that("keep_init_plan_info errors on unsupported initial plans", {
+    resampled <- redist_smc(iowa_map, 10, n_steps = 2, silent = TRUE)
+    expect_error(
+        redist_smc(iowa_map, 10, init_particles = resampled, silent = TRUE,
+                   control = list(keep_init_plan_info = TRUE)),
+        "already been resampled"
+    )
+
+    not_resampled <- redist_smc(iowa_map, 10, n_steps = 2, silent = TRUE, resample = FALSE)
+    expect_error(
+        redist_smc(iowa_map, 10, init_particles = not_resampled, runs = 2, silent = TRUE,
+                   control = list(keep_init_plan_info = TRUE)),
+        "runs = 1"
+    )
+    two_runs <- redist_smc(iowa_map, 5, n_steps = 2, runs = 2, silent = TRUE, resample = FALSE)
+    expect_error(
+        redist_smc(iowa_map, 10, init_particles = two_runs, silent = TRUE,
+                   control = list(keep_init_plan_info = TRUE)),
+        "runs = 1"
+    )
+})
+
+test_that("initial plan diagnostics are not combined by default", {
+    init <- redist_smc(iowa_map, 10, n_steps = 2, silent = TRUE, resample = FALSE)
+    restarted <- redist_smc(iowa_map, 10, init_particles = init, silent = TRUE)
+    expect_equal(attr(restarted, "run_information")[[1]]$step_types, "smc")
+})
+
+test_that("a restarted run's diagnostics look like a single run through every step", {
+    init <- redist_smc(
+        iowa_map, 20, n_steps = 2, silent = TRUE, resample = FALSE,
+        diagnostics = "all", ms_params = ms_every_step
+    )
+    restarted <- redist_smc(
+        iowa_map, 20, init_particles = init, silent = TRUE, diagnostics = "all",
+        ms_params = ms_every_step, control = list(keep_init_plan_info = TRUE)
+    )
+    single_run <- redist_smc(
+        iowa_map, 20, silent = TRUE, diagnostics = "all", ms_params = ms_every_step
+    )
+
+    for (attr_name in c("diagnostics", "run_information", "internal_diagnostics")) {
+        expect_equal(
+            diagnostic_shape(attr(restarted, attr_name)),
+            diagnostic_shape(attr(single_run, attr_name)),
+            label = attr_name
+        )
+    }
+
+    init_diag <- attr(init, "diagnostics")[[1]]
+    init_internal <- attr(init, "internal_diagnostics")[[1]]
+    diag <- attr(restarted, "diagnostics")[[1]]
+    run_info <- attr(restarted, "run_information")[[1]]
+    internal <- attr(restarted, "internal_diagnostics")[[1]]
+
+    # the initial run's steps come first, unchanged
+    expect_equal(run_info$step_types, c("smc", "ms", "smc", "ms", "smc", "ms"))
+    expect_equal(diag$step_n_eff[1:2], init_diag$step_n_eff)
+    expect_equal(diag$accept_rate[1:4], init_diag$accept_rate)
+    expect_equal(
+        internal$log_incremental_weights_mat[, 1:2], init_internal$log_incremental_weights_mat
+    )
+    expect_equal(internal$parent_index_mat[, 1:2], init_internal$parent_index_mat)
+    expect_equal(
+        internal$log_blank_map_target_density, init_internal$log_blank_map_target_density
+    )
+    expect_false(is.na(internal$log_blank_map_target_density))
+
+    # per step lists are numbered across both runs
+    step_names <- c(
+        "smc_step1", "ms_step1", "smc_step2", "ms_step2", "smc_step3", "ms_step3", "resample"
+    )
+    expect_named(internal$region_ids_mat_list, step_names)
+    expect_equal(internal$region_ids_mat_list[1:4], init_internal$region_ids_mat_list)
+    expect_named(internal$forest_adjs_list, step_names)
+    expect_named(internal$linking_edges_list, step_names)
+
+    expect_gt(attr(restarted, "total_runtime"), attr(init, "total_runtime"))
+
+    # the functions that read the diagnostics work on the combined object
+    expect_no_error(utils::capture.output(summary(restarted)))
+    expect_true(all(is.finite(est_norm_unbiased(iowa_map, restarted))))
+})
+
+test_that("a continued run carries seq_alpha weights like a single run", {
+    init <- redist_smc(
+        iowa_map, 20, n_steps = 2, seq_alpha = 0.5, silent = TRUE, resample = FALSE
+    )
+    continued <- redist_smc(
+        iowa_map, 20, init_particles = init, seq_alpha = 0.5, silent = TRUE,
+        resample = FALSE, control = list(keep_init_plan_info = TRUE)
+    )
+    internal <- attr(continued, "internal_diagnostics")[[1]]
+    init_weights <- as.vector(get_plans_weights(init))
+    init_weights <- init_weights / sum(init_weights)
+    parents <- internal$parent_index_mat[, 3]
+
+    # the last step isn't split with seq_alpha so the final log weights are the
+    # carried (1 - alpha) * log(w) of each parent plus the incremental weights
+    expected <- 0.5 * log(init_weights[parents]) + internal$log_incremental_weights_mat[, 3]
+    log_final_weights <- log(as.vector(get_plans_weights(subset_sampled(continued))))
+    expect_equal(log_final_weights - mean(log_final_weights), expected - mean(expected))
+})
+
+test_that("a continued run's first mergesplit round uses the earlier mergesplit rate", {
+    init <- redist_smc(
+        iowa_map, 20, n_steps = 2, silent = TRUE, resample = FALSE,
+        ms_params = list(frequency = 1, mh_accept_per_smc = 2)
+    )
+    continued <- redist_smc(
+        iowa_map, 20, init_particles = init, silent = TRUE,
+        ms_params = list(frequency = 1, mh_accept_per_smc = 2),
+        control = list(keep_init_plan_info = TRUE)
+    )
+    init_diag <- attr(init, "diagnostics")[[1]]
+    init_ms_rate <- utils::tail(
+        init_diag$accept_rate[attr(init, "run_information")[[1]]$step_types == "ms"], 1
+    )
+    ms_step_counts <- attr(continued, "diagnostics")[[1]]$ms_step_counts
+    expect_equal(ms_step_counts[1:2], init_diag$ms_step_counts)
+    expect_equal(ms_step_counts[3], ceiling(2 * ceiling(1 / init_ms_rate)))
+})
+
+test_that("a continued run passes the earlier run's last cut k", {
+    init <- redist_smc(
+        iowa_map, 20, n_steps = 2, sampling_space = "graph_plan", silent = TRUE,
+        resample = FALSE
+    )
+    init_cut_k <- attr(init, "diagnostics")[[1]]$forward_kernel_params$cut_k_used
+
+    passed_control <- NULL
+    test_env <- environment()
+    trace(
+        "run_redist_smc", where = asNamespace("redist"), print = FALSE,
+        tracer = bquote(assign("passed_control", control, envir = .(test_env)))
+    )
+    on.exit(untrace("run_redist_smc", where = asNamespace("redist")))
+    continued <- redist_smc(
+        iowa_map, 20, init_particles = init, sampling_space = "graph_plan", silent = TRUE,
+        control = list(keep_init_plan_info = TRUE)
+    )
+
+    expect_true(passed_control$continue_from_init_plans)
+    expect_equal(passed_control$initial_last_cut_k, as.integer(utils::tail(init_cut_k, 1)))
+    expect_length(attr(continued, "diagnostics")[[1]]$forward_kernel_params$cut_k_used, 3)
+})
