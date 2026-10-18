@@ -7,6 +7,8 @@
  ********************************************************/
 
 
+#include <thread>
+
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -141,7 +143,8 @@ Rcpp::List draw_a_tree_on_a_region(Rcpp::List adj_list, const Rcpp::IntegerVecto
     rng_states.reserve(1);
     rng_states.emplace_back(global_rng_seed2, 6);
     // Create a plan object via size 1 ensemble
-    RcppThread::ThreadPool pool(0);
+    // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
 
     // fake splitting schedule, don't actually use
     // Just need for constructor
@@ -227,7 +230,8 @@ Rcpp::List perform_a_valid_multidistrict_split(Rcpp::List adj_list, const Rcpp::
                                          Rcpp::IntegerMatrix const &region_sizes,
                                          int split_dval_min, int split_dval_max,
                                          bool split_district_only, bool verbose, int k_param) {
-    throw Rcpp::exception("Not working right now!");
+    throw Rcpp::exception("perform_a_valid_multidistrict_split is currently disabled and "
+                          "not available.");
     if (split_dval_min > split_dval_max)
         throw Rcpp::exception("Split min must be less than split max!\n");
 
@@ -244,7 +248,8 @@ Rcpp::List perform_a_valid_multidistrict_split(Rcpp::List adj_list, const Rcpp::
     rng_states.reserve(1);
     rng_states.emplace_back(global_rng_seed2, 6);
     // Create a plan object via size 1 ensemble
-    RcppThread::ThreadPool pool(0);
+    // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
 
     // fake splitting schedule, don't actually use
     // Just need for constructor
@@ -305,19 +310,18 @@ Rcpp::List perform_a_valid_multidistrict_split(Rcpp::List adj_list, const Rcpp::
         auto region_size = plan_ensemble.plan_ptr_vec[0]->region_sizes[region_id_to_split];
         auto region_population = plan_ensemble.plan_ptr_vec[0]->region_pops[region_id_to_split];
 
-        auto cut_size_bounds =
-            splitting_schedule_ptr->all_regions_min_and_max_possible_cut_sizes[region_size];
-        int min_possible_cut_size = cut_size_bounds.first;
-        int max_possible_cut_size = cut_size_bounds.second;
+        ScheduleContext schedule_ctx;
+        splitting_schedule_ptr->build_context(*plan_ensemble.plan_ptr_vec[0], schedule_ctx);
+        CutSizeOptions const cut_options = splitting_schedule_ptr->region_cut_sizes(
+            *plan_ensemble.plan_ptr_vec[0], schedule_ctx, region_id_to_split);
 
         auto edge_search_result = tree_splitter->attempt_to_find_edge_to_cut(
-            map_params, scoring_function, rng_state, 
+            map_params, scoring_function, rng_state,
             *plan_ensemble.plan_ptr_vec[0], region_id_to_split, plan_ensemble.plan_ptr_vec[0]->num_regions,
             ust_sampler.ust, result.root,
-            ust_sampler.pops_below_vertex, 
+            ust_sampler.pops_below_vertex,
             region_population, region_size,
-            min_possible_cut_size, max_possible_cut_size,
-            splitting_schedule_ptr->all_regions_smaller_cut_sizes_to_try[region_size],
+            cut_options.min_cut_size, cut_options.max_cut_size, cut_options.smaller_cut_sizes,
             true);
 
         bool search_successful = std::get<0>(edge_search_result);
@@ -840,7 +844,7 @@ Rcpp::List attempt_splits_on_a_region(Rcpp::List const &adj_list, const Rcpp::In
     SplittingSizeScheduleType splitting_schedule_type =
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule = get_splitting_schedule(1, ndists, ndists, std::vector<int>{},
-                                                     splitting_schedule_type, control);
+                                                     splitting_schedule_type);
 
     int global_rng_seed = (int)Rcpp::sample(INT_MAX, 1)[0];
     int num_rng_states = num_threads > 0 ? num_threads : 1;
@@ -854,7 +858,7 @@ Rcpp::List attempt_splits_on_a_region(Rcpp::List const &adj_list, const Rcpp::In
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     std::vector<int> wat{1};
     auto splitting_schedule_ptr =
@@ -924,11 +928,16 @@ Rcpp::List attempt_splits_on_a_region(Rcpp::List const &adj_list, const Rcpp::In
             *plan_ensemble.plan_ptr_vec[0]);
 
         // attempt to split a plan
+        Plan const &thread_plan = *thread_plan_ensemble.plan_ptr_vec[thread_id];
+        ScheduleContext schedule_ctx;
+        splitting_schedule->build_context(thread_plan, schedule_ctx);
+        CutSizeOptions const cut_options =
+            splitting_schedule->region_cut_sizes(thread_plan, schedule_ctx, region_id_to_split);
         std::pair<bool, EdgeCut> edge_search_result =
         ust_sampler_buffers[thread_id].attempt_to_find_valid_tree_split(
             rng_states[thread_id], scoring_functions[thread_id],
-            *tree_splitter_ptrs_vec[thread_id], *thread_plan_ensemble.plan_ptr_vec[thread_id],
-            region_id_to_split, thread_plan_ensemble.plan_ptr_vec[thread_id]->num_regions, 
+            *tree_splitter_ptrs_vec[thread_id], thread_plan,
+            region_id_to_split, thread_plan.num_regions, cut_options,
             true);
 
         bool ok = std::get<0>(edge_search_result);

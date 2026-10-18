@@ -333,8 +333,8 @@ redist_map <- function(
         if (any(seats_range >= nseats)) {
             cli::cli_abort("All values in {.arg seats_range} must be less than the total number of seats.")
         }
-        # remove duplicates
-        seats_range <- unique(seats_range)
+        # remove duplicates and sort
+        seats_range <- sort(unique(seats_range))
     }
 
     pop_tol <- eval_tidy(enquo(pop_tol), x)

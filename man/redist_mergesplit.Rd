@@ -15,7 +15,7 @@ redist_mergesplit(
   compactness = 1,
   constraints = list(),
   constraint_fn = function(m) rep(0, ncol(m)),
-  sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+  sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
   split_method = NULL,
   split_params = NULL,
   pair_rule = "uniform",
@@ -181,6 +181,19 @@ number of tries before sampling the extra plan, and then discarding the
 extra plan. The number of attempts can be used with the weights to form an
 unbiased estimator, as opposed to the biased normalizing
 constant estimators that are obtained with the weights alone.
+\item \code{return_augmented_samples} Whether or not to return the spanning
+forests and linking edges associated with the sampled plans (if applicable).
+Setting this value to \code{TRUE} can substantially increase the size of the
+\code{redist_plans} object returned.
+\item \code{keep_init_plan_info} If \code{init_particles} is a \link{redist_plans}
+object sampled with \code{redist_smc()}, whether to combine its diagnostics with
+those of this run, so the output has the diagnostics of every step as if
+all the steps had been run at once. Requires \code{runs = 1} both here and for
+the initial plans, the same \code{nsims}, and initial plans sampled with
+\code{resample = FALSE}. Defaults to \code{FALSE}.
+\item \code{md_alpha} What power to use for multidistrict selection
+probability. When choosing a multidistrict to split, one will be chosen with
+probability proportional to \if{html}{\out{<size>}}^md_alpha.
 }}
 
 \item{adapt_k_thresh}{The threshold value used in the heuristic to select a

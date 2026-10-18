@@ -122,7 +122,7 @@ redist_mergesplit <- function(
     compactness = 1,
     constraints = list(),
     constraint_fn = function(m) rep(0, ncol(m)),
-    sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+    sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
     split_method = NULL,
     split_params = NULL,
     pair_rule = "uniform",
@@ -144,7 +144,7 @@ redist_mergesplit <- function(
     if (!missing(adapt_k_thresh)) {
         cli::cli_warn(
       "Passing {.arg adapt_k_thresh} directly is deprecated. Pass it in as an argument
-                 in {.arg split_params}"
+                 in {.arg split_params} if using Graph Plan sampling."
     )
         if (is.list(split_params)) {
             split_params$adapt_k_thresh <- adapt_k_thresh
@@ -168,7 +168,8 @@ redist_mergesplit <- function(
     # validate constraints
     constraints <- validate_constraints(
         map = map,
-        constraints = rlang::enquo(constraints)
+        constraints = rlang::enquo(constraints),
+        compactness = compactness
     )
 
     # get map params
@@ -324,6 +325,11 @@ redist_mergesplit <- function(
     # validate initial plans
     validate_initial_region_id_mat(init_plan, V, chains, ndists)
 
+    # `redist_mergesplit` always samples hierarchically, so an initial plan
+    # that splits a county into disconnected pieces can never have a tree
+    # drawn on it. Catch that here rather than letting the sampler retry.
+    check_plans_hierarchically_valid(adj_list, counties, init_plan, ndists)
+
     bad_pops <- sapply(seq_len(chains), function(i) {
         any(init_pop[, i] < pop_bounds[1] * init_seats[, i]) ||
             any(init_pop[, i] > pop_bounds[3] * init_seats[, i])
@@ -344,7 +350,8 @@ redist_mergesplit <- function(
 
     control <- list(
     splitting_method = split_method,
-    do_mh = TRUE
+    do_mh = TRUE,
+    enforce_hierarchical = TRUE
   )
 
     # add the splitting parameters
@@ -476,13 +483,12 @@ redist_mergesplit <- function(
           algout$post_warump_acceptances) /
           algout$total_steps,
         total_steps = algout$total_steps,
+        nunique_plans = algout$nunique_plans,
         forward_kernel_params = run_forward_kernel_params
       )
 
             # Information about the run
             algout$run_information <- list(
-        valid_region_sizes_to_split_list = algout$valid_region_sizes_to_split_list,
-        valid_split_region_sizes_list = algout$valid_split_region_sizes_list,
         sampling_space = sampling_space,
         split_method = split_method,
         pair_rule = pair_rule,

@@ -8,9 +8,20 @@
  ********************************************************/
 
 #include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace{
 
@@ -131,6 +142,8 @@ Graph build_restricted_county_graph(Graph const &g, std::vector<unsigned int> co
 }
 
 
+} // namespace
+
 // Counts the number of undirected edges in a graph. 
 // It also checks the graph is actually symmetric 
 int count_undirected_edges(Graph const &g) {
@@ -165,7 +178,6 @@ int count_undirected_edges(Graph const &g) {
     return edge_count;
 }
 
-}
 
 void EdgeCut::get_split_regions_info(int &split_region1_tree_root, int &split_region1_dval,
                                      int &split_region1_pop, int &split_region2_tree_root,
@@ -269,7 +281,7 @@ SplittingMethodType get_splitting_type(std::string const &splitting_type_str) {
     } else if (splitting_type_str == "constraint") {
         return SplittingMethodType::Constraint;
     } else {
-        throw std::invalid_argument("Invalid splitting_type_str");
+        throw std::invalid_argument("Invalid splitting method \"" + splitting_type_str + "\".");
     }
 }
 
@@ -320,19 +332,56 @@ get_splitting_size_regime(std::string const &splitting_size_regime_str) {
 };
 
 
-GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
-    :  num_edges(num_edges), V(g.size()), incident_edges(g.size()) {
+// Returns the edge weights to store in a GraphEdgeIndex. An empty input means
+// the graph is unweighted so every edge gets weight 1.
+static std::vector<double> build_edge_weights(std::vector<double> const &edge_weights,
+                                              int const num_edges) {
+    if (edge_weights.empty()) {
+        return std::vector<double>(num_edges, 1.0);
+    }
+
+    if (static_cast<int>(edge_weights.size()) != num_edges) {
+        std::ostringstream oss;
+        oss << "GraphEdgeIndex edge weight count mismatch. "
+            << "expected " << num_edges
+            << ", got " << edge_weights.size();
+        throw std::invalid_argument(oss.str());
+    }
+
+    for (std::size_t edge_id = 0; edge_id < edge_weights.size(); ++edge_id) {
+        double const weight = edge_weights[edge_id];
+        if (!std::isfinite(weight) || weight <= 0) {
+            std::ostringstream oss;
+            oss << "GraphEdgeIndex edge weights must be strictly positive and finite, "
+                << "but edge " << edge_id << " has weight " << weight;
+            throw std::invalid_argument(oss.str());
+        }
+    }
+
+    return edge_weights;
+}
+
+GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges,
+                               std::vector<double> const &edge_weights)
+    :  num_edges(num_edges), V(g.size()),
+       edge_weights(build_edge_weights(edge_weights, num_edges)),
+       is_weighted(!edge_weights.empty()),
+       incident_edges(g.size()) {
 
     if (g.size() > MAX_SUPPORTED_NUM_VERTICES) {
         throw std::invalid_argument("Too many vertices for VertexID in GraphEdgeIndex!");
     }
 
-    std::unordered_set<std::uint64_t> seen_edges;
-    seen_edges.reserve(static_cast<std::size_t>(num_edges) * 2);
-
     int const V = static_cast<int>(g.size());
     max_num_edges = 1;
 
+    // Edge ids are canonical: edge e is the e-th (v, u) pair with v < u in
+    // lexicographic order. This makes ids depend only on the graph and not on
+    // the order neighbors appear in the adjacency list, so edge-indexed output
+    // (spanning forests, linking edges) is comparable across runs and maps.
+    //
+    // First pass validates the adjacency list and collects the (v, u) pairs.
+    edges.reserve(num_edges);
     for (int v = 0; v < V; ++v) {
         auto num_v_edges = g[v].size();
         incident_edges[v].reserve(num_v_edges);
@@ -341,7 +390,6 @@ GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
         if (num_v_edges > max_num_edges){
             max_num_edges = num_v_edges;
         }
-        
 
         std::unordered_set<int> seen_neighbors_for_v;
         seen_neighbors_for_v.reserve(g[v].size());
@@ -355,44 +403,50 @@ GraphEdgeIndex::GraphEdgeIndex(Graph const &g, int const num_edges)
                 std::ostringstream oss;
                 oss << "Duplicate neighbor in graph adjacency list: "
                     << "vertex " << v << " has neighbor " << u << " more than once.";
-                
+
                 throw std::runtime_error(oss.str());
             }
 
             if (v < u) {
-                std::uint64_t const key =
-                    (static_cast<std::uint64_t>(v) << 32) |
-                    static_cast<std::uint32_t>(u);
-
-                if (!seen_edges.insert(key).second) {
-                    std::ostringstream oss;
-                    oss << "Duplicate undirected edge in GraphEdgeIndex: ("
-                        << v << ", " << u << ")";
-                    
-                    throw std::runtime_error(oss.str());
-                }
-
-                if (edges.size() > std::numeric_limits<EdgeID>::max()) {
-                    throw std::runtime_error("Too many graph edges for EdgeID!");
-                }
-
-                EdgeID const eid = static_cast<EdgeID>(edges.size());
-
                 edges.push_back({
                     static_cast<VertexID>(v),
                     static_cast<VertexID>(u)
                 });
-
-                incident_edges[v].push_back({
-                    static_cast<VertexID>(u),
-                    eid
-                });
-
-                incident_edges[u].push_back({
-                    static_cast<VertexID>(v),
-                    eid
-                });
             }
+        }
+    }
+
+    if (!edges.empty() &&
+        edges.size() - 1 > static_cast<std::size_t>(std::numeric_limits<EdgeID>::max())) {
+        throw std::runtime_error("Too many graph edges for EdgeID!");
+    }
+
+    std::sort(edges.begin(), edges.end());
+
+    // Second pass fills incident_edges. The traversal order here is kept
+    // identical to the order used before ids were canonicalized (neighbors are
+    // appended as each smaller endpoint is visited) since samplers walk
+    // incident_edges and changing it would change results for a given seed.
+    for (int v = 0; v < V; ++v) {
+        for (int u : g[v]) {
+            if (v >= u) continue;
+
+            std::pair<VertexID, VertexID> const edge{
+                static_cast<VertexID>(v), static_cast<VertexID>(u)
+            };
+            EdgeID const eid = static_cast<EdgeID>(
+                std::lower_bound(edges.begin(), edges.end(), edge) - edges.begin()
+            );
+
+            incident_edges[v].push_back({
+                static_cast<VertexID>(u),
+                eid
+            });
+
+            incident_edges[u].push_back({
+                static_cast<VertexID>(v),
+                eid
+            });
         }
     }
 
@@ -477,12 +531,17 @@ MapParams::MapParams(Graph const &g,
             std::vector<int> const &district_seat_sizes, 
             double const lower,
             double const target, double const upper,
-            SamplingSpace const sampling_space)
+            SamplingSpace const sampling_space,
+            bool const plans_may_be_non_hierarchical,
+            std::vector<double> const &edge_weights)
     : g(g), map_graph(g),
     num_edges(count_undirected_edges(g)),
-    graph_edge_index(g, num_edges), num_edge_bit_words(compute_num_edge_bit_words(num_edges)),
+    graph_edge_index(g, num_edges, edge_weights),
+    is_weighted(graph_edge_index.is_weighted),
+    num_edge_bit_words(compute_num_edge_bit_words(num_edges)),
         counties(counties.begin(), counties.end()), 
         num_counties(*std::max_element(counties.begin(), counties.end())), 
+        plans_may_be_non_hierarchical(plans_may_be_non_hierarchical && num_counties > 1),
         cg(county_multigraph(g, counties)),
         county_vertices(build_county_vertices(counties, num_counties)),
         county_restricted_graph(num_counties > 1 ? build_restricted_county_graph(g, counties)
@@ -554,7 +613,8 @@ MapParams::MapParams(Graph const &g,
 MapParams::MapParams(Graph const &g, 
     const std::vector<unsigned int> &counties, 
     const std::vector<unsigned int> &pop,
-    double const lower, double const upper
+    double const lower, double const upper,
+    std::vector<double> const &edge_weights
 ): MapParams(g, counties, pop,
         6, 6, std::vector<int>{1}, lower,
-                         42.0, upper, SamplingSpace::GraphSpace) {};
+                         42.0, upper, SamplingSpace::GraphSpace, false, edge_weights) {};

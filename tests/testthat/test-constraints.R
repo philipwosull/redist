@@ -213,18 +213,6 @@ test_that("add_constr_edges_rem records strength only", {
     expect_equal(constr$edges_removed[[1]]$strength, 1.25)
 })
 
-test_that("add_constr_qps records strength, cities, and n_cty", {
-    cities <- as.integer(seq_len(nrow(iowa_map)) %% 3)
-    constr <- suppressMessages(add_constr_qps(
-        redist_constr(iowa_map),
-        1,
-        cities = cities
-    ))
-    el <- constr$qps[[1]]
-    expect_equal(el$cities, cities)
-    expect_equal(el$n_cty, max(cities) + 1)
-})
-
 test_that("constraints can be stacked under the same name", {
     constr <- redist_constr(iowa_map) |>
         add_constr_grp_hinge(1, bvap, vap, tgts_group = 0.5) |>

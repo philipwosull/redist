@@ -53,7 +53,7 @@ validate_redist_constr <- function(constr) {
 #' You can view the exact structure of this list by calling [str()].
 #' Constraints may be added by using one of the following functions:
 #'
-#' `r paste0("* [", setdiff(ls("package:redist")[grep("add_constr_", ls("package:redist"))], "add_constr_qps"), "()]", collapse="\n")`
+#' `r paste0("* [", ls("package:redist")[grep("add_constr_", ls("package:redist"))], "()]", collapse="\n")`
 #'
 #' More information about each constraint can be found on the relevant constraint page.
 #'
@@ -167,6 +167,24 @@ get_nseats_score_vec <- function(only_nseats, nseats, ndists) {
     }
 
     nseats_to_score
+}
+
+# helper function
+# Evaluates a defused constraint argument, erroring clearly when the caller
+# did not supply it.
+#
+# `rlang::enquo()` on a missing argument yields an *empty* quosure, and
+# `rlang::eval_tidy()` on an empty quosure fails with the opaque
+# `object '' not found`, which names neither the function nor the argument.
+# Checking for that case first lets us say which argument is missing.
+#
+# The quosure must be defused by the caller and passed in: calling `missing()`
+# or defusing at the wrong point interferes with promise capture.
+eval_constr_arg <- function(quo, arg, data) {
+    if (rlang::quo_is_missing(quo)) {
+        cli::cli_abort("{.arg {arg}} is required but was not supplied.")
+    }
+    rlang::eval_tidy(quo, data)
 }
 
 # helper function
@@ -365,8 +383,7 @@ validate_population_vector <- function(V, pop_vector) {
 #' small, given that the underlying values are counts.
 #'
 #' The `edges_rem` constraint adds a term counting the number of edges removed from the
-#' adjacency graph. This is only usable with `redist_flip()`, as other algorithms
-#' implicitly use this via the `compactness` parameter. Values of `strength` should
+#' adjacency graph. Values of `strength` should
 #' generally be small, given that the underlying values are counts.
 #'
 #' The `log_st` constraint constraint adds a term counting the log number of spanning
@@ -385,6 +402,10 @@ validate_population_vector <- function(V, pop_vector) {
 #'
 #' The `pop_dev` constraint adds a term encouraging plans to have smaller population deviations
 #' from the target population.
+#'
+#' The `seats` constraint adds an indicator term for regions with the desired
+#' number of seats. Values of `strength` may be of moderate size.
+#'
 #'
 #' The `custom` constraint allows the user to specify their own constraint using
 #' a function which evaluates districts one at a time. The provided function
@@ -432,11 +453,6 @@ validate_population_vector <- function(V, pop_vector) {
 #'
 #' @param constr A [redist_constr()] object
 #' @param strength The strength of the constraint. Higher values mean a more restrictive constraint.
-#' @param only_districts Whether or not to apply the constraints to
-#' districts only. If constraints are only applied to districts then it will
-#' likely cause a drop in efficiency in the final round. If splitting plans all
-#' the way this does not affect the final target distribution. This is not relevant
-#' for constraints that penalize the entire plan instead of specific districts.
 #' @param only_nregions Whether or not to only apply entire-plan or region constraints
 #' when the plan has a particular number of regions. A value of `FALSE` means
 #' the constraint will applied to plans at every step.
@@ -542,7 +558,7 @@ add_constr_grp_pow <- function(
 
     new_constr <- c(new_constr,
         list(
-            group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+            group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
             total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
             tgt_group = tgt_group,
             tgt_other = tgt_other,
@@ -584,7 +600,7 @@ add_constr_grp_hinge <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+                        group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
                         tgts_group = tgts_group
                     ))
@@ -628,7 +644,7 @@ add_constr_grp_inv_hinge <- function(
     new_constr <- c(new_constr,
                     list(
                         group_pop = rlang::eval_tidy(rlang::enquo(total_pop), data) -
-                            rlang::eval_tidy(rlang::enquo(group_pop), data),
+                            eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data),
                         tgts_group = tgts_group
                     ))
@@ -668,8 +684,8 @@ add_constr_compet <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        dvote = rlang::eval_tidy(rlang::enquo(dvote), data),
-                        rvote = rlang::eval_tidy(rlang::enquo(rvote), data),
+                        dvote = eval_constr_arg(rlang::enquo(dvote), "dvote", data),
+                        rvote = eval_constr_arg(rlang::enquo(rvote), "rvote", data),
                         pow = pow
                     ))
 
@@ -702,7 +718,7 @@ add_constr_incumbency <- function(
     data <- attr(constr, "data")
     new_constr <- c(new_constr,
                     list(
-                        incumbents = rlang::eval_tidy(rlang::enquo(incumbents), data)
+                        incumbents = eval_constr_arg(rlang::enquo(incumbents), "incumbents", data)
                     ))
 
 
@@ -728,7 +744,7 @@ add_constr_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -764,7 +780,7 @@ add_constr_multisplits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -801,7 +817,7 @@ add_constr_total_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -858,7 +874,7 @@ add_constr_segregation <- function(
 
     new_constr <- c(new_constr,
                     list(
-                        group_pop = rlang::eval_tidy(rlang::enquo(group_pop), data),
+                        group_pop = eval_constr_arg(rlang::enquo(group_pop), "group_pop", data),
                         total_pop = rlang::eval_tidy(rlang::enquo(total_pop), data)
                     ))
 
@@ -981,7 +997,7 @@ add_constr_log_st <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         admin <- rep(1, nrow(data))
     }
@@ -999,34 +1015,18 @@ add_constr_log_st <- function(
     add_to_constr(constr, "log_st", new_constr)
 }
 
+
 #' @rdname constraints
+#' @param seats The desired seat values. These must be between 1 and `nseats`.
+#' Any region whose seat count is in `seats` will return a raw score of 1.
 #' @export
-add_constr_edges_rem <- function(
-    constr,
-    strength,
-    only_nregions = FALSE,
-    only_nseats = FALSE,
-    thresh = NULL
-) {
-    new_constr <- get_base_region_constraint_list(
-        constr = constr, strength = strength,
-        only_nregions = only_nregions,
-        only_nseats = only_nseats, thresh = thresh
-    )
-
-    add_to_constr(constr, "edges_removed", new_constr)
-}
-
-#' @param cities A vector containing zero entries for non-cities and non-zero entries for each city for `qps`.
-#' @noRd
-add_constr_qps <- function(
-    constr,
-    strength,
-    cities,
-    total_pop = NULL,
-    only_nregions = FALSE,
-    only_nseats = FALSE,
-    thresh = NULL
+add_constr_seats <- function(
+        constr,
+        strength,
+        seats,
+        only_nregions = FALSE,
+        only_nseats = FALSE,
+        thresh = NULL
 ) {
     new_constr <- get_base_region_constraint_list(
         constr = constr, strength = strength,
@@ -1035,20 +1035,24 @@ add_constr_qps <- function(
     )
 
     data <- attr(constr, "data")
+    nseats <- attr(data, "nseats")
+    smallest_seat_size <- attr(data, "seats_range") |> min()
+
+    # check seats is integers and between smallest district and `nseats`
+    if (!rlang::is_integerish(seats)) {
+        cli::cli_abort("{.arg seats} must be integers")
+    } else if (any(seats < smallest_seat_size) || any(seats > nseats)) {
+        cli::cli_abort("{.arg seats} must be between {smallest_seat_size} and {.arg nseats}")
+    }
+    # sort and remove duplicates
+    seats <- sort(unique(seats))
 
     new_constr <- c(new_constr,
                     list(
-                        cities = rlang::eval_tidy(rlang::enquo(cities), data)
+                        seats_to_score = seats
                     ))
 
-    new_constr$n_cty <- max(new_constr$cities) + 1
-
-    cli::cli_inform(
-    "The QPS constraint is not officially supported and may disappear.",
-    .frequency = "once",
-    .frequency_id = "redist_qps_unsupported"
-  )
-    add_to_constr(constr, "qps", new_constr)
+    add_to_constr(constr, "seats", new_constr)
 }
 
 #' @param fn A function
@@ -1147,6 +1151,32 @@ extract_vars <- function(expr) {
 # Whole Plan constraints
 ######
 
+#' @param use_frac Whether or not to normalize the number of edges removed by
+#' the total number of edges in the graph. If `TRUE` then the raw score will be
+#' bounded between 0 and 1.
+#' @rdname constraints
+#' @export
+add_constr_edges_rem <- function(
+        constr,
+        strength,
+        use_frac = FALSE,
+        only_nregions = FALSE,
+        thresh = NULL
+) {
+    new_constr <- get_base_plan_constraint_list(
+        constr = constr, strength = strength,
+        only_nregions = only_nregions,
+        thresh = thresh
+    )
+
+    new_constr <- c(new_constr,
+                    list(
+                        use_frac = use_frac
+                    ))
+
+    add_to_constr(constr, "edges_removed", new_constr)
+}
+
 #' @param admin A vector indicating administrative unit membership
 #' @rdname constraints
 #' @export
@@ -1166,7 +1196,7 @@ add_constr_plan_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -1203,7 +1233,7 @@ add_constr_total_plan_splits <- function(
 
     data <- attr(constr, "data")
 
-    admin <- rlang::eval_tidy(rlang::enquo(admin), data)
+    admin <- eval_constr_arg(rlang::enquo(admin), "admin", data)
     if (is.null(admin)) {
         cli::cli_abort("{.arg admin} may not be {.val NULL}.")
     }
@@ -1245,7 +1275,7 @@ add_constr_plan_incumbency <- function(
 
     new_constr <- c(new_constr,
                     list(
-                        incumbents = rlang::eval_tidy(rlang::enquo(incumbents), data)
+                        incumbents = eval_constr_arg(rlang::enquo(incumbents), "incumbents", data)
                     ))
 
     add_to_constr(constr, "plan_incumbency", new_constr)
@@ -1410,135 +1440,177 @@ add_constr_custom_plan <- function(
 #######################
 # generics
 
+# Human-readable description of each constraint type, keyed by the name used in
+# `add_to_constr()`. `unlist()` suffixes these when a type appears more than
+# once (e.g. "grp_pow1", "grp_pow2"), so they are matched with `startsWith()`.
+constr_type_labels <- c(
+    status_quo        = "A status quo constraint",
+    grp_pow           = "A (power-type) group share constraint",
+    grp_hinge         = "A (hinge-type) group share constraint",
+    grp_inv_hinge     = "An (inverse-hinge-type) group share constraint",
+    compet            = "A competitiveness constraint",
+    incumbency        = "An incumbency constraint",
+    splits            = "A splits constraint",
+    multisplits       = "A multisplits constraint",
+    total_splits      = "A total splits constraint",
+    plan_splits       = "A whole-plan splits constraint",
+    total_plan_splits = "A whole-plan total splits constraint",
+    plan_incumbency   = "A whole-plan incumbency constraint",
+    min_group_frac    = "A minimum group fraction constraint",
+    pop_dev           = "A population deviation constraint",
+    segregation       = "A dissimilarity segregation constraint",
+    edges_rem         = "An (edges-removed-type) compactness constraint",
+    log_st            = "A (log-spanning-tree-type) compactness constraint",
+    polsby            = "A (Polsby-Popper-type) compactness constraint",
+    fry_hold          = "A (Fryer-Holden-type) compactness constraint",
+    seats      = "A region seats constraint",
+    custom_plan       = "A custom plan constraint",
+    custom            = "A custom constraint"
+)
+
+# Constraints carrying large admin vectors, whose `str()` details are
+# suppressed to keep the printout readable.
+constr_skip_details <- c(
+    "splits", "multisplits", "total_splits",
+    "plan_splits", "total_plan_splits"
+)
+
+# Resolve an entry name from a `redist_constr` to its constraint type.
+# Longest names are tried first so that, e.g., "custom_plan" is not claimed by
+# "custom". Returns `NA_character_` for an unrecognized name.
+constr_type <- function(nm) {
+    types <- names(constr_type_labels)
+    types <- types[order(nchar(types), decreasing = TRUE)]
+    hit <- types[startsWith(nm, types)]
+    if (length(hit) == 0) NA_character_ else hit[1]
+}
+
+# Pluralize `unit` unless the only value listed is 1 ("1 seat", "2 seats",
+# "1 or 3 seats").
+pluralize_unit <- function(values, unit) {
+    if (length(values) == 1 && values == 1) unit else paste0(unit, "s")
+}
+
+# "1", "1 or 2", "1, 2, or 3", "1, 2, 3, 4, 5, or 2 more"
+commas_or <- function(x, trunc = 5) {
+    x <- as.character(x)
+    n <- length(x)
+    if (n == 0) {
+        return("none")
+    }
+    if (n > trunc) {
+        x <- c(x[seq_len(trunc)], paste0(n - trunc, " more"))
+        n <- trunc + 1L
+    }
+    if (n == 1) {
+        return(x)
+    }
+    paste0(paste(x[-n], collapse = ", "), if (n > 2) "," else "", " or ", x[n])
+}
+
+# Describe what a constraint is scored on, from the `nseats_to_score` and
+# `nregions_to_score` logical vectors built by
+# `get_base_region_constraint_list()` and `get_base_plan_constraint_list()`.
+# Plan-level constraints have no `nseats_to_score`.
+constr_scope_str <- function(cn) {
+    seats <- cn$nseats_to_score
+    nregions <- cn$nregions_to_score
+
+    if (is.null(seats)) {
+        target <- "the whole plan"
+    } else if (all(seats)) {
+        target <- "all regions"
+    } else if (!any(seats)) {
+        target <- "no regions"
+    } else if (identical(which(seats), 1L)) {
+        # a one-seat region is a district
+        target <- "districts only"
+    } else {
+        sizes <- which(seats)
+        target <- paste0(
+            "regions with ", commas_or(sizes), " ", pluralize_unit(sizes, "seat")
+        )
+    }
+
+    if (is.null(nregions) || all(nregions)) {
+        return(target)
+    }
+    counts <- which(nregions)
+    if (length(counts) == 0) {
+        return(paste0(target, ", but at no number of regions"))
+    }
+    paste0(
+        target, ", only when the plan has ", commas_or(counts), " ",
+        pluralize_unit(counts, "region")
+    )
+}
+
 #' Generic to print redist_constr
 #' @param x redist_constr
 #' @param header if FALSE, then suppress introduction / header line
 #' @param details if FALSE, then suppress the details of each constraint
 #' @param \dots additional arguments
 #' @method print redist_constr
-#' @return Prints to console and returns input redist_constr
+#' @return Invisibly returns the input `redist_constr`
 #' @export
 print.redist_constr <- function(x, header = TRUE, details = TRUE, ...) {
+    constr <- x
+
     if (header) {
         cli::cli_text("A {.cls redist_constr} with {length(x)} constraint{?s}")
     }
 
-    print_constr <- function(x) {
-        if (details) {
-            idx_strength <- which(names(x) == "strength")
-            str(x[-idx_strength], no.list = TRUE, comp.str = "   ", give.attr = FALSE)
+    # Reported in the bullet itself, so not repeated in the details.
+    summarised <- c(
+        "strength", "nregions_to_score", "nseats_to_score",
+        "hard_constraint", "hard_threshold"
+    )
+
+    print_constr <- function(cn) {
+        if (!details) {
+            return(invisible(NULL))
+        }
+        rest <- cn[!names(cn) %in% summarised]
+        if (length(rest) > 0) {
+            str(rest, no.list = TRUE, comp.str = "   ", give.attr = FALSE)
         }
     }
 
     x <- unlist(x, recursive = FALSE)
     for (nm in names(x)) {
-        if ("only_districts" %in% x[[nm]] && x[[nm]]$only_districts) {
-            score_str <- "districts only"
-        } else {
-            score_str <- "all regions"
-        }
+        cn <- x[[nm]]
+        score_str <- constr_scope_str(cn)
 
-        if ("hard_constraint" %in% x[[nm]] && x[[nm]]$hard_constraint) {
+        if (isTRUE(cn$hard_constraint)) {
             thresh_str <- sprintf(
                 " with a hard threshold of %.3f",
-                x[[nm]]$hard_threshold
+                cn$hard_threshold
             )
         } else {
             thresh_str <- ""
         }
 
-        if (startsWith(nm, "status_quo")) {
+        type <- constr_type(nm)
+
+        if (is.na(type)) {
             cli::cli_bullets(c(
-        "*" = "A status quo constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_pow")) {
-            cli::cli_bullets(c(
-        "*" = "A (power-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_hinge")) {
-            cli::cli_bullets(c(
-        "*" = "A (hinge-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "grp_inv_hinge")) {
-            cli::cli_bullets(c(
-        "*" = "An (inverse-hinge-type) group share constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "compet")) {
-            cli::cli_bullets(c(
-        "*" = "A competitiveness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "incumbency")) {
-            cli::cli_bullets(c(
-        "*" = "An incumbency constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "splits")) {
-            cli::cli_bullets(c(
-        "*" = "A splits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "multisplits")) {
-            cli::cli_bullets(c(
-        "*" = "A multisplits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "total_splits")) {
-            cli::cli_bullets(c(
-        "*" = "A total splits constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-        } else if (startsWith(nm, "custom_plan")) {
-            cli::cli_bullets(c(
-        "*" = "A custom plan constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "custom")) {
-            cli::cli_bullets(c(
-        "*" = "A custom constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "edges_rem")) {
-            cli::cli_bullets(c(
-        "*" = "An (edges-removed-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "log_st")) {
-            cli::cli_bullets(c(
-        "*" = "A (log-spanning-tree-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "polsby")) {
-            cli::cli_bullets(c(
-        "*" = "A (Polsby-Popper-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "fry_hold")) {
-            cli::cli_bullets(c(
-        "*" = "A (Fryer-Holden-type) compactness constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "pop_dev")) {
-            cli::cli_bullets(c(
-        "*" = "A population deviation constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else if (startsWith(nm, "segregation")) {
-            cli::cli_bullets(c(
-        "*" = "A dissimilarity segregation constraint of strength {x[[nm]]$strength} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
-        } else {
-            cli::cli_bullets(c(
-        "*" = "An unknown constraint {.var {nm}} applied to {score_str}{thresh_str}"
-      ))
-            print_constr(x[[nm]])
+                "*" = "An unknown constraint {.var {nm}} applied to {score_str}{thresh_str}"
+            ))
+            print_constr(cn)
+            next
+        }
+
+        label <- unname(constr_type_labels[[type]])
+        cli::cli_bullets(c(
+            "*" = "{label} of strength {cn$strength} applied to {score_str}{thresh_str}"
+        ))
+        if (!type %in% constr_skip_details) {
+            print_constr(cn)
         }
     }
+
+    invisible(constr)
 }
-
-
 #' Visualize constraints
 #'
 #' Plots the constraint strength versus some running variable. Currently

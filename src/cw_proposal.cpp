@@ -1,3 +1,5 @@
+#include <iterator>
+
 #include "cw_proposal.h"
 
 #include <algorithm>

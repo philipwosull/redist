@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <string_view>
+
 #include <atomic>
 #include <limits>
 #include <vector>
@@ -37,7 +39,7 @@ inline void add_elapsed(
             Clock::now() - start
         ).count();
     }else{
-        throw Rcpp::exception("Time elapsed is being called when TRACK_GRANULAR_PERFORMANCE_TIMES = false");
+        throw std::runtime_error("Time elapsed is being called when TRACK_GRANULAR_PERFORMANCE_TIMES = false");
     }
 }
 

@@ -34,3 +34,4 @@ builder.sh
 ^revdep$
 ^LICENSE\.md$
 ^CONTRIBUTING\.md$
+^\.lintr$

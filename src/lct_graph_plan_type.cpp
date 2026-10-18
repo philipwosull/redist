@@ -173,7 +173,7 @@ void LCTGraphPlan::update_vertex_and_plan_specific_info_from_cut(
     // attempt_cycle_walk / attempt_forest_walk and never goes through this
     // hook. When the SMC integration lands, rebuild spanning trees on the
     // two affected regions via USTSampler and rebuild_cross_edges here.
-    throw Rcpp::exception(
+    throw std::runtime_error(
         "LCTGraphPlan::update_vertex_and_plan_specific_info_from_cut not implemented; "
         "LCTGraphPlan is currently only usable as an MCMC state, not as an SMC step.");
 }

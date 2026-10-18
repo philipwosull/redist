@@ -1,6 +1,20 @@
-#include "tree_op.h"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <R_ext/Print.h>
+#include <utility>
+#include <vector>
 
-#include "random.h"
+#include "tree_op.h"
+#include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 
 
 
@@ -91,22 +105,6 @@ void get_tree_pops_below(const Tree &ust, // const FlatGraph &ust,
 
     return;
 }
-
-/*
- * Just Count population below each node in tree
- */
-// TESTED
-int get_tree_pops_below(const Tree &ust, const int vtx, const arma::uvec &pop,
-                        std::vector<int> &pop_below) {
-    int pop_at = pop[vtx];
-    for (auto const nbor : ust[vtx]) {
-        pop_at += get_tree_pops_below(ust, nbor, pop, pop_below);
-    }
-
-    pop_below[vtx] = pop_at;
-    return pop_at;
-}
-
 
 // updates both the vertex labels and the forest adjacency from a directed tree
 void assign_region_id_and_forest_from_tree(const Tree &ust,  // const FlatGraph &ust, 

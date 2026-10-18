@@ -7,10 +7,14 @@
  ********************************************************/
 
 
+#include <iomanip>
+#include <locale>
+
 #include <cmath>
 #include <cstdint>
+#include <sstream>
 #include <string>
-#include <RcppArmadillo.h>
+#include <Rcpp.h>
 
 #include "base_plan_type.h"
 #include "graph_plan_type.h"
@@ -22,6 +26,7 @@
 #include "random.h"
 #include "wilson.h"
 #include "utils.h"
+#include "threading_helpers.h"
 
 
 #include <RcppThread.h>
@@ -51,23 +56,29 @@ Rcpp::List ms_plans(
     Rcpp::List const &constraints, // constraints
     int const verbosity = 3, bool const diagnostic_mode = false) {
     // whether or not to perform MH step
-    bool do_mh = (bool)control["do_mh"];
+    bool do_mh = (bool) control["do_mh"];
+    // whether or not to sample hierarchically but not enforce hierarchical validity
+    bool enforce_hierarchical = Rcpp::as<bool>(control["enforce_hierarchical"]);
 
     if constexpr (DEBUG_PURE_MS_VERBOSE)
         Rprintf("Checkpoint 1!\n");
     Rcpp::List out; // return
     // re-seed MT so that `set.seed()` works in R
-    int global_rng_seed = (int)Rcpp::sample(INT_MAX, 1)[0];
+    int global_rng_seed = (int) Rcpp::sample(INT_MAX, 1)[0];
     RNGState rng_state(global_rng_seed);
     // Set the sampling space
     SamplingSpace sampling_space = get_sampling_space(sampling_space_str);
     bool save_edge_selection_prob = sampling_space == SamplingSpace::LinkingEdgeSpace;
     // TODO: Legacy, in future remove
-    global_seed_rng((int)Rcpp::sample(INT_MAX, 1)[0]);
+    global_seed_rng( (int) Rcpp::sample(INT_MAX, 1)[0]);
 
     // make sure both are 1 column matrix
     if (init_plan.ncol() > 1 || init_seats.ncol() > 1) {
-        throw Rcpp::exception("Error!\n");
+        std::ostringstream oss;
+        oss << "Mergesplit takes a single initial plan, so `init_plan` and `init_seats` must "
+            << "each have exactly 1 column, but `init_plan` has " << init_plan.ncol()
+            << " columns and `init_seats` has " << init_seats.ncol() << " columns.\n";
+        throw Rcpp::exception(oss.str().c_str());
     }
 
     // Create map level graph and county level multigraph
@@ -75,8 +86,8 @@ Rcpp::List ms_plans(
         Rcpp::as<std::vector<unsigned int>>(counties), 
         Rcpp::as<std::vector<unsigned int>>(pop), 
         ndists, total_seats,
-                               Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
-                            sampling_space);
+        Rcpp::as<std::vector<int>>(district_seat_sizes), lower, target, upper,
+        sampling_space, !enforce_hierarchical);
     int V = map_params.g.size();
 
     int initial_num_regions = static_cast<int>(ndists);
@@ -158,11 +169,14 @@ Rcpp::List ms_plans(
     {
         USTSampler ust_sampler(map_params, *splitting_schedule_ptr);
         PlanMultigraph current_plan_multigraph(map_params, sampling_space ==
-                                                               SamplingSpace::LinkingEdgeSpace);
+                                                               SamplingSpace::LinkingEdgeSpace
+                                                );
         PlanMultigraph proposed_plan_multigraph(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace
+            );
 
-        RcppThread::ThreadPool pool(0);
+        // 1 means serial under the package threading convention
+        RcppThread::ThreadPool pool = get_thread_pool(1);
         // underlying vector from plan
         PlanEnsemble plan_ensemble = get_plan_ensemble(
             map_params, *splitting_schedule_ptr, initial_num_regions, 1, sampling_space,
@@ -188,10 +202,18 @@ Rcpp::List ms_plans(
             throw Rcpp::exception("Initial Plan is not hierarchically valid. Either turn off "
                                   "counties or pass in a hierarchically valid plan\n");
         }
+        // Build the schedule context for the current plan. It is swapped with the
+        // proposed plan's context whenever a proposal is accepted, so it always
+        // matches the current plan.
+        ScheduleContext current_schedule_ctx, proposed_schedule_ctx;
+        splitting_schedule_ptr->build_context(*plan_ensemble.plan_ptr_vec[0],
+                                              current_schedule_ctx);
+
         // build multigraph on current plan and get pairs of adj districts to merge
         auto build_result =
             plan_ensemble.plan_ptr_vec[0]->attempt_to_get_valid_mergesplit_pairs(
-                current_plan_multigraph, *splitting_schedule_ptr, scoring_function, true);
+                current_plan_multigraph, *splitting_schedule_ptr, current_schedule_ctx,
+                scoring_function, true);
         // shouldn't be possible but just a sanity check
         if (!build_result.first) {
             throw Rcpp::exception("BIG ERROR: Plan registered as hierarchically valid but we "
@@ -200,11 +222,12 @@ Rcpp::List ms_plans(
         auto current_plan_adj_region_pairs =
             plan_ensemble.plan_ptr_vec[0]
                 ->attempt_to_get_valid_mergesplit_pairs(
-                    current_plan_multigraph, *splitting_schedule_ptr, scoring_function, true)
+                    current_plan_multigraph, *splitting_schedule_ptr, current_schedule_ctx,
+                    scoring_function, true)
                 .second;
 
         // get weights
-        arma::vec current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
+        std::vector<double> current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
             *plan_ensemble.plan_ptr_vec[0], current_plan_adj_region_pairs, pair_rule);
 
         // Set or estimate k if doing graph space sampling
@@ -262,7 +285,13 @@ Rcpp::List ms_plans(
             }
             if (scoring_function.total_soft_constraints > 0) {
                 Rcpp::Rcout << "Applying " << scoring_function.total_soft_constraints
-                      << " constraints" << std::endl;
+                      << " soft constraints." << std::endl;
+            }
+            int const num_hard_constraints = scoring_function.num_hard_region_constraints +
+                                             scoring_function.num_hard_plan_constraints;
+            if (num_hard_constraints > 0) {
+                Rcpp::Rcout << "Applying " << num_hard_constraints << " hard constraints."
+                      << std::endl;
             }
         }
 
@@ -287,7 +316,8 @@ Rcpp::List ms_plans(
             // Index 0 or less is warmup
             bool in_warmup = i <= 0;
             if constexpr (DEBUG_PURE_MS_VERBOSE) {
-                Rprintf("Iter %d and idx %d: Starting\n", i, current_plan_mat_col);
+                Rprintf("Iter %lld and idx %d: Starting\n",
+                        static_cast<long long>(i), current_plan_mat_col);
             }
 
             // attempt to mergesplit
@@ -295,13 +325,15 @@ Rcpp::List ms_plans(
                 map_params, *splitting_schedule_ptr, scoring_function, rng_state,
                 sampling_space, *plan_ensemble.plan_ptr_vec[0],
                 *proposal_plan_ensemble.plan_ptr_vec[0], ust_sampler, *tree_splitter_ptr_vec[0],
-                current_plan_multigraph, proposed_plan_multigraph, pair_rule,
+                current_plan_multigraph, proposed_plan_multigraph, current_schedule_ctx,
+                proposed_schedule_ctx, pair_rule,
                 save_edge_selection_prob, current_plan_adj_region_pairs,
                 current_plan_pair_unnoramalized_wgts, rho, true, do_mh, false, nullptr,
                 granular_times);
 
             if constexpr (DEBUG_PURE_MS_VERBOSE) {
-                Rprintf("Iter %d and idx %d: Attempted Mergesplit \n", i, current_plan_mat_col);
+                Rprintf("Iter %lld and idx %d: Attempted Mergesplit \n",
+                        static_cast<long long>(i), current_plan_mat_col);
             }
             // count size
             ++tree_sizes[std::get<3>(mergesplit_result) - 1];
@@ -386,6 +418,22 @@ Rcpp::List ms_plans(
               << std::endl;
     }
 
+    /*
+     * How many of the saved plans are distinct, ignoring how regions happen to
+     * be numbered. Counted while the matrix is still 0-indexed, so region ids
+     * run 0..ndists-1.
+     *
+     * Only the count is kept: the tally behind it is one entry per distinct
+     * plan and is discarded here, so this adds a fraction of a percent to what
+     * the saved plans matrix already occupies.
+     */
+    int const nunique_saved_plans = static_cast<int>(
+        tally_unique_plans(
+            [&](int const i) { return saved_plans_mat.column(i); },
+            saved_plans_mat.ncol(), V, ndists
+        ).size()
+    );
+
     // now add 1 to plans
     std::transform(saved_plans_mat.begin(), saved_plans_mat.end(), saved_plans_mat.begin(),
                    [](int x) { return x + 1; });
@@ -401,6 +449,7 @@ Rcpp::List ms_plans(
     out["warmup_acceptances"] = warmup_acceptances;
     out["post_warump_acceptances"] = post_warump_acceptances;
     out["log_mh_ratio"] = log_mh_ratios;
+    out["nunique_plans"] = nunique_saved_plans;
     out["tree_sizes"] = tree_sizes;
     out["successful_tree_sizes"] = successful_tree_sizes;
     out["warmup_time"] = warmup_time;

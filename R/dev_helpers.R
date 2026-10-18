@@ -83,7 +83,9 @@ compute_log_target_density <- function(
     }
 
     # need to pass in the defused quosure
-    constraints <- validate_constraints(map = map, constraints = rlang::enquo(constraints))
+    constraints <- validate_constraints(
+        map = map, constraints = rlang::enquo(constraints), compactness = compactness
+    )
 
     unnormalized_log_density <- compute_log_unnormalized_target_density_components(
         adj_list,
@@ -196,7 +198,9 @@ compute_log_target_density_by_region <- function(
     }
 
     # need to pass in the defused quosure
-    constraints <- validate_constraints(map = map, constraints = rlang::enquo(constraints))
+    constraints <- validate_constraints(
+        map = map, constraints = rlang::enquo(constraints), compactness = compactness
+    )
 
     unnormalized_log_region_densities <- compute_log_unnormalized_target_density_components(
         adj_list,
@@ -300,7 +304,9 @@ compute_log_optimal_weights <- function(
     }
 
     # need to pass in the defused quosure
-    constraints <- validate_constraints(map = map, constraints = rlang::enquo(constraints))
+    constraints <- validate_constraints(
+        map = map, constraints = rlang::enquo(constraints), compactness = compactness
+    )
 
     unnormalized_log_density <- compute_plans_log_optimal_weights(
         adj_list,

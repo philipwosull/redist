@@ -6,15 +6,34 @@
  ********************************************************/
 
 
-#include <RcppArmadillo.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <iterator>
+
+#include <Rcpp.h>
+#include <numeric>
+#include <queue>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "base_plan_type.h"
 
 
-#include "map_calc.h"
+#include "R_ext/Print.h"
+#include "advanced_types.h"
+#include "redist_constants.h"
+#include "redist_types.h"
 #include "sparse_logdet.h"
 #include "scoring.h"
 #include "splitting_schedule_types.h"
+#include "tree_op.h"
 #include "utils.h"
 #include "random.h"
 #include "wilson.h"
@@ -517,7 +536,7 @@ double compute_log_region_and_county_spanning_tree(
     int const minor_V = K - 1; // number of vertices in the matrix to build
     // we will build the sparse matrix by first creating entries
     // This stores entries as (i, j, value)
-    std::vector<Eigen::Triplet<double, int>> trips;
+    std::vector<SparseEntry> trips;
     // since modifying triplets after creation is expensive we just track degrees then
     // add at the end
     std::vector<int> vertex_degrees(minor_V, 0);
@@ -558,7 +577,7 @@ double compute_log_region_and_county_spanning_tree(
     }
 
     // now return the log determinant
-    return compute_log_det_from_triplets(trips, minor_V);
+    return compute_log_det_from_entries(trips, minor_V);
 }
 
 /*
@@ -600,7 +619,7 @@ double compute_log_county_level_spanning_tree(Graph const &g, const std::vector<
     int const minor_V = K - 1; // number of vertices in the matrix to build
     // we will build the sparse matrix by first creating entries
     // This stores entries as (i, j, value)
-    std::vector<Eigen::Triplet<double, int>> trips;
+    std::vector<SparseEntry> trips;
     // since modifying triplets after creation is expensive we just track degrees then
     // add at the end
     std::vector<int> vertex_degrees(minor_V, 0);
@@ -638,7 +657,7 @@ double compute_log_county_level_spanning_tree(Graph const &g, const std::vector<
     }
 
     // now return the log determinant
-    return compute_log_det_from_triplets(trips, minor_V);
+    return compute_log_det_from_entries(trips, minor_V);
 }
 
 
@@ -743,15 +762,15 @@ double Plan::compute_log_plan_spanning_trees(MapParams const &map_params) const 
 //
 // @param region_to_split an integer that will be updated by reference with the
 // id number of the region selected to split
-// @param valid_region_sizes_to_split A 1-indexed vector mapping region sizes to
-// whether or not they can be split. So `valid_region_sizes_to_split[r] == true`
-// means that multidistricts of size r can be split.
+// @param splitting_schedule The splitting schedule deciding which regions can be split
+// @param schedule_ctx The schedule context built for this plan
 //
 // @details `region_id_to_split` is set to the id of the region selected
 //
 // @return the region id that was chosen to be split
 //
-int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_sizes_to_split,
+int Plan::choose_multidistrict_to_split(SplittingSchedule const &splitting_schedule,
+                                        ScheduleContext const &schedule_ctx,
                                         RNGState &rng_state,
                                         double const selection_alpha) const {
 
@@ -763,20 +782,18 @@ int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_si
     for (int region_id = 0; region_id < num_regions; region_id++) {
         auto region_size = region_sizes[region_id];
         if constexpr(perf_config::supposedly_safe_input_checks){
-            if (region_size < 0 ||
-                region_size >= static_cast<int>(valid_region_sizes_to_split.size())) {
+            if (region_size < 0 || region_size > splitting_schedule.total_seats) {
                 std::ostringstream oss;
                 oss << "Region size out of bounds in choose_multidistrict_to_split.\n";
                 oss << "region_id=" << region_id << "\n";
                 oss << "region_size=" << region_size << "\n";
-                oss << "valid_region_sizes_to_split.size()="
-                    << valid_region_sizes_to_split.size() << "\n";
+                oss << "total_seats=" << splitting_schedule.total_seats << "\n";
                 oss << debug_string(true);
                 throw std::runtime_error(oss.str());
             }
         }
         // if valid then add id to vector
-        if (valid_region_sizes_to_split[region_size]) {
+        if (splitting_schedule.region_is_splittable(*this, schedule_ctx, region_id)) {
             // add the count and label to vector
             valid_region_ids.push_back(region_id);
             associated_region_sizes.push_back(region_size);
@@ -791,8 +808,6 @@ int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_si
         std::ostringstream oss;
         oss << "Plan::choose_multidistrict_to_split found no valid regions to split.\n";
         oss << "num_regions=" << num_regions << "\n";
-        oss << "valid_region_sizes_to_split.size()="
-            << valid_region_sizes_to_split.size() << "\n";
 
         oss << "Region sizes: ";
         for (int region_id = 0; region_id < num_regions; ++region_id) {
@@ -806,10 +821,10 @@ int Plan::choose_multidistrict_to_split(std::vector<bool> const &valid_region_si
     }
         
 
-    arma::vec region_wgts(valid_region_ids.size());
+    std::vector<double> region_wgts(valid_region_ids.size());
 
     for (size_t i = 0; i < valid_region_ids.size(); i++) {
-        region_wgts(i) = std::pow(associated_region_sizes[i], selection_alpha);
+        region_wgts[i] = std::pow(associated_region_sizes[i], selection_alpha);
     }
     int idx = rng_state.r_int_unnormalized_wgt(region_wgts);
     int region_id_to_split = valid_region_ids.at(idx);
@@ -1063,7 +1078,7 @@ void Plan::fill_in_skipped_subtrees(
 // Returns false if multigraph was not successfully built
 std::pair<bool, std::vector<std::pair<RegionID, RegionID>>>
 Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
-                                            SplittingSchedule const &splitting_schedule,
+                                            SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
                                             ScoringFunction const &scoring_function,
                                             bool const is_final_split) const {
     bool const result = plan_multigraph.build_plan_multigraph(region_ids, num_regions);
@@ -1072,7 +1087,7 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
         return std::make_pair(false, std::vector<std::pair<RegionID, RegionID>>{});
     // plan_multigraph.Rprint_detailed(*this);
     // else remove all the invalid size and mergesplit pairs and invalid hard constraint
-    plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule);
+    plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule, schedule_ctx);
     plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function,
                                                          is_final_split);
     plan_multigraph.remove_invalid_mergesplit_pairs(*this);
@@ -1082,23 +1097,19 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
 }
 
 std::vector<std::pair<RegionID, RegionID>> Plan::get_valid_smc_merge_regions(
-    PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule,
+    PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
     ScoringFunction const &scoring_function, bool const is_final_split) const {
     // build the multigraph
     plan_multigraph.build_plan_multigraph(region_ids, num_regions);
 
+
     std::vector<std::pair<RegionID, RegionID>> output_pairs;
     output_pairs.reserve(plan_multigraph.pair_map.num_hier_smc_merge_valid_pairs);
 
-    // go through and only add pairs with valid size pairs
+    // go through and only add pairs the schedule says are ok to merge
     for (auto const a_pair : plan_multigraph.pair_map.hashed_pairs) {
-        // check both region sizes are valid split sizes and they are ok to merge
-        bool invalid_sizing =
-            (!splitting_schedule.valid_split_region_sizes[region_sizes[a_pair.first]] ||
-             !splitting_schedule.valid_split_region_sizes[region_sizes[a_pair.second]] ||
-             !splitting_schedule.valid_merge_pair_sizes[region_sizes[a_pair.first]]
-                                                       [region_sizes[a_pair.second]]);
-        if (invalid_sizing)
+        if (!splitting_schedule.is_valid_merge_pair(*this, schedule_ctx, a_pair.first,
+                                                    a_pair.second))
             continue;
 
         // now check hierarchical merge is ok
@@ -1586,7 +1597,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
     // else go through and build the laplacian for regions 0 through num_regions-1
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+    std::vector<SparseEntry> laplacian_minor_trips;
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1644,7 +1655,7 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
         }
     }
 
-    return compute_log_det_from_triplets(laplacian_minor_trips, num_regions - 1);
+    return compute_log_det_from_entries(laplacian_minor_trips, num_regions - 1);
 };
 
 double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
@@ -1685,7 +1696,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
     determinant of the minor we actually have a num_regions-2 x num_regions-2 matrix
     where we delete the row and column corresponding to the merged region.
      */
-    std::vector<Eigen::Triplet<double, int>> merged_laplacian_minor_trips;
+    std::vector<SparseEntry> merged_laplacian_minor_trips;
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1757,7 +1768,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
         }
     }
 
-    return compute_log_det_from_triplets(merged_laplacian_minor_trips, num_regions - 2);
+    return compute_log_det_from_entries(merged_laplacian_minor_trips, num_regions - 2);
 }
 
 double PlanMultigraph::compute_log_multigraph_tau(int const num_regions,
@@ -1905,7 +1916,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
 
             // Now make the graph laplacian matrix
             // as a sparse upper triangle matrix
-            std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+            std::vector<SparseEntry> laplacian_minor_trips;
 
             // now we iterate through all pairs where both are in this component
             while (curr_index < all_pairs.size() &&
@@ -2011,7 +2022,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             }
             // Now add log det
             log_tau +=
-                compute_log_det_from_triplets(laplacian_minor_trips, num_component_regions - 1);
+                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
         }
     }
 
@@ -2057,7 +2068,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
 
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> component_laplacian_minor_trips;
+    std::vector<SparseEntry> component_laplacian_minor_trips;
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2071,9 +2082,17 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
         int component1_id = county_component[pair_region1];
         int component2_id = county_component[pair_region2];
 
-        //
+        // pairs from curr_index on were sorted to be across components
         if (pair_val.same_admin_component) {
-            REprintf("BIG ERROR SAME COMPONENT WHEN SHOULD BE DIFF!\n");
+            std::ostringstream oss;
+            oss << "ERROR in compute_hierarchical_log_multigraph_tau: region pair ("
+                << static_cast<int>(pair_region1) << ", " << static_cast<int>(pair_region2)
+                << ") at sorted index " << i << " (first across component index "
+                << curr_index << ") is marked as in the same administrative component "
+                << "but should be across components " << component1_id << " and "
+                << component2_id << ".\n"
+                << debug_string();
+            throw std::runtime_error(oss.str());
         }
 
         double edges = static_cast<double>(pair_val.across_county_edges);
@@ -2130,7 +2149,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_triplets(component_laplacian_minor_trips,
+    log_tau += compute_log_det_from_entries(component_laplacian_minor_trips,
                                              num_county_connected_components - 1);
 
     return log_tau;
@@ -2392,7 +2411,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
             // Now make the graph laplacian matrix
             // as a sparse upper triangle matrix
-            std::vector<Eigen::Triplet<double, int>> laplacian_minor_trips;
+            std::vector<SparseEntry> laplacian_minor_trips;
 
             // now we iterate through all pairs where both are in this component
             while (
@@ -2495,7 +2514,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             }
             // Now add log det
             log_tau +=
-                compute_log_det_from_triplets(laplacian_minor_trips, num_component_regions - 1);
+                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
         }
     }
 
@@ -2565,7 +2584,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
     // Now we compute spanning trees across components
     // as a sparse upper triangle matrix
-    std::vector<Eigen::Triplet<double, int>> merged_component_laplacian_minor_trips;
+    std::vector<SparseEntry> merged_component_laplacian_minor_trips;
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2600,9 +2619,17 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
         int component1_id = county_component_reindex[county_component[pair_region1]];
         int component2_id = county_component_reindex[county_component[pair_region2]];
 
-        //
+        // pairs from curr_index on were sorted to be across components
         if (pair_val.same_admin_component) {
-            REprintf("BIG ERROR SAME COMPONENT WHEN SHOULD BE DIFF!\n");
+            std::ostringstream oss;
+            oss << "ERROR in compute_hierarchical_merged_log_multigraph_tau: region pair ("
+                << static_cast<int>(pair_region1) << ", " << static_cast<int>(pair_region2)
+                << ") at sorted index " << i << " (first across component index "
+                << curr_index << ") is marked as in the same administrative component "
+                << "but should be across merged components " << component1_id << " and "
+                << component2_id << ".\n"
+                << debug_string();
+            throw std::runtime_error(oss.str());
         }
 
         double edges = static_cast<double>(pair_val.across_county_edges);
@@ -2663,7 +2690,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_triplets(merged_component_laplacian_minor_trips,
+    log_tau += compute_log_det_from_entries(merged_component_laplacian_minor_trips,
                                              merged_num_admin_connected_components - 1);
 
     return log_tau;
@@ -2681,8 +2708,12 @@ void swap_pair_maps(RegionPairHash &a, RegionPairHash &b) {
 };
 
 PlanMultigraph::PlanMultigraph(MapParams const &map_params,
-                               bool const need_to_compute_multigraph_taus)
-    : map_params(map_params), counties_on(map_params.num_counties > 1),
+                               bool const need_to_compute_multigraph_taus
+                            )
+    : map_params(map_params), 
+      // we only say counties are on if more than 1 county and we're not forcing 
+      // non-hierarchicalness
+      counties_on(map_params.num_counties > 1 && !map_params.plans_may_be_non_hierarchical),
       vertices_visited(map_params.V), county_component(map_params.ndists, 0),
       component_split_counts(counties_on ? map_params.ndists : 0, 0),
       component_region_counts(counties_on ? map_params.ndists : 0, 0),
@@ -2695,7 +2726,7 @@ PlanMultigraph::PlanMultigraph(MapParams const &map_params,
       county_component_reindex(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0),
       region_reindex_vec(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0)
       {
-        
+
       };
 
 
@@ -2970,6 +3001,15 @@ inline size_t get_county_component_lookup_index(int const county_id, RegionID co
 std::pair<bool, int>
 PlanMultigraph::is_hierarchically_connected(Plan const &plan,
                                             std::vector<bool> component_lookup) {
+    return is_hierarchically_connected(
+        plan.region_ids, plan.num_regions, std::move(component_lookup)
+    );
+}
+
+std::pair<bool, int>
+PlanMultigraph::is_hierarchically_connected(PlanVector const &region_ids,
+                                            int const num_regions,
+                                            std::vector<bool> component_lookup) {
     // if no counties then its just one giant component
     if (!counties_on)
         return std::make_pair(true, 1);
@@ -2989,10 +3029,10 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
 
         // get current county
         int current_county = map_params.counties[v] - 1;
-        auto current_region = plan.region_ids[v];
+        auto current_region = region_ids[v];
         // for lookup we pretend table is num_counties x num_regions
         auto current_component_lookup_index =
-            get_county_component_lookup_index(current_county, current_region, plan.num_regions);
+            get_county_component_lookup_index(current_county, current_region, num_regions);
 
         // check if we've already declared this component
         // if default value then we haven't encountered this component yet
@@ -3013,7 +3053,7 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
 
         while (!current_county_region_vertices.empty()) {
             int u = current_county_region_vertices.pop();
-            int u_region = plan.region_ids[u];
+            int u_region = region_ids[u];
             int u_county = map_params.counties[u];
 
             // mark this as visited
@@ -3024,7 +3064,7 @@ PlanMultigraph::is_hierarchically_connected(Plan const &plan,
                 if (vertices_visited[child_vertex])
                     continue;
                 // Now only add if region and county are the same
-                if (u_region == plan.region_ids[child_vertex] &&
+                if (u_region == region_ids[child_vertex] &&
                     u_county == map_params.counties[child_vertex]) {
                     // if same then same component mark as visited to avoid being added later
                     vertices_visited[child_vertex] = true;
@@ -3308,16 +3348,15 @@ bool PlanMultigraph::build_plan_multigraph(PlanVector const &region_ids,
 }
 
 void PlanMultigraph::remove_invalid_size_pairs(Plan const &plan,
-                                               SplittingSchedule const &splitting_schedule) {
+                                               SplittingSchedule const &splitting_schedule,
+                                               ScheduleContext const &schedule_ctx) {
 
     // remove invalid sizes
     pair_map.hashed_pairs.erase(
         std::remove_if(pair_map.hashed_pairs.begin(), pair_map.hashed_pairs.end(),
                        [&](std::pair<RegionID, RegionID> a_pair) {
-                           bool invalid_sizing =
-                               (!splitting_schedule
-                                     .valid_merge_pair_sizes[plan.region_sizes[a_pair.first]]
-                                                            [plan.region_sizes[a_pair.second]]);
+                           bool invalid_sizing = !splitting_schedule.is_valid_merge_pair(
+                               plan, schedule_ctx, a_pair.first, a_pair.second);
                            // if invalid then reset data in pair map
                            if (invalid_sizing) {
                                auto hash_index =
@@ -3458,22 +3497,30 @@ void PlanMultigraph::remove_invalid_mergesplit_pairs(Plan const &plan) {
 
 bool PlanMultigraph::is_hierarchically_valid(Plan const &plan,
                                              std::vector<bool> component_lookup) {
+    return is_hierarchically_valid(
+        plan.region_ids, plan.num_regions, std::move(component_lookup)
+    );
+}
+
+bool PlanMultigraph::is_hierarchically_valid(PlanVector const &region_ids,
+                                             int const num_regions,
+                                             std::vector<bool> component_lookup) {
     // if no counties then always valid
     if (!counties_on)
         return true;
     // first check if hierarchically connected
-    auto result = is_hierarchically_connected(plan, component_lookup);
+    auto result = is_hierarchically_connected(region_ids, num_regions, component_lookup);
     // if not immediately return false
     if (!result.first)
         return false;
     // if number of splits is greater than number of regions minus 1 reject
-    if (result.second - map_params.num_counties >= plan.num_regions)
+    if (result.second - map_params.num_counties >= num_regions)
         return false;
 
     // Now we know its hierarchically connected and has at most num_regions-1
     // splits so we just need to check for cycles in the administratively
     // adjacent quotient graph
-    return build_plan_hierarchical_multigraph(plan.region_ids, plan.num_regions);
+    return build_plan_hierarchical_multigraph(region_ids, num_regions);
 }
 
 void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b) {

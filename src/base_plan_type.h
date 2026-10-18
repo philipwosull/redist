@@ -2,15 +2,21 @@
 #ifndef BASE_PLAN_TYPE_H
 #define BASE_PLAN_TYPE_H
 
+#include <algorithm>
+#include <array>
 #include <cassert>
-#include <iostream>
-#include <map>
+#include <cstddef>
+#include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
+
 #include <string_view>
 #include <unordered_set>
 
 #include "advanced_types.h"
+#include "redist_types.h"
 #include "tree_op.h"
 
 class USTSampler;
@@ -18,6 +24,7 @@ class PlanMultigraph;
 class ScoringFunction;
 class TreeSplitter;
 class SplittingSchedule;
+class ScheduleContext;
 class RNGState;
 
 
@@ -42,11 +49,6 @@ class LinkingEdge {
     int vertex2;         // Second vertex
     double log_prob;     // Log Probability this edge was chosen to split in the tree
     bool valid_log_prob; // Whether the log prob is current or needs to be computed again
-
-    // Gets the information on the two regions formed from an edge cut by reference
-    std::array<double, 3> export_linking_edge() const {
-        return {static_cast<double>(vertex1), static_cast<double>(vertex2), log_prob};
-    };
 };
 
 
@@ -118,14 +120,8 @@ class Plan {
     std::pair<int, int> get_most_recently_split_regions() const;
     std::pair<int, int> get_num_district_and_multidistricts() const;
 
-    virtual Tree get_forest_adj() {
-        throw std::runtime_error("Get Forest Adj not Supported for this!\n");
-    };
-
-    virtual std::vector<std::array<double, 3>> get_linking_edges() {
-        throw std::runtime_error(
-            "Get Linking edges not Supported for this concrete Plan class!\n");
-    };
+    // Empty unless the plan is in linking edge space
+    std::vector<LinkingEdge> const &get_linking_edges_ref() const { return linking_edges; }
 
     EdgeBitset const &get_forest_edges() const {
         return forest_edges;
@@ -162,24 +158,46 @@ class Plan {
     double compute_region_score(ScoringFunction &scoring_function, int const region_id);
     double compute_just_plan_component_score(ScoringFunction &scoring_function);
 
-    // attempts to build a plan multigraph and return valid merge split pairs
+    // attempts to build a plan multigraph and return valid merge split pairs.
+    // `schedule_ctx` must be built for this plan.
     virtual std::pair<bool, std::vector<std::pair<RegionID, RegionID>>>
     attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                           SplittingSchedule const &splitting_schedule,
+                                          ScheduleContext &schedule_ctx,
                                           ScoringFunction const &scoring_function,
                                           bool const is_final_split) const;
 
+    // `schedule_ctx` must be built for this plan.
     virtual std::vector<std::pair<RegionID, RegionID>> get_valid_smc_merge_regions(
         PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule,
-        ScoringFunction const &scoring_function, bool const is_final_split) const;
+        ScheduleContext &schedule_ctx, ScoringFunction const &scoring_function,
+        bool const is_final_split) const;
 
     // redist_smc related methods
-    int choose_multidistrict_to_split(std::vector<bool> const &valid_region_sizes_to_split,
+    int choose_multidistrict_to_split(SplittingSchedule const &splitting_schedule,
+                                      ScheduleContext const &schedule_ctx,
                                       RNGState &rng_state,
                                       double const selection_alpha) const;
 
     std::pair<bool, int> draw_tree_on_region(USTSampler &ust_sampler, const int region_to_draw_tree_on,
                           RNGState &rng_state, int const attempts_to_make);
+
+    /*
+     * How many times to retry drawing a tree on a region of an initial plan
+     * before giving up.
+     *
+     * Retries only ever help against bad luck. A single attempt already
+     * allows 500 * n * log(n) walk steps internally, so for a region whose
+     * counties are each connected within it, one attempt nearly always
+     * succeeds and a thousand makes failure vanishingly unlikely.
+     *
+     * The case that fails every time is structural: if a region splits some
+     * county into disconnected pieces, the within-county walk can never
+     * reach the stranded pieces and no number of retries will help. This
+     * count is therefore kept small enough that such a plan reports an error
+     * in seconds rather than burning a full attempt budget for hours.
+     */
+    static constexpr int INITIAL_PLAN_TREE_DRAW_ATTEMPTS = 1000;
 
     void update_region_info_from_cut(EdgeCut cut_edge, const int split_region1_id,
                                      const int split_region2_id, bool const add_region);
@@ -211,9 +229,11 @@ class Plan {
 
     // Computes the log effective boundary length between two regions
     // The specifics depend on the sampling space
-    // assumes the muligraph was already generated
+    // assumes the muligraph was already generated and `schedule_ctx` is built
+    // for this plan
     virtual double get_log_eff_boundary_len(PlanMultigraph &plan_multigraph,
                                             const SplittingSchedule &splitting_schedule,
+                                            ScheduleContext &schedule_ctx,
                                             USTSampler &ust_sampler,
                                             TreeSplitter &tree_splitter,
                                             ScoringFunction const &scoring_function,
@@ -230,6 +250,7 @@ class Plan {
     virtual std::vector<std::tuple<RegionID, RegionID, double>>
     get_valid_adj_regions_and_eff_log_boundary_lens(PlanMultigraph &plan_multigraph,
                                                     const SplittingSchedule &splitting_schedule,
+                                                    ScheduleContext &schedule_ctx,
                                                     ScoringFunction const &scoring_function,
                                                     bool const is_final_split,
                                                     USTSampler &ust_sampler,
@@ -433,7 +454,8 @@ void swap_pair_maps(RegionPairHash &a, RegionPairHash &b);
 class PlanMultigraph {
   public:
     PlanMultigraph(MapParams const &map_params,
-                   bool const need_to_compute_multigraph_taus = false);
+                   bool const need_to_compute_multigraph_taus = false
+                );
 
     MapParams const &map_params;
     bool const counties_on;
@@ -476,6 +498,13 @@ class PlanMultigraph {
     std::pair<bool, int> is_hierarchically_connected(Plan const &plan,
                                                      std::vector<bool> component_lookup);
 
+    // Same check but taking the region ids directly, so a plan that has not
+    // been built into a `Plan` (and so has no forest drawn on it yet) can be
+    // checked. `component_lookup` must have length num_counties * num_regions.
+    std::pair<bool, int> is_hierarchically_connected(PlanVector const &region_ids,
+                                                     int const num_regions,
+                                                     std::vector<bool> component_lookup);
+
     bool build_plan_hierarchical_multigraph(PlanVector const &region_ids,
                                             int const num_regions);
 
@@ -487,7 +516,8 @@ class PlanMultigraph {
     // Removes the pairs with invalid merge sizes
     // from the hash map
     void remove_invalid_size_pairs(Plan const &plan,
-                                   const SplittingSchedule &splitting_schedule);
+                                   const SplittingSchedule &splitting_schedule,
+                                   ScheduleContext const &schedule_ctx);
 
     // Removes pairs where merging them makes a plan that
     // doesn't satisfy hard constraints
@@ -508,6 +538,13 @@ class PlanMultigraph {
     //  - hierarchically connected
     //  - The administratively adjacent plan quotient graph has no cycles
     bool is_hierarchically_valid(Plan const &plan, std::vector<bool> component_lookup);
+
+    // Same check but taking the region ids directly. This is what lets an
+    // initial plan be validated before any forest is drawn on it, which
+    // matters because drawing a hierarchical tree on a plan that is not
+    // hierarchically valid can never succeed.
+    bool is_hierarchically_valid(PlanVector const &region_ids, int const num_regions,
+                                 std::vector<bool> component_lookup);
 
     // Computes log linking edges for non-hierarchical plans
     double compute_non_hierarchical_log_multigraph_tau(int const num_regions,

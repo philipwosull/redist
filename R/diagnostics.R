@@ -13,24 +13,47 @@
 #'
 #' For SMC, diagnostics statistics include:
 #'
-#' * **Effective samples**: the effective sample size at each iteration, computed
+#' * **Effective samples**: the effective sample size at each split, computed
 #' using the SMC weights. Larger is better. The percentage in parentheses is the
 #' ratio of the effective samples to the total samples.
-#' * **Acceptance rate**: the fraction of drawn spanning trees which yield a valid
-#' redistricting plan within the population tolerance. Very small values (< 1%)
-#' can indicate a bottleneck and may lead to a lack of diversity.
+#' * **Acceptance rate**: the fraction of drawn spanning trees that gave a valid
+#' split. Low values make sampling slower but don't by themselves make the
+#' sample less accurate.
 #' * **Standard deviation of the log weights**: More variable weights (larger s.d.)
-#' indicate less efficient sampling. Values greater than 3 are likely problematic.
-#' * **Maximum unique plans:** The number of unique redistricting
-#' plans that survive each stage. The percentage in parentheses is the ratio of
-#' this number to the total number of samples. Small values (< 100) indicate a
-#' bottleneck, which leads to a loss of sample diversity and a higher variance.
+#' indicate less efficient sampling.
+#' * **Maximum unique plans:** The number of distinct plans from the previous
+#' step that became parents of the plans at this step. The percentage in
+#' parentheses is relative to the number expected if the weights were even,
+#' about 63% of the samples, so it can be above 100%.
+#' * **Unique plans**: The number of distinct plans after each split, and after
+#' the final resampling. Only shown for plans that stored it.
 #' * **Estimated `k` parameter**: For graph space plans displays how many
 #' spanning tree edges were considered for cutting at each split. Mostly
 #' informational, though large jumps may indicate a need to increase
 #' `adapt_k_thresh`.
-#' * **Bottleneck**: An asterisk will appear in the right column if a bottleneck
-#' appears likely, based on the values of the other statistics.
+#' * **Flags**: The right column flags potential problems at each split:
+#'     * `*` (bottleneck): the maximum unique plans is below 5% of the samples,
+#'       or below the smaller of 40% of the samples and 100. Few plans from the
+#'       previous step became parents, which lowers sample diversity and can
+#'       increase the variance of estimates across runs. This is often driven
+#'       by uneven weights at the previous step or by hard constraints.
+#'     * `A` (low acceptance): the acceptance rate is below 1%, usually because
+#'       of a tight population tolerance, hard (thresholded) constraints, or
+#'       splitting within administrative units.
+#'     * `W` (low effective sample size): the effective samples are below 10%
+#'       or the standard deviation of the log weights is above 3, usually
+#'       because of strong soft constraints or a `compactness` far from 1.
+#'
+#' For SMC with merge-split steps, a second table shows the acceptance rate of
+#' each merge-split step, the number of merge-split steps run per plan, and the
+#' number of unique plans afterward. Merge-split steps after a bottleneck can
+#' increase the number of unique plans. If the plans were resampled and the run
+#' ends with a merge-split step, the resampling is done before that step, so the
+#' "Resample" row of the SMC table shows the unique plans before it and the
+#' number of unique plans after it is reported separately. Steps with an
+#' acceptance rate below 5%
+#' are flagged with a dagger (†), since mixing will be slow and increasing
+#' `mh_accept_per_smc` will be expensive.
 #'
 #' For CycleWalk MCMC, additional diagnostic statistics include:
 #'
@@ -53,21 +76,31 @@
 #' summary statistics. We strongly recommend calling `match_numbers()` or
 #' `number_by()` before examining these district-level statistics. A value of
 #' `FALSE` indicates to compute the rhats for all districts
-#' @param all_runs When there are multiple SMC runs, show detailed summary
-#' statistics for all runs (the default), or only the first run?
+#' @param all_runs When there are multiple SMC runs, whether to show detailed
+#' summary statistics for all runs, or only the first run (the default).
 #' @param vi_max The maximum number of plans to sample in computing the pairwise
 #' variation of information distance (sample diversity).
 #' @param order_stats Whether or not to compute rhats on the ordered district
 #' statistics.
 #' @param rhat_thresh What values to use when checking convergence. It should
-#' consist of two named values: `q99` and `max`.
-#' Strong convergence is when all rhats are less than or equal to the `max` value
-#' and weak convergence is when the 99th quantile is less than or equal to
-#' `q99` and all rhats are less than or equal to `max`.
+#' consist of two named values: `q99` and `max`, where `q99` is the tighter of
+#' the two. Any name that is omitted falls back to its default.
+#' Strong convergence is when all rhats are less than or equal to the `q99`
+#' value, and weak convergence is when the 99th quantile is less than or equal
+#' to `q99` and all rhats are less than or equal to `max`. Chains that meet
+#' neither are reported as not converged.
+#'
+#' @param ncores Number of cores to use when computing R-hat values. Defaults
+#' to 1, which runs serially. Raising this is worthwhile for large ensembles,
+#' where the R-hat computation dominates the cost of this function.
 #'
 #' @param \dots additional arguments (ignored)
 #'
-#' @return A data frame containing diagnostic information, invisibly.
+#' @return A list of diagnostic information, invisibly. For SMC this has a
+#' `smc_diagnostic_dfs` data frame with the statistics for each split, and a
+#' `ms_diagnostic_dfs` data frame for any merge-split steps. For MCMC it has a
+#' `mcmc_diagnostic_dfs` data frame. If R-hat values were computed, it also has
+#' `rhats_df` and `rhat`.
 #'
 #' @examples
 #' data(iowa)
@@ -86,6 +119,7 @@ summary.redist_plans <- function(
     vi_max = 100,
     order_stats = TRUE,
     rhat_thresh = getOption("redist.rhat_thresh", c(q99=1.05, max=1.1)),
+    ncores = 1,
     ...
 ) {
     cli::cli_process_done(done_class = "") # in case an earlier
@@ -213,158 +247,41 @@ summary.redist_plans <- function(
     }
 
     # now compute rhats if more than 1 chain
-    cols <- names(object)
-    multiple_chains <- "chain" %in% cols && dplyr::n_distinct(object[["chain"]]) > 1
-    if (multiple_chains) {
-        one_district_only <- 1 <= district && district <= n_distr
-
-        addl_cols <- setdiff(
-            cols,
-            c("chain", "draw", "district", "total_pop", "seats", "mcmc_accept")
-        )
-        if (one_district_only) {
-            idx <- seq_len(n_samp)
-            if ("district" %in% cols) {
-                idx <- as.integer(district) + (idx - 1) * n_distr
-            }
-
-            const_cols <- vapply(
-                addl_cols,
-                function(col) {
-                    x <- object[[col]][idx]
-                    all(is.na(x)) ||
-                        all(x == x[1]) ||
-                        any(
-                            tapply(x, object[['chain']][idx], FUN = function(z) {
-                                length(unique(z))
-                            }) ==
-                                1
-                        )
-                },
-                numeric(1)
-            )
-        } else {
-            const_cols <- vapply(
-                addl_cols,
-                function(col) {
-                    x <- object[[col]]
-                    all(is.na(x)) ||
-                        all(x == x[1]) ||
-                        any(
-                            tapply(x, object[["chain"]], FUN = function(z) length(unique(z))) ==
-                                1
-                        )
-                },
-                numeric(1)
-            )
-        }
-        addl_cols <- addl_cols[!const_cols]
-    } else {
-        addl_cols <- c()
-    }
+    rhat_cols <- select_rhat_columns(object, district, n_distr, n_samp)
 
     warn_converge <- FALSE
     # do nothing if no additional columns or no chain column
+    rhats_computed <- length(rhat_cols) > 0
 
-    if (multiple_chains && length(addl_cols) > 0) {
-        # check district input
-        if (!isFALSE(district)) {
-            # check integer
-            if (!rlang::is_integerish(district)) {
-                cli::cli_abort("{.arg district} must be an integer!")
-            } else {
-                district <- as.integer(district)
-            }
-            # check between 1 and ndists
-            if (!all(1 <= district && district <= n_distr)) {
-                cli::cli_abort("{.arg district} must be between 1 and {.arg ndists}!")
-            }
-        }
-        rhats_computed <- TRUE
+    if (rhats_computed) {
+        district <- validate_rhat_district(district, n_distr)
+
         split_rhat <- algo %in% c(MCMC_ALG_TYPE, "flip")
 
         # get rhats
         rhats_df <- compute_all_rhats(
             # drop everything but the columns to save size
-            as.data.frame(object)[c("chain", "district", addl_cols)],
-            addl_cols,
+            as.data.frame(object)[c("chain", "district", rhat_cols)],
+            rhat_cols,
             order_stats,
             district,
             n_distr,
-            split_rhat
+            split_rhat,
+            ncores
         )
 
         # remove NA rhats
-        if (anyNA(rhats_df$rhat)) {
-            num_na_rhats <- sum(is.na(rhats_df$rhat))
-            cat_cli("{num_na_rhats} rhat values are `NA`")
-            rhats_df <- rhats_df[!is.na(rhats_df$rhat), ]
-        }
+        rhats_df <- drop_na_rhats(rhats_df)
 
         out_list[["rhats_df"]] <- rhats_df
         out_list[["rhat"]] <- rhats_df$rhat
 
-        # get thresholds
-        q99_rhat_thresh <- ifelse("q99" %in% rhat_thresh, rhat_thresh[["q99"]], 1.05)
-        rhat_max_thresh <- ifelse("max" %in% rhat_thresh, rhat_thresh[["max"]], 1.1)
+        thresh <- resolve_rhat_thresh(rhat_thresh)
+        convergence <- classify_rhat_convergence(rhats_df$rhat, thresh)
 
-        ordered_str <- ifelse(order_stats, "ordered ", "")
-        cat_cli("Largest R-hat values for {ordered_str}summary statistics:\n")
-        # get maximum rhats for each statistic
-        max_rhats <- tapply(rhats_df$rhat, rhats_df$stat_name, max, na.rm = TRUE)
+        print_rhat_summary(rhats_df, convergence, thresh, order_stats)
 
-        rhats_p <- vapply(
-            max_rhats,
-            function(x) {
-                ifelse(x <= q99_rhat_thresh, sprintf("%.3f", x), paste0("\U274C", round(x, 3)))
-            },
-            FUN.VALUE = character(1)
-        )
-        print(noquote(rhats_p))
-
-        # print counts
-        rhat_vals <- rhats_df$rhat
-
-        cat_cli_fmt({
-            cli::cli_ul()
-            cli::cli_li(
-                "R-hat \u2264 {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
-            )
-            cli::cli_li(
-                "{format(q99_rhat_thresh, digits=3)} < R-hat \u2264 {format(rhat_max_thresh, digits=3)}:
-                        {sum(rhat_vals > q99_rhat_thresh & rhat_vals <= rhat_max_thresh)}"
-            )
-            cli::cli_li(
-                "R-hat > {format(rhat_max_thresh, digits=3)}: {sum(rhat_vals > rhat_max_thresh)}"
-            )
-            cli::cli_li("Total R-hats: {length(rhat_vals)}")
-            cli::cli_end()
-        })
-
-        # cat("Rhat Breakdown:\n")
-        # cat("R-hat \u2264 1.05:      ", sum(rhat_vals <= 1.05), "\n")
-        # cat("1.05 < R-hat \u2264 1.1:", sum(rhat_vals > 1.05 & rhat_vals <= 1.1), "\n")
-        # cat("R-hat > 1.1:       ", sum(rhat_vals > 1.1), "\n")
-
-        # get 99th quantile
-        q99_rhat <- quantile(x = rhats_df$rhat, probs = 0.99) |>
-            unname()
-
-        # check converge
-        # - weak convergence: all rhats <= 1.1 and 99th quantile <= 1.05
-        # - strong covergence: all rhats <= 1.05
-        if (all(rhat_vals <= 1.05)) {
-            convergence_status <- "strong"
-        } else if (q99_rhat <= 1.05 && all(rhat_vals <= 1.1)) {
-            convergence_status <- "weak"
-            cat_cli_fmt(cli::cli_alert_info("{.strong ALERT:} Chains have weakly converged."))
-        } else {
-            convergence_status <- "not_converged"
-            warn_converge <- TRUE
-            cat_cli_fmt(cli::cli_alert_danger("{.strong WARNING:} Chains have not converged."))
-        }
-    } else {
-        rhats_computed <- FALSE
+        warn_converge <- convergence$status == "not_converged"
     }
 
     # Now print algorithm specific diagnostics
@@ -384,21 +301,34 @@ summary.redist_plans <- function(
         smc_ms_run_dfs <- list()
         n_runs <- length(all_diagn)
         warn_bottlenecks <- FALSE
+        warn_low_accept <- FALSE
+        warn_low_ess <- FALSE
+        warn_low_ms_accept <- FALSE
 
         for (i in seq_len(n_runs)) {
+            # each run's plans are its block of columns in run order
+            run_nsims <- all_run_info[[i]]$nsims
+            run_plans_m <- plans_m[, (i - 1) * run_nsims + seq_len(run_nsims), drop = FALSE]
+            run_nunique_plans <- get_run_nunique_plans(
+                all_diagn[[i]], all_run_info[[i]], resampled, run_plans_m
+            )
+
             smc_summary_result_list <- get_smc_summary_df(
                 all_diagn[[i]],
                 all_run_info[[i]],
                 resampled,
-                warn_bottlenecks
+                warn_bottlenecks,
+                run_nunique_plans
             )
 
             smc_run_dfs[[i]] <- smc_summary_result_list$smc_summary_df
             smc_tbl_print <- smc_summary_result_list$smc_print_tbl
             warn_bottlenecks <- smc_summary_result_list$warn_bottlenecks
+            warn_low_accept <- warn_low_accept || smc_summary_result_list$warn_low_accept
+            warn_low_ess <- warn_low_ess || smc_summary_result_list$warn_low_ess
 
             if (i == 1 || isTRUE(all_runs)) {
-                cat_cli("Sampling diagnostics for SMC run {i} of {n_runs} ({fmt_comma(n_samp)} samples)")
+                cat_cli("Sampling diagnostics for SMC run {i} of {n_runs} ({fmt_comma(run_nsims)} samples)")
                 print(smc_tbl_print, digits = 2)
                 cat("\n")
             }
@@ -407,13 +337,27 @@ summary.redist_plans <- function(
                 smc_ms_summary_result_list <- get_smc_ms_summary_df(
                     all_diagn[[i]],
                     all_run_info[[i]],
-                    resampled
+                    resampled,
+                    run_nunique_plans
                 )
                 smc_ms_run_dfs[[i]] <- smc_ms_summary_result_list$smc_ms_summary_df
                 smc_ms_tbl_print <- smc_ms_summary_result_list$smc_ms_print_tbl
+                warn_low_ms_accept <- warn_low_ms_accept ||
+                    smc_ms_summary_result_list$warn_low_ms_accept
 
                 if (i == 1 || isTRUE(all_runs)) {
-                    cat_cli("Sampling diagnostics for Mergesplit Steps of SMC run {i} of {n_runs} ({fmt_comma(n_samp)} samples)")
+                    # If the plans were resampled before the final mergesplit
+                    # round then the Resample row above is from before it, so
+                    # also report the unique plans after it
+                    run_all_step_types <- get_all_step_types(all_run_info[[i]], resampled)
+                    if (resampled && !is.null(run_nunique_plans) &&
+                        utils::tail(run_all_step_types, 1) == "ms") {
+                        final_unique <- utils::tail(run_nunique_plans, 1)
+                        final_unique_pct <- sprintf("%0.0f%%", 100 * final_unique / run_nsims)
+                        cat_cli("After the post-resampling merge-split round there are {fmt_comma(final_unique)} ({final_unique_pct}) unique plans.")
+                        cat("\n")
+                    }
+                    cat_cli("Sampling diagnostics for merge-split steps of SMC run {i} of {n_runs} ({fmt_comma(run_nsims)} samples)")
                     print(smc_ms_tbl_print, digits = 2)
                     cat("\n")
                 }
@@ -424,8 +368,6 @@ summary.redist_plans <- function(
         if (algo == MS_SMC_ALG_TYPE) {
             out_list[["ms_diagnostic_dfs"]] <- bind_rows(smc_ms_run_dfs)
         }
-
-        #step_nums <- ave(seq_along(all_run_info[[i]]$step_types), all_run_info[[i]]$step_types, FUN = seq_along)
 
         cat_cli_fmt(cli::cli_li(cli::col_grey(
             "
@@ -438,39 +380,141 @@ summary.redist_plans <- function(
         if (div_bad) {
             cat_cli_fmt(cli::cli_li(
                 "{.strong Low diversity:} Check for potential bottlenecks.
-                        Increase the number of samples.
+                        Increase the number of samples or `mh_accept_per_smc`.
                         Examine the diversity plot with
                         `hist(plans_diversity({name}), breaks=24)`.
                         Consider weakening or removing constraints, or increasing
-                        the population tolerance. If the acceptance rate drops
-                        quickly in the final splits, try increasing
-                        {.arg pop_temper} by 0.01."
+                        the population tolerance."
             ))
         }
         if (warn_converge) {
             cat_cli_fmt(cli::cli_li(
-                "{.strong SMC convergence:} Increase the number of samples.
+                "{.strong SMC convergence:} Increase the number of samples or `mh_accept_per_smc`.
                         If you are experiencing low plan diversity or bottlenecks as well,
                         address those issues first."
             ))
         }
         if (warn_bottlenecks) {
+            bottleneck_causes <- "This is often driven by uneven weights at the
+                previous step (see W) or by hard constraints that only allow a
+                subset of plans to be split."
+            bottleneck_ms <- if (algo == MS_SMC_ALG_TYPE) {
+                "Merge-split steps after a bottleneck can alleviate this somewhat by
+                increasing diversity, though the new plans stay similar to their
+                shared ancestors. Check how much the number of unique plans increases
+                in the merge-split step after each flagged split."
+            } else {
+                "Running merge-split steps after each split (see `ms_params`) can
+                alleviate this somewhat by increasing diversity, though the new plans
+                stay similar to their shared ancestors. The number of unique plans
+                after each merge-split step shows how much they help."
+            }
             cat_cli_fmt(cli::cli_li(
-                "(*) {.strong Bottlenecks found:} Consider weakening or removing
-                        constraints, or increasing the population tolerance.
-                        If the acceptance rate drops quickly in the final splits,
-                        try increasing {.arg pop_temper} by 0.01.
-                        If the weight variance (Log wgt. sd) increases steadily
-                        or is particularly large for the \"Resample\" step,
-                        consider increasing {.arg seq_alpha}.
-                        To visualize what geographic areas may be causing problems,
-                        try running the following code. Highlighted areas are
-                        those that may be causing the bottleneck.\n\n"
+                "(*) {.strong Bottlenecks found:} Only a small percentage of plans
+                from the previous step were successfully split, potentially degrading
+                sample quality. {bottleneck_causes} {bottleneck_ms}
+                Consider weakening or removing
+                            constraints, or increasing the population tolerance.
+                            If the acceptance rate drops quickly in the final splits,
+                            try increasing {.arg pop_temper} by 0.01.
+                            If the weight variance (Log wgt. sd) increases steadily
+                            or is particularly large for the \"Resample\" step,
+                            consider increasing {.arg seq_alpha} if merge-split steps
+                            are not also being used."
             ))
-            code <- str_glue(
-                "plot(<map object>, rowMeans(as.matrix({name}) == <bottleneck iteration>))"
+        }
+        constraint_counts <- count_soft_and_hard_constraints(attr(object, "constraints"))
+        # "There is 1 ... constraint" / "There are n ... constraints"
+        describe_constraint_count <- function(n, type) {
+            sprintf(
+                "There %s %d %s constraint%s that could be contributing.",
+                if (n == 1) "is" else "are", n, type, if (n == 1) "" else "s"
             )
-            cli::cat_line("    ", cli::code_highlight(code, "Material"))
+        }
+        if (warn_low_accept) {
+            accept_causes <- if (is.null(constraint_counts)) {
+                "This is usually caused by a tight population tolerance or by hard
+                (thresholded) constraints rejecting splits."
+            } else if (constraint_counts[["hard"]] > 0) {
+                paste(
+                    "This is usually caused by a tight population tolerance or by hard
+                    (thresholded) constraints rejecting splits.",
+                    describe_constraint_count(constraint_counts[["hard"]], "hard (thresholded)")
+                )
+            } else {
+                "No hard (thresholded) constraints were used, so the population
+                tolerance or the geography of the map is the likely cause."
+            }
+            if (isTRUE(attr(object, "num_admin_units") > 1)) {
+                accept_causes <- paste(
+                    accept_causes,
+                    "Splitting within administrative units can also lower the acceptance rate."
+                )
+            }
+            # only suggest loosening thresholds if there may be hard constraints
+            accept_fixes <- if (isTRUE(constraint_counts[["hard"]] == 0)) {
+                "Consider increasing the population tolerance."
+            } else {
+                "Consider increasing the population tolerance or loosening constraint
+                thresholds."
+            }
+            low_accept_pct <- sprintf("%g%%", 100 * SMC_LOW_ACCEPT_RATE)
+            cat_cli_fmt(cli::cli_li(
+                "(A) {.strong Low acceptance:} Fewer than {low_accept_pct} of tree
+                        draws gave a valid split. This makes sampling slower but
+                        doesn't by itself make the sample less accurate.
+                        {accept_causes} {accept_fixes} If the acceptance rate only
+                        drops sharply in the final splits, try increasing
+                        {.arg pop_temper} by 0.01."
+            ))
+        }
+        if (warn_low_ess) {
+            ess_causes <- if (is.null(constraint_counts)) {
+                ""
+            } else if (constraint_counts[["soft"]] > 0) {
+                describe_constraint_count(constraint_counts[["soft"]], "soft")
+            } else {
+                "No soft constraints were used."
+            }
+            compactness <- attr(object, "compactness")
+            if (is.numeric(compactness) && isTRUE(compactness != 1)) {
+                ess_causes <- paste(
+                    ess_causes,
+                    sprintf("These plans were sampled with `compactness` = %g.", compactness)
+                )
+            }
+            pop_temper <- all_diagn[[1]]$pop_temper
+            if (isTRUE(pop_temper > 0)) {
+                ess_causes <- paste(
+                    ess_causes,
+                    sprintf("Population tempering (`pop_temper` = %g) trades acceptance
+                            in the final splits for more uneven weights.", pop_temper)
+                )
+            }
+            if (any(vapply(all_diagn, function(d) isTRUE(d$seq_alpha < 1), logical(1)))) {
+                ess_causes <- paste(
+                    ess_causes,
+                    "If the weight variance grows steadily across the splits,
+                    increasing `seq_alpha` may help."
+                )
+            }
+            low_eff_pct <- sprintf("%g%%", 100 * SMC_LOW_EFF_SAMPLE_FRAC)
+            cat_cli_fmt(cli::cli_li(
+                "(W) {.strong Low effective sample size:} The weights are very uneven
+                        (effective samples below {low_eff_pct} or a log weight sd above
+                        {SMC_HIGH_LOG_WGT_SD}), which is usually caused by strong soft
+                        constraints or a {.arg compactness} far from 1.
+                        {ess_causes} Consider weakening the strongest
+                        constraints."
+            ))
+        }
+        if (warn_low_ms_accept) {
+            cat_cli_fmt(cli::cli_li(
+                "(\u2020) {.strong Low merge-split acceptance:} An acceptance rate
+                        below 5% means mixing will be slow, and increasing the
+                        expected number of successful steps
+                        ({.arg mh_accept_per_smc}) will be expensive."
+            ))
         }
     } else if (algo == "cyclewalk") {
         mh <- attr(object, "mh_acceptance")
@@ -585,10 +629,79 @@ print_algo_specific_params <- function(algo, all_diagn, all_run_info, pre_v5_pla
 }
 
 
+#' Get the number of unique plans after each step of an SMC run
+#'
+#' Not every run stores these, and some runs only stored them for the
+#' splitting and mergesplit steps and not the final resampling step. In that
+#' case the count for the resampling step is computed from the run's final
+#' plans.
+#'
+#' @param diagn The run's diagnostics
+#' @param run_info The run's `run_information`
+#' @param resampled Whether the plans were resampled after the last step
+#' @param run_plans_m The run's final plans matrix
+#'
+#' @returns A vector with the number of unique plans after each step, and after
+#' the resampling step last if resampled, or `NULL` if they weren't stored.
+#' @noRd
+get_run_nunique_plans <- function(diagn, run_info, resampled, run_plans_m) {
+    nunique_plans <- diagn$nunique_plans
+    n_steps <- length(run_info$step_types)
+    if (is.null(nunique_plans) || n_steps == 0) {
+        return(NULL)
+    }
+
+    # Compute the count after resampling if it wasn't stored. Only older runs
+    # without `all_step_types` didn't store it, and they resampled after every
+    # other step so their final plans are the resampled plans.
+    if (resampled && length(nunique_plans) == n_steps &&
+        is.null(run_info$all_step_types)) {
+        num_regions <- dplyr::n_distinct(run_plans_m[, 1])
+        nunique_plans <- c(nunique_plans, nrow(get_plan_counts(run_plans_m, num_regions)))
+    }
+
+    if (length(nunique_plans) != n_steps + resampled) {
+        return(NULL)
+    }
+    nunique_plans
+}
+
+# SMC steps are flagged in `summary()` with "A" if the acceptance rate is below
+# SMC_LOW_ACCEPT_RATE and with "W" if the effective sample fraction is below
+# SMC_LOW_EFF_SAMPLE_FRAC or the log weight sd is above SMC_HIGH_LOG_WGT_SD
+SMC_LOW_ACCEPT_RATE <- 0.01
+SMC_LOW_EFF_SAMPLE_FRAC <- 0.1
+SMC_HIGH_LOG_WGT_SD <- 3
+
+#' Counts the soft and hard (thresholded) constraints plans were sampled with
+#'
+#' @param constraints The `constraints` attribute of a `redist_plans` object
+#'
+#' @returns A vector with the number of `soft` and `hard` constraints, or
+#' `NULL` if the constraints aren't known
+#' @noRd
+count_soft_and_hard_constraints <- function(constraints) {
+    if (!is.list(constraints)) {
+        return(NULL)
+    }
+    # as.logical so no constraints gives logical(0) rather than NULL
+    is_hard <- as.logical(unlist(lapply(constraints, function(constraint_type) {
+        vapply(constraint_type, function(x) isTRUE(x$hard_constraint), logical(1))
+    })))
+    c(soft = sum(!is_hard), hard = sum(is_hard))
+}
+
+#' Formats unique plan counts as the count and its percent of the samples
+#' @noRd
+format_unique_plans <- function(unique_plans, n_samp) {
+    str_glue("{fmt_comma(unique_plans)} ({sprintf('%3.0f%%', 100 * unique_plans / n_samp)})")
+}
+
 #' Get Summary and Print Dataframe for SMC steps
 #'
 #' @noRd
-get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
+get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks,
+                               nunique_plans = NULL) {
     n_samp <- run_info$nsims
     run_sampling_space <- run_info$sampling_space
 
@@ -617,6 +730,14 @@ get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
         }
     }
 
+    # add the number of unique plans after each split if stored
+    # the steps in the order they were done, which `nunique_plans` follows
+    all_step_types <- get_all_step_types(run_info, resampled)
+    if (!is.null(nunique_plans)) {
+        run_summary_df$unique_plans <- nunique_plans[all_step_types == "smc"]
+        run_summary_names <- c(run_summary_names, "Unique plans")
+    }
+
     # add row if resampled
     if (resampled) {
         run_summary_df[nrow(run_summary_df) + 1, ] <- NA
@@ -624,16 +745,36 @@ get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
         run_summary_df[nrow(run_summary_df), "n_eff"] <- diagn$n_eff
         run_summary_df[nrow(run_summary_df), "eff"] <- diagn$n_eff / n_samp
         run_summary_df[nrow(run_summary_df), "max_unique"] <- tail(diagn$unique_survive, 1)
+        if (!is.null(nunique_plans)) {
+            # the resampling may be before the final mergesplit round
+            run_summary_df[nrow(run_summary_df), "unique_plans"] <-
+                nunique_plans[all_step_types == "resample"]
+        }
     }
 
-    # add extra column name for asterisk
+    # add extra column name for the flags (*, A, W)
     run_summary_names <- c(run_summary_names, "")
 
     tbl_print <- as.data.frame(run_summary_df)
     min_n <- max(0.05 * n_samp, min(0.4 * n_samp, 100))
-    bottlenecks <- dplyr::coalesce(with(tbl_print, pmin(max_unique, n_eff) < min_n), FALSE)
+    # * bottleneck: few distinct plans from the previous step became parents of
+    # this step's plans. This only uses the unique parents since uneven weights
+    # are flagged separately with W
+    bottlenecks <- dplyr::coalesce(tbl_print$max_unique < min_n, FALSE)
     warn_bottlenecks <- warn_bottlenecks || any(bottlenecks)
-    tbl_print$bottleneck <- ifelse(bottlenecks, " * ", "")
+    # A low acceptance: few tree draws give a valid split, usually from the
+    # population tolerance or hard constraints
+    low_accept <- dplyr::coalesce(tbl_print$accept_rate < SMC_LOW_ACCEPT_RATE, FALSE)
+    # W low effective sample size: very uneven weights, usually from strong
+    # soft constraints
+    low_ess <- dplyr::coalesce(
+        tbl_print$eff < SMC_LOW_EFF_SAMPLE_FRAC | tbl_print$sd_log_wgt > SMC_HIGH_LOG_WGT_SD,
+        FALSE
+    )
+    tbl_print$flags <- paste0(
+        " ", ifelse(bottlenecks, "*", ""), ifelse(low_accept, "A", ""),
+        ifelse(low_ess, "W", ""), " "
+    )
     tbl_print$n_eff <- with(
         tbl_print,
         str_glue("{fmt_comma(n_eff)} ({sprintf('%0.1f%%', 100*eff)})")
@@ -645,9 +786,13 @@ get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
         tbl_print,
         str_glue("{fmt_comma(max_unique)} ({sprintf('%3.0f%%', 100*max_pct)})")
     )
+    if (!is.null(nunique_plans)) {
+        tbl_print$unique_plans <- format_unique_plans(tbl_print$unique_plans, n_samp)
+    }
 
     names(tbl_print) <- run_summary_names
-    new_row_names <- paste("Split", seq_len(nrow(tbl_print) - 1))
+    # the last row is the resampling step only if the plans were resampled
+    new_row_names <- paste("Split", seq_len(nrow(tbl_print) - resampled))
 
     if (resampled) {
         new_row_names <- c(new_row_names, "Resample")
@@ -658,7 +803,9 @@ get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
     list(
         smc_summary_df = run_summary_df,
         smc_print_tbl = tbl_print,
-        warn_bottlenecks = warn_bottlenecks
+        warn_bottlenecks = warn_bottlenecks,
+        warn_low_accept = any(low_accept),
+        warn_low_ess = any(low_ess)
     )
 }
 
@@ -666,11 +813,12 @@ get_smc_summary_df <- function(diagn, run_info, resampled, warn_bottlenecks) {
 #' Get Summary and Print Dataframe for Mergesplit within SMC steps
 #'
 #' @noRd
-get_smc_ms_summary_df <- function(diagn, run_info, resampled) {
+get_smc_ms_summary_df <- function(diagn, run_info, resampled, nunique_plans = NULL) {
     n_samp <- run_info$nsims
     run_sampling_space <- run_info$sampling_space
 
-    ms_accept_rate <- diagn$accept_rate[run_info$step_types == "ms"]
+    ms_step_mask <- run_info$step_types == "ms"
+    ms_accept_rate <- diagn$accept_rate[ms_step_mask]
     ms_steps_per_plan <- diagn$ms_step_counts
 
     run_summary_df <- tibble(
@@ -680,9 +828,24 @@ get_smc_ms_summary_df <- function(diagn, run_info, resampled) {
 
     run_summary_names <- c("Acc. rate", "MS Steps per Plan")
 
+    # add the number of unique plans after each mergesplit round if stored
+    if (!is.null(nunique_plans)) {
+        run_summary_df$unique_plans <-
+            nunique_plans[get_all_step_types(run_info, resampled) == "ms"]
+        run_summary_names <- c(run_summary_names, "Unique plans")
+    }
+
     tbl_print <- as.data.frame(run_summary_df)
 
+    # mark rounds with low acceptance, like the bottleneck asterisk in the SMC table
+    low_accept <- dplyr::coalesce(tbl_print$accept_rate < 0.05, FALSE)
+    tbl_print$low_accept <- ifelse(low_accept, " \u2020 ", "")
+    run_summary_names <- c(run_summary_names, "")
+
     tbl_print$accept_rate <- with(tbl_print, sprintf("%0.1f%%", 100 * accept_rate))
+    if (!is.null(nunique_plans)) {
+        tbl_print$unique_plans <- format_unique_plans(tbl_print$unique_plans, n_samp)
+    }
 
     names(tbl_print) <- run_summary_names
     new_row_names <- paste("MS Step", seq_len(nrow(tbl_print)))
@@ -691,7 +854,8 @@ get_smc_ms_summary_df <- function(diagn, run_info, resampled) {
 
     list(
         smc_ms_summary_df = run_summary_df,
-        smc_ms_print_tbl = tbl_print
+        smc_ms_print_tbl = tbl_print,
+        warn_low_ms_accept = any(low_accept)
     )
 }
 
@@ -703,20 +867,94 @@ diag_ranknorm <- function(x) {
     qnorm(rank(x) / (length(x) + 1))
 }
 
-diag_calc_rhat <- function(x, grp) {
-    n <- mean(table(grp))
-    var_between <- n * var(tapply(x, grp, mean))
-    var_within <- mean(tapply(x, grp, var))
-    sqrt((var_between / var_within + n - 1) / n)
-}
-
-diag_rhat <- function(x, grp, split = FALSE) {
+#' Precompute the chain grouping that the rhat calculation needs
+#'
+#' The grouping depends only on `grp`, never on the statistic being
+#' summarised, so it can be built once and reused across every statistic and
+#' across both halves of `diag_rhat()`. Splitting the row indices once is much
+#' cheaper than letting `tapply()` and `table()` rebuild the factor on every
+#' call.
+#'
+#' @param grp vector of chain ids, with each chain in a contiguous run
+#' @param split whether to split each chain in half first
+#'
+#' @returns A list with `idx`, a list of index vectors in factor level order,
+#' and `n`, the mean group size.
+#' @noRd
+make_rhat_groups <- function(grp, split = FALSE) {
     if (split) {
         lengths <- rle(grp)$lengths
         grp <- grp + do.call(c, lapply(lengths, function(l) rep(c(0.0, 0.5), each = l / 2)))
     }
 
-    max(diag_calc_rhat(diag_ranknorm(x), grp), diag_calc_rhat(diag_ranknorm(diag_fold(x)), grp))
+    idx <- split(seq_along(grp), grp)
+
+    list(idx = idx, n = mean(lengths(idx)))
+}
+
+diag_calc_rhat <- function(x, grp = NULL, groups = make_rhat_groups(grp)) {
+    n <- groups$n
+    group_means <- vapply(groups$idx, function(rows) mean(x[rows]), numeric(1))
+    group_vars <- vapply(groups$idx, function(rows) var(x[rows]), numeric(1))
+
+    var_between <- n * var(group_means)
+    var_within <- mean(group_vars)
+    sqrt((var_between / var_within + n - 1) / n)
+}
+
+diag_rhat <- function(x, grp = NULL, split = FALSE,
+                      groups = make_rhat_groups(grp, split)) {
+    max(
+        diag_calc_rhat(diag_ranknorm(x), groups = groups),
+        diag_calc_rhat(diag_ranknorm(diag_fold(x)), groups = groups)
+    )
+}
+
+
+#' Compute an rhat for every (statistic, district) pair
+#'
+#' Flattens the per-district row indices and group memberships into the
+#' CSR-style layout `compute_rhats_cpp()` expects, then hands the numeric work
+#' to C++, which parallelizes over the pairs.
+#'
+#' The groups are built in R and passed down so that the split-chain
+#' convention is defined in one place only.
+#'
+#' @param stats_df dataframe of summary statistics
+#' @param rhat_cols names of the columns to compute rhats for
+#' @param district_idx list of row indices, one entry per district
+#' @param district_groups list of `make_rhat_groups()` results, one per district
+#' @param ncores number of cores to use; 1 runs serially
+#'
+#' @returns A districts by statistics matrix of rhats.
+#' @noRd
+rhats_over_districts <- function(stats_df, rhat_cols, district_idx, district_groups,
+                                 ncores = 1) {
+    row_index <- unlist(district_idx, use.names = FALSE)
+    district_start <- c(0L, cumsum(lengths(district_idx)))
+
+    # For each row of `row_index`, which group within its district it is in.
+    # `make_rhat_groups()` already returns groups in the order R's `split()`
+    # would produce them, so the numbering carries over directly.
+    group_index <- integer(length(row_index))
+    for (k in seq_along(district_groups)) {
+        offset <- district_start[k]
+        idx <- district_groups[[k]]$idx
+        for (g in seq_along(idx)) {
+            group_index[offset + idx[[g]]] <- g - 1L
+        }
+    }
+
+    n_groups <- max(lengths(lapply(district_groups, `[[`, "idx")))
+
+    compute_rhats_cpp(
+        values = lapply(rhat_cols, function(col) as.numeric(stats_df[[col]])),
+        row_index = as.integer(row_index) - 1L,
+        district_start = as.integer(district_start),
+        group_index = group_index,
+        n_groups = as.integer(n_groups),
+        num_threads = as.integer(ncores)
+    )
 }
 
 
@@ -735,26 +973,40 @@ diag_rhat <- function(x, grp, split = FALSE) {
 #'
 #' @returns A long dataframe of rhats
 #' @noRd
-compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists, split_rhat) {
+compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists,
+                              split_rhat, ncores = 1) {
     # order values if needed
     if (order_stats) {
         stats_df <- order_columns_by_district(
             stats_df |> filter(!is.na(chain)),
             rhat_cols,
-            ndists
+            ndists,
+            num_threads = ncores
         )
     }
     # filter district if needed
     if (!isFALSE(district)) {
         stats_df <- stats_df[stats_df$district %in% district, ]
     }
-    # now compute rhats for each column and district
-    rhat_results <- lapply(rhat_cols, function(col_name) {
-        # Split data by district
-        # For each district, compute rhat for the column
-        sapply(split(stats_df, stats_df$district), function(df) {
-            diag_rhat(x = df[[col_name]], grp = df$chain, split = split_rhat)
-        })
+    # Split the row indices rather than the data frame itself. Splitting the
+    # frame copies every column, and it used to happen once per statistic.
+    district_idx <- split(seq_len(nrow(stats_df)), stats_df$district)
+    chain <- stats_df$chain
+
+    # The chain grouping depends only on the district, so build it once and
+    # share it across every statistic instead of rebuilding the factor inside
+    # each `tapply()` call. Building it here rather than in C++ also keeps the
+    # split-chain convention in exactly one place.
+    district_groups <- lapply(district_idx, function(rows) {
+        make_rhat_groups(chain[rows], split = split_rhat)
+    })
+
+    rhat_matrix <- rhats_over_districts(
+        stats_df, rhat_cols, district_idx, district_groups, ncores
+    )
+
+    rhat_results <- lapply(seq_along(rhat_cols), function(j) {
+        stats::setNames(rhat_matrix[, j], names(district_idx))
     })
     names(rhat_results) <- rhat_cols
 
@@ -772,6 +1024,226 @@ compute_all_rhats <- function(stats_df, rhat_cols, order_stats, district, ndists
 
     rhats_df
 }
+
+
+#' Pick the columns worth computing rhats for
+#'
+#' Returns the summary statistic columns that actually vary, dropping index
+#' columns, columns that are entirely `NA`, columns that are constant, and
+#' columns that are constant within any single chain. Returns an empty vector
+#' when there is no `chain` column or only one chain, in which case no rhats
+#' can be computed at all.
+#'
+#' @param object a [redist_plans] object
+#' @param district `FALSE` for all districts, or a single district to restrict to
+#' @param n_distr the number of districts
+#' @param n_samp the number of sampled plans
+#'
+#' @returns A character vector of column names, possibly empty.
+#' @noRd
+select_rhat_columns <- function(object, district, n_distr, n_samp) {
+    cols <- names(object)
+
+    multiple_chains <- "chain" %in%
+        cols &&
+        dplyr::n_distinct(object[["chain"]]) > 1
+
+    if (!multiple_chains) {
+        return(character(0))
+    }
+
+    one_district_only <- 1 <= district && district <= n_distr
+
+    addl_cols <- setdiff(
+        cols,
+        c("chain", "draw", "district", "total_pop", "seats", "mcmc_accept")
+    )
+
+    # When restricted to one district, look only at that district's rows.
+    if (one_district_only) {
+        idx <- seq_len(n_samp)
+        if ("district" %in% cols) {
+            idx <- as.integer(district) + (idx - 1) * n_distr
+        }
+        column_values <- function(col) object[[col]][idx]
+        chain_ids <- object[["chain"]][idx]
+    } else {
+        column_values <- function(col) object[[col]]
+        chain_ids <- object[["chain"]]
+    }
+
+    # `length(unique(x)) <= 1` covers both an all-NA column and a constant
+    # one, and unlike `all(x == x[1])` it cannot itself be NA when the column
+    # holds some but not all NAs. `na.rm` on the `any()` keeps the predicate
+    # total even if a chain contributes no rows.
+    const_cols <- vapply(
+        addl_cols,
+        function(col) {
+            x <- column_values(col)
+            length(unique(x)) <= 1 ||
+                any(
+                    tapply(x, chain_ids, FUN = function(z) length(unique(z))) ==
+                        1,
+                    na.rm = TRUE
+                )
+        },
+        logical(1)
+    )
+
+    addl_cols[!const_cols]
+}
+
+
+#' Validate the `district` argument used for rhat computation
+#'
+#' @inheritParams select_rhat_columns
+#' @param call environment to report the error against
+#'
+#' @returns `FALSE`, or `district` coerced to integer.
+#' @noRd
+validate_rhat_district <- function(district, n_distr, call = rlang::caller_env()) {
+    if (isFALSE(district)) {
+        return(district)
+    }
+
+    if (!rlang::is_integerish(district)) {
+        cli::cli_abort("{.arg district} must be an integer!", call = call)
+    }
+
+    district <- as.integer(district)
+
+    if (!all(1 <= district && district <= n_distr)) {
+        cli::cli_abort(
+      "{.arg district} must be between 1 and {.arg ndists}!",
+      call = call
+    )
+    }
+
+    district
+}
+
+
+#' Resolve the rhat reporting thresholds
+#'
+#' @inheritParams summary.redist_plans
+#'
+#' @returns A list with `q99` and `max` entries.
+#' @noRd
+resolve_rhat_thresh <- function(rhat_thresh) {
+    thresh_names <- names(rhat_thresh)
+
+    list(
+    q99 = if ("q99" %in% thresh_names) rhat_thresh[["q99"]] else 1.05,
+    max = if ("max" %in% thresh_names) rhat_thresh[["max"]] else 1.1
+  )
+}
+
+
+#' Drop rhats that are `NA`, reporting how many were dropped
+#'
+#' @param rhats_df long dataframe of rhats
+#'
+#' @returns `rhats_df` with `NA` rhats removed.
+#' @noRd
+drop_na_rhats <- function(rhats_df) {
+    if (anyNA(rhats_df$rhat)) {
+        num_na_rhats <- sum(is.na(rhats_df$rhat))
+        cat_cli("{num_na_rhats} rhat values are `NA`")
+        rhats_df <- rhats_df[!is.na(rhats_df$rhat), ]
+    }
+
+    rhats_df
+}
+
+
+#' Classify chain convergence from a vector of rhats
+#'
+#' Strong convergence is all rhats at or below 1.05. Weak convergence is a
+#' 99th percentile at or below 1.05 with all rhats at or below 1.1.
+#'
+#' @param rhat_vals numeric vector of rhats
+#' @param thresh the result of `resolve_rhat_thresh()`
+#'
+#' @returns A list with `status` (one of `"strong"`, `"weak"`,
+#' `"not_converged"`) and `q99`, the 99th percentile of the rhats.
+#' @noRd
+classify_rhat_convergence <- function(rhat_vals, thresh) {
+    q99_rhat <- quantile(x = rhat_vals, probs = 0.99) |>
+        unname()
+
+    status <- if (all(rhat_vals <= thresh$q99)) {
+        "strong"
+    } else if (q99_rhat <= thresh$q99 && all(rhat_vals <= thresh$max)) {
+        "weak"
+    } else {
+        "not_converged"
+    }
+
+    list(status = status, q99 = q99_rhat)
+}
+
+
+#' Print the rhat table, the threshold breakdown, and any convergence alert
+#'
+#' @param rhats_df long dataframe of rhats, with `NA`s already removed
+#' @param convergence the result of `classify_rhat_convergence()`
+#' @param thresh the result of `resolve_rhat_thresh()`
+#' @inheritParams summary.redist_plans
+#'
+#' @returns `NULL`, invisibly. Called for its printed output.
+#' @noRd
+print_rhat_summary <- function(rhats_df, convergence, thresh, order_stats) {
+    # cli tracks open containers per frame, so opening the list from this
+    # frame rather than the caller's would indent it one level deeper than it
+    # was when these calls lived inline in `summary.redist_plans()`.
+    caller_env <- parent.frame()
+
+    q99_rhat_thresh <- thresh$q99
+    rhat_max_thresh <- thresh$max
+
+    ordered_str <- ifelse(order_stats, "ordered ", "")
+    cat_cli("Largest R-hat values for {ordered_str}summary statistics:\n")
+
+    # get maximum rhats for each statistic
+    max_rhats <- tapply(rhats_df$rhat, rhats_df$stat_name, max, na.rm = TRUE)
+
+    rhats_p <- vapply(
+        max_rhats,
+        function(x) {
+            ifelse(x <= q99_rhat_thresh, sprintf("%.3f", x), paste0("\U274C", round(x, 3)))
+        },
+        FUN.VALUE = character(1)
+    )
+    print(noquote(rhats_p))
+
+    # print counts
+    rhat_vals <- rhats_df$rhat
+
+    cat_cli_fmt({
+        cli::cli_ul(.envir = caller_env)
+        cli::cli_li(
+            "R-hat \u2264 {format(q99_rhat_thresh, digits=3)}: {sum(rhat_vals <= q99_rhat_thresh)}"
+        )
+        cli::cli_li(
+            "{format(q99_rhat_thresh, digits=3)} < R-hat \u2264 {format(rhat_max_thresh, digits=3)}:
+                        {sum(rhat_vals > q99_rhat_thresh & rhat_vals <= rhat_max_thresh)}"
+        )
+        cli::cli_li(
+            "R-hat > {format(rhat_max_thresh, digits=3)}: {sum(rhat_vals > rhat_max_thresh)}"
+        )
+        cli::cli_li("Total R-hats: {length(rhat_vals)}")
+        cli::cli_end()
+    })
+
+    if (convergence$status == "weak") {
+        cat_cli_fmt(cli::cli_alert_info("{.strong ALERT:} Chains have weakly converged."))
+    } else if (convergence$status == "not_converged") {
+        cat_cli_fmt(cli::cli_alert_danger("{.strong WARNING:} Chains have not converged."))
+    }
+
+    invisible(NULL)
+}
+
 
 #' Legacy code to print diagnostic informaiton for old (pre Redist 5.0) plans
 #'

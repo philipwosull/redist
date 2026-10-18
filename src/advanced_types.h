@@ -188,8 +188,13 @@ inline int index_from_ordered_pair(int x, int y, int container_size) {
 // j is the column index so j < row_length
 inline int mat_index_from_pair(int i, int j, int row_length) { return i * row_length + j; }
 
-// Class for storing the graph as a long vector of edges 
-// Allows you to take a vertex and get neighbors 
+// Counts the number of undirected edges in a graph
+int count_undirected_edges(Graph const &g);
+
+// Class for storing the graph as a long vector of edges
+// Allows you to take a vertex and get neighbors
+// Edge ids are canonical: edge e is the e-th (v, u) pair with v < u in
+// lexicographic order, independent of adjacency list neighbor order.
 class GraphEdgeIndex {
   public:
   // incident edge stores both the vertex adjacent to v and the edge_id associated with this edge
@@ -200,11 +205,17 @@ class GraphEdgeIndex {
 
     int const num_edges;
     int const V;
-    int max_num_edges; // TODO make constant and initialized lated 
+    int max_num_edges; // TODO make constant and initialized lated
+    // weight of each edge, indexed by edge id. All 1 if the graph is unweighted
+    std::vector<double> const edge_weights;
+    bool const is_weighted; // whether or not edge weights were passed in
 
     GraphEdgeIndex() = delete;
 
-    explicit GraphEdgeIndex(Graph const &g, int const num_edges);
+    // `edge_weights` must be empty (unweighted) or have one strictly positive,
+    // finite weight per edge, ordered by canonical edge id
+    explicit GraphEdgeIndex(Graph const &g, int const num_edges,
+                            std::vector<double> const &edge_weights = {});
 
     // Takes two vertices and returns their edge id
     EdgeID get_edge_id(int v, int u) const {
@@ -264,6 +275,22 @@ class GraphEdgeIndex {
         }
 
         return edges[edge_id];
+    }
+
+    // takes an edge id and returns its weight
+    double get_edge_weight(EdgeID edge_id) const {
+        if constexpr (perf_config::bounds_checking){
+            if (static_cast<std::size_t>(edge_id) >= edge_weights.size()) {
+                throw std::runtime_error("GraphEdgeIndex::get_edge_weight received invalid edge_id!");
+            }
+        }
+
+        return edge_weights[edge_id];
+    }
+
+    // takes two vertices and returns the weight of the edge between them
+    double get_edge_weight(int v, int u) const {
+        return edge_weights[get_edge_id(v, u)];
     }
 
     std::vector<std::pair<VertexID, VertexID>> edges;
@@ -588,14 +615,17 @@ class MapParams {
               std::vector<int> const &district_seat_sizes, 
               double const lower,
               double const target, double const upper,
-              SamplingSpace const sampling_space);
+              SamplingSpace const sampling_space,
+              bool const plans_may_be_non_hierarchical = false,
+              std::vector<double> const &edge_weights = {});
 
     // Constructor for when we only need map information
-    // so fake district info is ued 
-    MapParams(Graph const &g, 
-              const std::vector<unsigned int> &counties, 
+    // so fake district info is ued
+    MapParams(Graph const &g,
+              const std::vector<unsigned int> &counties,
               const std::vector<unsigned int> &pop,
-              double const lower, double const upper
+              double const lower, double const upper,
+              std::vector<double> const &edge_weights = {}
              );
 
 
@@ -604,9 +634,11 @@ class MapParams {
     FlatGraph map_graph;                 // The graph stored as a FlatGraph type
     int const num_edges;                 // number of undirected edges in g
     GraphEdgeIndex const graph_edge_index; // bitpacked boolean storage of graph
+    bool const is_weighted;              // whether or not the graph edges are weighted
     int const num_edge_bit_words; // used for bitpacked stuff
     std::vector<unsigned int> const counties;           // county labels
     int const num_counties;              // The number of distinct counties
+    bool const plans_may_be_non_hierarchical; // Whether or not we can assume all plans are hierarchically valid
     Multigraph const cg;                 // county multigraph
     std::vector<std::vector<int>> county_vertices;    // The vertices in each county 
     Graph const county_restricted_graph; // g but with all edges crossing counties removed

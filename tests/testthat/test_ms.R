@@ -64,6 +64,7 @@ test_that("Thresholding constraints work", {
 
     plans <- redist_mergesplit(
         iowa_map,
+        sampling_space = "spanning_forest",
         nsims = 100,
         warmup = 50,
         constraints = constr,
@@ -93,6 +94,7 @@ test_that("Thresholding constraints work", {
 
     plans <- redist_mergesplit(
         iowa_map,
+        sampling_space = "spanning_forest",
         nsims = 100,
         warmup = 50,
         constraints = constr,

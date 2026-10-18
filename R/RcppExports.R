@@ -125,11 +125,11 @@ pareto_dominated <- function(x) {
     .Call(`_redist_pareto_dominated`, x)
 }
 
-prec_cooccur <- function(m, idxs, ncores) {
+prec_cooccur <- function(m, idxs, ncores = 1L) {
     .Call(`_redist_prec_cooccur`, m, idxs, ncores)
 }
 
-group_pct <- function(plans_mat, group_pop, total_pop, n_distr, ncores = 0L) {
+group_pct <- function(plans_mat, group_pop, total_pop, n_distr, ncores = 1L) {
     .Call(`_redist_group_pct`, plans_mat, group_pop, total_pop, n_distr, ncores)
 }
 
@@ -137,11 +137,11 @@ group_pct_top_k <- function(m, group_pop, total_pop, k, n_distr) {
     .Call(`_redist_group_pct_top_k`, m, group_pop, total_pop, k, n_distr)
 }
 
-infer_region_seats <- function(region_pops, lower, upper, total_seats, num_threads = 0L) {
+infer_region_seats <- function(region_pops, lower, upper, total_seats, num_threads = 1L) {
     .Call(`_redist_infer_region_seats`, region_pops, lower, upper, total_seats, num_threads)
 }
 
-pop_tally <- function(districts, pop, n_distr, ncores = 0L) {
+pop_tally <- function(districts, pop, n_distr, ncores = 1L) {
     .Call(`_redist_pop_tally`, districts, pop, n_distr, ncores)
 }
 
@@ -165,10 +165,6 @@ get_region_laplacian <- function(adj_list, region_ids) {
     .Call(`_redist_get_region_laplacian`, adj_list, region_ids)
 }
 
-resample_plans_lowvar <- function(normalized_weights, plans_mat, region_pops_mat, region_sizes_mat, reorder_sizes_mat) {
-    .Call(`_redist_resample_plans_lowvar`, normalized_weights, plans_mat, region_pops_mat, region_sizes_mat, reorder_sizes_mat)
-}
-
 resample_lowvar <- function(wgts) {
     .Call(`_redist_resample_lowvar`, wgts)
 }
@@ -181,12 +177,16 @@ get_merged_log_number_linking_edges <- function(adj_list, counties, constraints,
     .Call(`_redist_get_merged_log_number_linking_edges`, adj_list, counties, constraints, ndists, nseats, num_regions, region_ids, region1_id, region2_id)
 }
 
-get_canonical_plan_labelling <- function(plans_mat, num_regions, ncores) {
+plans_are_hierarchically_valid <- function(adj_list, counties, plans_mat, ndists) {
+    .Call(`_redist_plans_are_hierarchically_valid`, adj_list, counties, plans_mat, ndists)
+}
+
+get_canonical_plan_labelling <- function(plans_mat, num_regions, ncores = 0L) {
     .Call(`_redist_get_canonical_plan_labelling`, plans_mat, num_regions, ncores)
 }
 
-get_plan_counts <- function(input_plans_mat, num_regions, use_canonical_ordering = TRUE, num_threads = 1L) {
-    .Call(`_redist_get_plan_counts`, input_plans_mat, num_regions, use_canonical_ordering, num_threads)
+get_plan_counts <- function(input_plans_mat, num_regions, use_canonical_ordering = TRUE, return_plan_strings = FALSE) {
+    .Call(`_redist_get_plan_counts`, input_plans_mat, num_regions, use_canonical_ordering, return_plan_strings)
 }
 
 validate_init_seats_cpp <- function(init_seats, num_regions, nseats, seats_range, split_districts_only, num_threads) {
@@ -209,6 +209,10 @@ maximum_input_sizes <- function() {
     .Call(`_redist_maximum_input_sizes`)
 }
 
+graph_edge_list <- function(adj_list) {
+    .Call(`_redist_graph_edge_list`, adj_list)
+}
+
 plan_joint <- function(m1, m2, pop) {
     .Call(`_redist_plan_joint`, m1, m2, pop)
 }
@@ -219,6 +223,10 @@ renumber_matrix <- function(plans, renumb) {
 
 solve_hungarian <- function(costMatrix) {
     .Call(`_redist_solve_hungarian`, costMatrix)
+}
+
+compute_rhats_cpp <- function(values, row_index, district_start, group_index, n_groups, num_threads = 0L) {
+    .Call(`_redist_compute_rhats_cpp`, values, row_index, district_start, group_index, n_groups, num_threads)
 }
 
 rsg <- function(adj_list, population, Ndistrict, target_pop, thresh, maxiter) {
@@ -233,8 +241,8 @@ k_biggest <- function(x, k = 1L) {
     .Call(`_redist_k_biggest`, x, k)
 }
 
-run_redist_smc <- function(nsims, total_seats, ndists, district_seat_sizes, initial_num_regions, adj_list, counties, pop, step_types, target, lower, upper, rho, sampling_space_str, control, constraints, verbosity, diagnostic_level, region_id_mat, region_sizes_mat, log_weights) {
-    .Call(`_redist_run_redist_smc`, nsims, total_seats, ndists, district_seat_sizes, initial_num_regions, adj_list, counties, pop, step_types, target, lower, upper, rho, sampling_space_str, control, constraints, verbosity, diagnostic_level, region_id_mat, region_sizes_mat, log_weights)
+run_redist_smc <- function(nsims, total_seats, ndists, district_seat_sizes, initial_num_regions, adj_list, counties, pop, step_types, target, lower, upper, rho, sampling_space_str, control, constraints, verbosity, diagnostic_level, region_id_mat, region_sizes_mat) {
+    .Call(`_redist_run_redist_smc`, nsims, total_seats, ndists, district_seat_sizes, initial_num_regions, adj_list, counties, pop, step_types, target, lower, upper, rho, sampling_space_str, control, constraints, verbosity, diagnostic_level, region_id_mat, region_sizes_mat)
 }
 
 splits <- function(dm, community, nd, max_split) {

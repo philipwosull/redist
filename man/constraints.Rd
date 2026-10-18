@@ -16,8 +16,9 @@
 \alias{add_constr_polsby}
 \alias{add_constr_fry_hold}
 \alias{add_constr_log_st}
-\alias{add_constr_edges_rem}
+\alias{add_constr_seats}
 \alias{add_constr_custom}
+\alias{add_constr_edges_rem}
 \alias{add_constr_plan_splits}
 \alias{add_constr_total_plan_splits}
 \alias{add_constr_plan_incumbency}
@@ -163,9 +164,10 @@ add_constr_log_st(
   thresh = NULL
 )
 
-add_constr_edges_rem(
+add_constr_seats(
   constr,
   strength,
+  seats,
   only_nregions = FALSE,
   only_nseats = FALSE,
   thresh = NULL
@@ -177,6 +179,14 @@ add_constr_custom(
   fn,
   only_nregions = FALSE,
   only_nseats = FALSE,
+  thresh = NULL
+)
+
+add_constr_edges_rem(
+  constr,
+  strength,
+  use_frac = FALSE,
+  only_nregions = FALSE,
   thresh = NULL
 )
 
@@ -267,7 +277,14 @@ having two or more incumbents be in the same district.}
 
 \item{denominator}{Fryer Holden minimum value to normalize by. Default is 1 (no normalization).}
 
+\item{seats}{The desired seat values. These must be between 1 and \code{nseats}.
+Any region whose seat count is in \code{seats} will return a raw score of 1.}
+
 \item{fn}{A function}
+
+\item{use_frac}{Whether or not to normalize the number of edges removed by
+the total number of edges in the graph. If \code{TRUE} then the raw score will be
+bounded between 0 and 1.}
 
 \item{group_pops}{A list of vectors of target group populations}
 
@@ -275,12 +292,6 @@ having two or more incumbents be in the same district.}
 
 \item{min_fracs}{A vector of minimum fraction thresholds for each of the
 different population sets}
-
-\item{only_districts}{Whether or not to apply the constraints to
-districts only. If constraints are only applied to districts then it will
-likely cause a drop in efficiency in the final round. If splitting plans all
-the way this does not affect the final target distribution. This is not relevant
-for constraints that penalize the entire plan instead of specific districts.}
 }
 \description{
 The \code{\link[=redist_smc]{redist_smc()}} and \code{\link[=redist_mergesplit]{redist_mergesplit()}} algorithms in this package allow
@@ -364,8 +375,7 @@ excess district-county pairs). Values of \code{strength} should generally be
 small, given that the underlying values are counts.
 
 The \code{edges_rem} constraint adds a term counting the number of edges removed from the
-adjacency graph. This is only usable with \code{redist_flip()}, as other algorithms
-implicitly use this via the \code{compactness} parameter. Values of \code{strength} should
+adjacency graph. Values of \code{strength} should
 generally be small, given that the underlying values are counts.
 
 The \code{log_st} constraint constraint adds a term counting the log number of spanning
@@ -384,6 +394,9 @@ as measured by the dissimilarity index.
 
 The \code{pop_dev} constraint adds a term encouraging plans to have smaller population deviations
 from the target population.
+
+The \code{seats} constraint adds an indicator term for regions with the desired
+number of seats. Values of \code{strength} may be of moderate size.
 
 The \code{custom} constraint allows the user to specify their own constraint using
 a function which evaluates districts one at a time. The provided function

@@ -2,7 +2,8 @@
 #ifndef GRAPH_PLAN_TYPE_H
 #define GRAPH_PLAN_TYPE_H
 
-#include <RcppArmadillo.h>
+#include <memory>
+#include <vector>
 #include "base_plan_type.h"
 
 
@@ -26,14 +27,14 @@ class GraphPlan : public Plan {
 
     std::vector<std::tuple<RegionID, RegionID, double>>
     get_valid_adj_regions_and_eff_log_boundary_lens(PlanMultigraph &plan_multigraph,
-                                                    const SplittingSchedule &splitting_schedule,
+                                                    const SplittingSchedule &splitting_schedule, ScheduleContext &schedule_ctx,
                                                     ScoringFunction const &scoring_function,
                                                     bool const is_final_split,
                                                     USTSampler &ust_sampler,
                                                     TreeSplitter &tree_splitter) const override;
 
     double get_log_eff_boundary_len(PlanMultigraph &plan_multigraph,
-                                    const SplittingSchedule &splitting_schedule,
+                                    const SplittingSchedule &splitting_schedule, ScheduleContext &schedule_ctx,
                                     USTSampler &ust_sampler, TreeSplitter &tree_splitter,
                                     ScoringFunction const &scoring_function,
                                     const int region1_id, int const region2_id) const override;
@@ -44,7 +45,7 @@ class GraphPlan : public Plan {
  */
 void estimate_cut_k(const MapParams &map_params, const SplittingSchedule &splitting_schedule,
                     RNGState &rng_state, int &k, int const last_k,
-                    const arma::vec &unnormalized_weights, double thresh, double tol,
+                    double thresh, double tol,
                     std::vector<std::unique_ptr<Plan>> const &plan_ptrs_vec,
                     bool split_district_only, int const verbosity);
 

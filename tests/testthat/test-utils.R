@@ -85,3 +85,18 @@ test_that("freeze can hold multiple districts in place", {
     expect_length(unique(out[plan == 2]), 1)
     expect_length(unique(out[plan == 3]), 1)
 })
+
+test_that("graph edge ids are canonical regardless of adjacency neighbor order", {
+    iowa_adj <- redist.adjacency(iowa)
+    edges <- graph_edge_list(iowa_adj)
+
+    # one row per undirected edge, sorted lexicographically with u < v
+    expect_equal(nrow(edges), sum(lengths(iowa_adj)) / 2)
+    expect_true(all(edges[, 1] < edges[, 2]))
+    expect_equal(edges, edges[order(edges[, 1], edges[, 2]), ])
+
+    set.seed(1)
+    shuffled_adj <- lapply(iowa_adj, function(x) x[sample.int(length(x))])
+    expect_equal(graph_edge_list(shuffled_adj), edges)
+    expect_equal(graph_edge_list(lapply(iowa_adj, rev)), edges)
+})

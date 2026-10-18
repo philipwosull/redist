@@ -6,8 +6,12 @@
  ********************************************************/
 
 
+#include <atomic>
+#include <thread>
+
 #include <cmath>
 #include <functional>
+#include <sstream>
 #include <string>
 
 #include "map_calc.h"
@@ -132,6 +136,12 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
             thread_generation_counter = generation;
         }
 
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
         std::vector<bool> &county_component_lookup = county_component_lookup_buffers[thread_id];
         CircularQueue<int> &vertex_queue = vertex_queue_buffers[thread_id];
@@ -143,6 +153,27 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
         std::fill(zero_prob_component.begin(), zero_prob_component.end(), false);
         // if only the entire plan
         bool entire_prob_zero = false;
+
+        // The region sizes must add up to the total number of seats. Each size
+        // being a valid district size isn't enough (eg sizes 1,2,2,2 when there
+        // are 6 seats), so a plan that doesn't add up has probability zero.
+        int seat_sum = 0;
+        for (int region_id = 0; region_id < num_regions; region_id++) {
+            seat_sum += plan_ensemble.plan_ptr_vec[i]->region_sizes[region_id];
+        }
+        if (seat_sum != total_seats) {
+            if (just_single_density) {
+                log_unnormalized_component_densities(0, i) = R_NegInf;
+                if (verbosity >= 3) {
+                    ++bar;
+                }
+                RcppThread::checkUserInterrupt(i % check_int == 0);
+                return; // return to break the loop in the lambda
+            } else {
+                // it's a property of the whole plan so mark the plan component
+                log_unnormalized_component_densities(num_regions, i) = R_NegInf;
+            }
+        }
 
         // first check each population is ok
         auto pop_valid_result =
@@ -286,7 +317,7 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
 }
 
 // [[Rcpp::export]]
-arma::vec compute_plans_log_optimal_weights(
+std::vector<double> compute_plans_log_optimal_weights(
     Rcpp::List const &adj_list, Rcpp::IntegerVector const &counties, Rcpp::IntegerVector const &pop,
     Rcpp::List const &constraints, double const pop_temper, double const rho,
     std::string const &splitting_schedule_str, int const ndists, int const total_seats,
@@ -302,7 +333,7 @@ arma::vec compute_plans_log_optimal_weights(
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // create the map param object
     MapParams map_params(list_to_graph(adj_list), 
@@ -325,7 +356,7 @@ arma::vec compute_plans_log_optimal_weights(
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule_ptr = get_splitting_schedule(
         1, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
-        splitting_schedule_type, control);
+        splitting_schedule_type);
     splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, num_regions - 1);
     splitting_schedule_ptr->print_current_step_splitting_info();
 
@@ -336,7 +367,13 @@ arma::vec compute_plans_log_optimal_weights(
     // create the splitter
     NaiveTopKSplitter tree_splitter(map_params.V, 1);
 
-    arma::vec log_weights(num_plans, arma::fill::none);
+    std::vector<double> log_weights(num_plans);
+    // Each worker formats into its own slot and the main thread prints them
+    // after `wait()`. Printing from a worker is not thread safe, and
+    // RcppThread's buffered alternative delivers nothing useful here: it only
+    // drains inside `ThreadPool::wait()`, and streaming a RegionID (an
+    // unsigned char) writes it as a character rather than a number.
+    std::vector<std::string> plan_msgs(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -358,12 +395,21 @@ arma::vec compute_plans_log_optimal_weights(
             thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
             thread_generation_counter = generation;
         }
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
+        std::ostringstream plan_msg;
 
         // build the multigraph
         plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
                                               plan_ensemble.plan_ptr_vec[i]->num_regions);
-        plan_multigraph.Rprint_detailed(*plan_ensemble.plan_ptr_vec[i]);
+        // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
+        // and must not be touched from a worker thread; take the string instead.
+        plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);
         // plan_multigraph.pair_map.Rprint();
         // // remove invalid hierarchical merges
         // plan_multigraph.remove_invalid_hierarchical_merge_pairs(*plan_ensemble.plan_ptr_vec[i]);
@@ -389,20 +435,22 @@ arma::vec compute_plans_log_optimal_weights(
             }
 
             incremental_weight += std::exp(log_boundary_len);
-            REprintf("(%u, %u) - %.4f \n", key_val_pair.first.first, key_val_pair.first.second,
-                     std::exp(log_boundary_len));
+            plan_msg << "(" << static_cast<unsigned>(key_val_pair.first.first) << ", "
+                     << static_cast<unsigned>(key_val_pair.first.second) << ") - "
+                     << std::exp(log_boundary_len) << " \n";
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function,
         //     rho, true, is_final
         // );
 
-        REprintf("%f vs %f \n", 1.0 / static_cast<double>(incremental_weight),
-                 std::exp(log_weights(i)));
+        plan_msg << (1.0 / static_cast<double>(incremental_weight)) << " vs "
+                 << std::exp(log_weights[i]) << " \n";
+        plan_msgs[i] = plan_msg.str();
 
         ++bar;
 
@@ -411,12 +459,14 @@ arma::vec compute_plans_log_optimal_weights(
 
     // Wait for all the threads to finish
     pool.wait();
+    // main thread, so REprintf is safe here
+    for (auto const &msg : plan_msgs) REprintf("%s", msg.c_str());
     return log_weights;
 }
 
 
 // [[Rcpp::export]]
-arma::vec compute_plans_log_simple_weights(
+std::vector<double> compute_plans_log_simple_weights(
     Rcpp::List const &adj_list, Rcpp::IntegerVector const &counties, Rcpp::IntegerVector const &pop,
     Rcpp::List const &constraints, double const pop_temper, double const rho,
     std::string const &splitting_schedule_str, int const ndists, int const total_seats,
@@ -432,7 +482,7 @@ arma::vec compute_plans_log_simple_weights(
     // create thread pool
     if (num_threads <= 0)
         num_threads = std::thread::hardware_concurrency();
-    RcppThread::ThreadPool pool(num_threads);
+    RcppThread::ThreadPool pool = get_thread_pool(num_threads);
 
     // create the map param object
     MapParams map_params(list_to_graph(adj_list), 
@@ -454,7 +504,7 @@ arma::vec compute_plans_log_simple_weights(
         get_splitting_size_regime(splitting_schedule_str);
     auto splitting_schedule_ptr = get_splitting_schedule(
         1, ndists, total_seats, Rcpp::as<std::vector<int>>(district_seat_sizes),
-        splitting_schedule_type, control);
+        splitting_schedule_type);
     splitting_schedule_ptr->set_potential_cut_sizes_for_each_valid_size(0, num_regions - 1);
     splitting_schedule_ptr->print_current_step_splitting_info();
 
@@ -465,7 +515,13 @@ arma::vec compute_plans_log_simple_weights(
     // create the splitter
     NaiveTopKSplitter tree_splitter(map_params.V, 1);
 
-    arma::vec log_weights(num_plans, arma::fill::none);
+    std::vector<double> log_weights(num_plans);
+    // Each worker formats into its own slot and the main thread prints them
+    // after `wait()`. Printing from a worker is not thread safe, and
+    // RcppThread's buffered alternative delivers nothing useful here: it only
+    // drains inside `ThreadPool::wait()`, and streaming a RegionID (an
+    // unsigned char) writes it as a character rather than a number.
+    std::vector<std::string> plan_msgs(num_plans);
 
     const int nsims = plan_ensemble.nsims;
     const int check_int = 50; // check for interrupts every _ iterations
@@ -487,12 +543,21 @@ arma::vec compute_plans_log_simple_weights(
             thread_id = thread_id_counter.fetch_add(1, std::memory_order_relaxed);
             thread_generation_counter = generation;
         }
+        if (thread_id < 0 || thread_id >= static_cast<int>(plan_multigraph_buffers.size())) {
+            std::ostringstream oss;
+            oss << "Thread id " << thread_id << " is outside the "
+                << plan_multigraph_buffers.size() << " per thread buffers!";
+            throw std::runtime_error(oss.str());
+        }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
+        std::ostringstream plan_msg;
 
         // build the multigraph
         plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
                                               plan_ensemble.plan_ptr_vec[i]->num_regions);
-        plan_multigraph.Rprint_detailed(*plan_ensemble.plan_ptr_vec[i]);
+        // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
+        // and must not be touched from a worker thread; take the string instead.
+        plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);
         // plan_multigraph.pair_map.Rprint();
         // // remove invalid hierarchical merges
         // plan_multigraph.remove_invalid_hierarchical_merge_pairs(*plan_ensemble.plan_ptr_vec[i]);
@@ -518,20 +583,22 @@ arma::vec compute_plans_log_simple_weights(
             }
 
             incremental_weight += std::exp(log_boundary_len);
-            REprintf("(%u, %u) - %.4f \n", key_val_pair.first.first, key_val_pair.first.second,
-                     std::exp(log_boundary_len));
+            plan_msg << "(" << static_cast<unsigned>(key_val_pair.first.first) << ", "
+                     << static_cast<unsigned>(key_val_pair.first.second) << ") - "
+                     << std::exp(log_boundary_len) << " \n";
         }
 
         // REprintf("I=%d\n", i);
-        // log_weights(i) = compute_log_optimal_incremental_weights(
+        // log_weights[i] = compute_log_optimal_incremental_weights(
         //     *plan_ensemble.plan_ptr_vec[i], plan_multigraph,
         //     *splitting_schedule_ptr, ust_sampler, tree_splitter,
         //     sampling_space, scoring_function,
         //     rho, true, is_final
         // );
 
-        REprintf("%f vs %f \n", 1.0 / static_cast<double>(incremental_weight),
-                 std::exp(log_weights(i)));
+        plan_msg << (1.0 / static_cast<double>(incremental_weight)) << " vs "
+                 << std::exp(log_weights[i]) << " \n";
+        plan_msgs[i] = plan_msg.str();
 
         ++bar;
 
@@ -540,5 +607,7 @@ arma::vec compute_plans_log_simple_weights(
 
     // Wait for all the threads to finish
     pool.wait();
+    // main thread, so REprintf is safe here
+    for (auto const &msg : plan_msgs) REprintf("%s", msg.c_str());
     return log_weights;
 }

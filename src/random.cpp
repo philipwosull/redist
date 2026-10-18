@@ -1,4 +1,12 @@
+#include <cstddef>
+#include <utility>
+
 #include "random.h"
+
+#include <Rcpp.h>
+#include <cmath>
+#include <numeric>
+#include <sstream>
 
 std::random_device GLOBAL_RD;
 RNGState GLOBAL_RNG(GLOBAL_RD());
@@ -30,7 +38,7 @@ void RNGState::seed_rng(int seed, int num_jumps) {
 // Construct RNG state object
 RNGState::RNGState(int seed, int num_jumps) { seed_rng(seed, num_jumps); }
 
-RNGState::RNGState(void) { seed_rng((int)Rcpp::sample(INT_MAX, 1)[0]); }
+RNGState::RNGState(void) { seed_rng((int) Rcpp::sample(INT_MAX, 1)[0]); }
 
 uint64_t RNGState::next_sr() {
     uint64_t z = (state_sr += 0x9e3779b97f4a7c15);
@@ -116,7 +124,7 @@ Rcpp::NumericVector runif1(int n, int max) {
 }
 
 // helper
-int find_u(const double u, const int max, const arma::vec &cum_wgts) {
+int find_u(const double u, const int max, const std::vector<double> &cum_wgts) {
     int low = 0, high = max - 1;
 
     if (cum_wgts[0] > u)
@@ -136,36 +144,36 @@ int find_u(const double u, const int max, const arma::vec &cum_wgts) {
 /*
  * Generate a random integer in [0, cum_wgts.size()) according to normalized cumulative weights.
  */
-int RNGState::r_int_wgt(const arma::vec &cum_wgts) { 
+int RNGState::r_int_wgt(const std::vector<double> &cum_wgts) {
     if constexpr(perf_config::supposedly_safe_input_checks){
-        if (cum_wgts.n_elem == 0) {
+        if (cum_wgts.empty()) {
             throw std::runtime_error(
                 "RNGState::r_int_wgt called with empty cumulative weights."
             );
         }
 
-        double const last = cum_wgts[cum_wgts.n_elem - 1];
+        double const last = cum_wgts.back();
 
         if (!(last > 0.0) || !std::isfinite(last)) {
             std::ostringstream oss;
             oss << "RNGState::r_int_wgt called with invalid cumulative weights.\n";
             oss << "last=" << last << "\n";
-            oss << "n_elem=" << cum_wgts.n_elem << "\n";
+            oss << "n_elem=" << cum_wgts.size() << "\n";
             throw std::runtime_error(oss.str());
         }
-        int const idx = find_u(r_unif(), static_cast<int>(cum_wgts.n_elem), cum_wgts);
+        int const idx = find_u(r_unif(), static_cast<int>(cum_wgts.size()), cum_wgts);
 
-        if (idx < 0 || idx >= static_cast<int>(cum_wgts.n_elem)) {
+        if (idx < 0 || idx >= static_cast<int>(cum_wgts.size())) {
             std::ostringstream oss;
             oss << "RNGState::r_int_wgt returned invalid index.\n";
             oss << "idx=" << idx << "\n";
-            oss << "cum_wgts.n_elem=" << cum_wgts.n_elem << "\n";
+            oss << "cum_wgts.n_elem=" << cum_wgts.size() << "\n";
             throw std::runtime_error(oss.str());
         }
 
         return idx;
     }else{
-        return find_u(r_unif(), cum_wgts.size(), cum_wgts); 
+        return find_u(r_unif(), static_cast<int>(cum_wgts.size()), cum_wgts);
     }
 
 }
@@ -181,24 +189,22 @@ int RNGState::r_int_wgt(const arma::vec &cum_wgts) {
  *  returning indices that have weight zero.
  *
  *
- *  @param unnormalized_wgts An arma vector of positive numbers
+ *  @param unnormalized_wgts A vector of positive numbers
  *
  *  @details no Modifications to inputs made
  *
  *  @returns An integer in [0, `unnormalized_wgts.size()`)
  *
  */
-int RNGState::r_int_unnormalized_wgt(const arma::vec &unnormalized_wgts) {
+int RNGState::r_int_unnormalized_wgt(const std::vector<double> &unnormalized_wgts) {
     if constexpr(perf_config::supposedly_safe_input_checks){
-        if (unnormalized_wgts.n_elem == 0) {
+        if (unnormalized_wgts.empty()) {
             throw std::runtime_error(
                 "RNGState::r_int_unnormalized_wgt called with empty weights."
             );
         }
 
-        double weight_sum = 0.0;
-
-        for (arma::uword i = 0; i < unnormalized_wgts.n_elem; ++i) {
+        for (std::size_t i = 0; i < unnormalized_wgts.size(); ++i) {
             double const w = unnormalized_wgts[i];
 
             if (w < 0.0 || !std::isfinite(w)) {
@@ -208,44 +214,28 @@ int RNGState::r_int_unnormalized_wgt(const arma::vec &unnormalized_wgts) {
                 oss << "w=" << w << "\n";
                 throw std::runtime_error(oss.str());
             }
-
-            weight_sum += w;
         }
+    }
 
+    // Get the unnormalized cumulative weights
+    std::vector<double> cum_wgts(unnormalized_wgts.size());
+    std::partial_sum(unnormalized_wgts.begin(), unnormalized_wgts.end(), cum_wgts.begin());
+    double const weight_sum = cum_wgts.back();
+
+    if constexpr(perf_config::supposedly_safe_input_checks){
         if (!(weight_sum > 0.0) || !std::isfinite(weight_sum)) {
             std::ostringstream oss;
             oss << "RNGState::r_int_unnormalized_wgt got invalid weight sum.\n";
             oss << "weight_sum=" << weight_sum << "\n";
-            oss << "n_elem=" << unnormalized_wgts.n_elem << "\n";
+            oss << "n_elem=" << unnormalized_wgts.size() << "\n";
             throw std::runtime_error(oss.str());
         }
-
-        arma::vec cum_wgts = arma::cumsum(unnormalized_wgts) / weight_sum;
-        return r_int_wgt(cum_wgts);
-    }else{
-        // Get the unnormalized cumulative weights
-        arma::vec cum_wgts = arma::cumsum(unnormalized_wgts);
-        // now normalize them
-        cum_wgts = cum_wgts / cum_wgts(cum_wgts.size() - 1);
-        return r_int_wgt(cum_wgts);
-    }
-}
-
-/*
- * Generate a random integer within a stratum
- * NOT THREAD SAFE
- */
-int r_int_mixstrat(int max, int stratum, double p, arma::vec cum_wgts) {
-    double u;
-    if (GLOBAL_RNG.r_unif() > p) {
-        u = (stratum + GLOBAL_RNG.r_unif()) / max;
-    } else {
-        u = GLOBAL_RNG.r_unif();
     }
 
-    return find_u(u, max, cum_wgts);
+    // now normalize them
+    for (double &w : cum_wgts) w /= weight_sum;
+    return r_int_wgt(cum_wgts);
 }
-
 
 /*
  * Partition `x` and its indices `idxs` between `right` and `left` by `pivot`
@@ -274,8 +264,9 @@ void partition_vec(std::vector<double> &x, std::vector<int> &idxs, int left, int
 // TESTED
 int global_rng_select_k(std::vector<double> x, int k) {
     if (k > x.size()) {
-        REprintf("k=%d bigger than number of edges=%d!\n", k, (int)x.size());
-        throw Rcpp::exception("k bigger than number of edges!\n");
+        throw std::runtime_error("global_rng_select_k: k=" + std::to_string(k) +
+                                 " is bigger than the number of edges=" +
+                                 std::to_string(x.size()) + ".\n");
     }
     int right = x.size() - 1;
     int left = 0;

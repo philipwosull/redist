@@ -5,10 +5,16 @@
  * Purpose: Helper functions for all redist algorithm types
  ********************************************************/
 
+#include <iterator>
+#include <numeric>
+
 #include "redist_alg_helpers.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <sstream>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -60,11 +66,47 @@ void set_merged_region_reindex_vec(int const num_regions, std::vector<int> &regi
 
 
 
+int check_ensemble_dims(MapParams const &map_params, int const nsims,
+                        SamplingSpace const sampling_space) {
+    if (nsims <= 0) {
+        throw Rcpp::exception("Tried to create a plan ensemble with no plans!\n");
+    }
+
+    constexpr std::int64_t max_elements =
+        static_cast<std::int64_t>(std::numeric_limits<int>::max());
+
+    auto check_buffer = [&](int const per_plan, char const *what) {
+        if (per_plan <= 0) return; // buffer is unused for this sampling space
+        std::int64_t const total =
+            static_cast<std::int64_t>(per_plan) * static_cast<std::int64_t>(nsims);
+        if (total > max_elements) {
+            std::ostringstream oss;
+            oss << "Cannot create an ensemble of " << nsims << " plans: the " << what
+                << " buffer would need " << total << " elements, more than the "
+                << max_elements << " an int offset can address.\n"
+                << "Reduce the number of plans to at most " << (max_elements / per_plan)
+                << ".\n";
+            throw Rcpp::exception(oss.str().c_str());
+        }
+    };
+
+    check_buffer(map_params.V, "plan region id");
+    check_buffer(map_params.ndists, "per region");
+    if (sampling_space == SamplingSpace::ForestSpace ||
+        sampling_space == SamplingSpace::LinkingEdgeSpace) {
+        check_buffer(map_params.num_edge_bit_words, "forest edge bit");
+    }
+
+    return nsims;
+}
+
 // creates plan ensemble of blank plans
 PlanEnsemble::PlanEnsemble(MapParams const &map_params, int const total_pop, int const nsims,
                            SamplingSpace const sampling_space, RcppThread::ThreadPool &pool,
                            int const verbosity)
-    : nsims(nsims), V(map_params.V), ndists(map_params.ndists),
+    // `nsims` is the first member, so this check runs before any buffer below is sized
+    : nsims(check_ensemble_dims(map_params, nsims, sampling_space)), V(map_params.V),
+      ndists(map_params.ndists),
       total_seats(map_params.total_seats), sampling_space(sampling_space),
       flattened_all_plans(V * nsims, 0),
       flattened_all_region_sizes(ndists * nsims, 0),
@@ -125,7 +167,11 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params, int const total_pop, int
                 total_seats, total_pop, plan_region_ids, plan_sizes, plan_pops,
                 plan_region_order_added, plan_forest_edge_bits);
         } else {
-            throw Rcpp::exception("Input is invalid\n");
+            throw std::runtime_error(
+                "PlanEnsemble: can't create blank plans in the " +
+                sampling_space_to_str(sampling_space) +
+                " sampling space. Supported spaces are graph, LCT graph, spanning forest, "
+                "and linking edge.\n");
         }
         if (verbosity >= 3) {
             ++bar;
@@ -143,8 +189,11 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
                            Rcpp::IntegerMatrix const &plans_mat,
                            Rcpp::IntegerMatrix const &region_sizes_mat,
                            std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool,
-                           int const verbosity)
-    : nsims(nsims), V(map_params.V), ndists(map_params.ndists),
+                           int const verbosity,
+                           InitialAugmentedSamples const &initial_augmented_samples)
+    // `nsims` is the first member, so this check runs before any buffer below is sized
+    : nsims(check_ensemble_dims(map_params, nsims, sampling_space)), V(map_params.V),
+      ndists(map_params.ndists),
       total_seats(map_params.total_seats), sampling_space(sampling_space),
       flattened_all_plans(plans_mat.begin(), plans_mat.end()),
       flattened_all_region_sizes(ndists * nsims, 0),
@@ -278,6 +327,17 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
         std::copy(region_sizes_mat.begin() + i * num_regions,
                   region_sizes_mat.begin() + (i + 1) * num_regions, plan_sizes.begin());
 
+        // the saved forest and linking edges for this plan if there are any
+        EdgeBitWord const *initial_forest_words =
+            initial_augmented_samples.forest_words.empty()
+                ? nullptr
+                : initial_augmented_samples.forest_words.data() +
+                      static_cast<std::size_t>(i) * num_forest_edge_bit_words_per_plan;
+        std::vector<LinkingEdge> const *initial_linking_edges =
+            initial_augmented_samples.linking_edges.empty()
+                ? nullptr
+                : &initial_augmented_samples.linking_edges[i];
+
         // create the plans
         if (use_graph_space) {
             plan_ptr_vec[i] =
@@ -290,17 +350,21 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
         } else if (use_forest_space) {
             plan_ptr_vec[i] = std::make_unique<ForestPlan>(
                 ndists, num_regions, map_params.pop, plan_region_ids, plan_sizes, plan_pops,
-                plan_region_order_added, plan_forest_edge_bits, 
+                plan_region_order_added, plan_forest_edge_bits,
                 ust_sampler_buffers[thread_id],
-                rng_states[thread_id]);
+                rng_states[thread_id], initial_forest_words);
         } else if (use_linking_edge_space) {
             plan_ptr_vec[i] = std::make_unique<LinkingEdgePlan>(
                 ndists, num_regions, map_params.pop, plan_region_ids, plan_sizes, plan_pops,
-                plan_region_order_added, plan_forest_edge_bits, 
+                plan_region_order_added, plan_forest_edge_bits,
                 *tree_ptr, ust_sampler, plan_multigraph, region_graph,
-                rng_states[thread_id]);
+                rng_states[thread_id], initial_forest_words, initial_linking_edges);
         } else {
-            throw Rcpp::exception("This plan type not supported!\n");
+            throw std::runtime_error(
+                "PlanEnsemble: can't create partial plans in the " +
+                sampling_space_to_str(sampling_space) +
+                " sampling space. Supported spaces are graph, LCT graph, spanning forest, "
+                "and linking edge.\n");
         }
         if (verbosity >= 3) {
             ++bar;
@@ -313,11 +377,9 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
 Rcpp::IntegerMatrix PlanEnsemble::get_R_plans_matrix() {
     // make the plans matrix
     Rcpp::IntegerMatrix plan_mat(V, nsims);
-    // copy data over
-    std::copy(flattened_all_plans.begin(), flattened_all_plans.end(), plan_mat.begin());
-    // now add 1 to everything
-    std::transform(plan_mat.begin(), plan_mat.end(), plan_mat.begin(),
-                   [](int x) { return x + 1; });
+    // widen to R's 4-byte integers and shift to 1-indexed in a single pass
+    std::transform(flattened_all_plans.begin(), flattened_all_plans.end(), plan_mat.begin(),
+                   [](RegionID x) { return static_cast<int>(x) + 1; });
     return plan_mat;
 }
 
@@ -344,16 +406,26 @@ Rcpp::IntegerMatrix PlanEnsemble::get_R_sizes_matrix(RcppThread::ThreadPool &poo
     return sizes_mat;
 }
 
-int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
+std::vector<PlanTallyEntry> PlanEnsemble::get_unique_plan_tally(
+    RcppThread::ThreadPool &pool) const {
     if (nsims == 0) {
-        return 0;
+        return {};
     }
 
     int const num_regions = plan_ptr_vec[0]->num_regions;
     int const num_threads = get_num_threads(pool);
-    std::vector<std::vector<int>> region_reindex_vecs(num_threads, std::vector<int>(num_regions));
 
-    // Stores only {hash, plan index}: normally 16 bytes per plan.
+    // A plan is just a run of `V` region ids in the flattened buffer, and a
+    // raw pointer into it already indexes the way the shared helpers expect.
+    auto const plan_ptr = [&](int const plan_idx) {
+        return flattened_all_plans.data() +
+               static_cast<std::size_t>(plan_idx) * static_cast<std::size_t>(V);
+    };
+
+    std::vector<std::vector<int>> label_scratches(num_threads,
+                                                  std::vector<int>(num_regions));
+
+    // Stores only {hash, plan index}: 16 bytes per plan.
     std::vector<std::pair<std::uint64_t, int>> hashed_plans(nsims);
 
     // Trick to give each thread a unique id
@@ -363,6 +435,7 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
     static std::atomic<int> global_generation_counter{0};
     int const generation = global_generation_counter.fetch_add(1, std::memory_order_relaxed);
     std::atomic<int> thread_id_counter{0};
+
     // First pass: compute each plan's canonical hash.
     pool.parallelFor(0, nsims, [&](int const plan_idx) {
         static thread_local int thread_generation_counter = -1;
@@ -375,40 +448,11 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
             thread_generation_counter = generation;
         }
 
-        std::vector<int> &region_reindex = region_reindex_vecs[thread_id];
-        region_reindex.assign(num_regions, -1);
-
-        int next_region_id = 0;
-
-        // Standard FNV-1a 64-bit constants.
-        std::uint64_t hash = 14695981039346656037ULL;
-        constexpr std::uint64_t fnv_prime = 1099511628211ULL;
-
-        std::size_t const offset =
-            static_cast<std::size_t>(plan_idx) *
-            static_cast<std::size_t>(V);
-
-        for (int v = 0; v < V; ++v) {
-            int const old_region =
-                static_cast<int>(flattened_all_plans[offset + v]);
-
-            int &canonical_region = region_reindex[old_region];
-
-            if (canonical_region < 0) {
-                canonical_region = next_region_id++;
-            }
-
-            std::uint16_t const value =
-                static_cast<std::uint16_t>(canonical_region);
-
-            hash ^= static_cast<std::uint8_t>(value & 0xffU);
-            hash *= fnv_prime;
-
-            hash ^= static_cast<std::uint8_t>((value >> 8) & 0xffU);
-            hash *= fnv_prime;
-        }
-
-        hashed_plans[plan_idx] = {hash, plan_idx};
+        hashed_plans[plan_idx] = {
+            canonical_plan_hash(plan_ptr(plan_idx), V, num_regions,
+                                label_scratches[thread_id]),
+            plan_idx
+        };
     });
 
     pool.wait();
@@ -416,102 +460,80 @@ int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
     // Put plans with matching hashes next to each other.
     std::sort(hashed_plans.begin(), hashed_plans.end());
 
-    // Returns true exactly when two plans define the same partition,
-    // ignoring their region labels.
     std::vector<int> plan1_to_plan2(num_regions);
     std::vector<int> plan2_to_plan1(num_regions);
 
-    auto const plans_are_equal =
-        [&](int const plan1_idx, int const plan2_idx) {
-            std::fill(
-                plan1_to_plan2.begin(),
-                plan1_to_plan2.end(),
-                -1
-            );
-            std::fill(
-                plan2_to_plan1.begin(),
-                plan2_to_plan1.end(),
-                -1
-            );
+    std::vector<PlanTallyEntry> tally;
+    tally.reserve(nsims);
 
-            std::size_t const offset1 =
-                static_cast<std::size_t>(plan1_idx) *
-                static_cast<std::size_t>(V);
-
-            std::size_t const offset2 =
-                static_cast<std::size_t>(plan2_idx) *
-                static_cast<std::size_t>(V);
-
-            for (int v = 0; v < V; ++v) {
-                int const region1 =
-                    static_cast<int>(flattened_all_plans[offset1 + v]);
-
-                int const region2 =
-                    static_cast<int>(flattened_all_plans[offset2 + v]);
-
-                int &mapped_region2 = plan1_to_plan2[region1];
-                int &mapped_region1 = plan2_to_plan1[region2];
-
-                if (mapped_region2 < 0 && mapped_region1 < 0) {
-                    mapped_region2 = region2;
-                    mapped_region1 = region1;
-                } else if (
-                    mapped_region2 != region2 ||
-                    mapped_region1 != region1
-                ) {
-                    return false;
-                }
-            }
-
-            return true;
-        };
-
-    int num_unique_plans = 0;
-
-    // Usually this vector has one entry. It gets more than one only if
-    // distinct plans happen to have the same 64-bit hash.
-    std::vector<int> representatives;
-    representatives.reserve(2);
+    // Slots in `tally` for the group of plans sharing the current hash.
+    // Usually holds one entry; it grows only when distinct plans happen to
+    // share a 64-bit hash, which is why matches are confirmed exactly below.
+    std::vector<int> representative_slots;
+    representative_slots.reserve(2);
 
     std::size_t group_begin = 0;
 
     while (group_begin < hashed_plans.size()) {
         std::size_t group_end = group_begin + 1;
 
-        while (
-            group_end < hashed_plans.size() &&
-            hashed_plans[group_end].first ==
-                hashed_plans[group_begin].first
-        ) {
+        while (group_end < hashed_plans.size() &&
+               hashed_plans[group_end].first == hashed_plans[group_begin].first) {
             ++group_end;
         }
 
-        representatives.clear();
+        representative_slots.clear();
 
         for (std::size_t i = group_begin; i < group_end; ++i) {
             int const candidate_idx = hashed_plans[i].second;
-            bool already_counted = false;
+            bool matched = false;
 
-            for (int const representative_idx : representatives) {
-                if (plans_are_equal(
-                        candidate_idx,
-                        representative_idx
-                    )) {
-                    already_counted = true;
+            for (int const slot : representative_slots) {
+                if (plans_canonically_equal(plan_ptr(candidate_idx),
+                                            plan_ptr(tally[slot].representative), V,
+                                            num_regions, plan1_to_plan2,
+                                            plan2_to_plan1)) {
+                    ++tally[slot].count;
+                    matched = true;
                     break;
                 }
             }
 
-            if (!already_counted) {
-                representatives.push_back(candidate_idx);
-                ++num_unique_plans;
+            if (!matched) {
+                if (!representative_slots.empty()) {
+                    // genuine hash collision, chain it off the last one
+                    tally[representative_slots.back()].next_same_hash =
+                        static_cast<int>(tally.size());
+                }
+                representative_slots.push_back(static_cast<int>(tally.size()));
+                tally.push_back(PlanTallyEntry{candidate_idx, 1, -1});
             }
         }
 
         group_begin = group_end;
     }
 
-    return num_unique_plans;
+    return tally;
+}
+
+
+int PlanEnsemble::count_unique_plans(RcppThread::ThreadPool &pool) const {
+    return static_cast<int>(get_unique_plan_tally(pool).size());
+}
+
+void PlanEnsemble::release_all_but_plan_ids() {
+    // Swapping with a fresh empty vector is what actually hands the memory
+    // back: `shrink_to_fit` is only a non-binding request, whereas the
+    // temporary here takes ownership of the buffer and deallocates it when it
+    // dies at the end of the statement.
+    auto release = [](auto &buffer) { std::decay_t<decltype(buffer)>().swap(buffer); };
+
+    // The plans are views into the buffers below, so they have to go first.
+    release(plan_ptr_vec);
+    release(flattened_all_region_sizes);
+    release(flattened_all_region_pops);
+    release(flattened_all_region_order_added);
+    release(flattened_all_forest_edge_bits);
 }
 
 Rcpp::IntegerMatrix PlanEnsemble::get_region_pops_matrix(RcppThread::ThreadPool &pool) {
@@ -537,6 +559,127 @@ Rcpp::IntegerMatrix PlanEnsemble::get_region_pops_matrix(RcppThread::ThreadPool 
     return pops_mat;
 }
 
+Rcpp::LogicalMatrix PlanEnsemble::get_R_forest_matrix(int const num_edges,
+                                                      RcppThread::ThreadPool &pool) {
+    if (num_forest_edge_bit_words_per_plan == 0) {
+        throw Rcpp::exception(
+            "Spanning forests are only stored in forest or linking edge space!\n");
+    }
+    if (compute_num_edge_bit_words(num_edges) != num_forest_edge_bit_words_per_plan ||
+        flattened_all_forest_edge_bits.size() !=
+            static_cast<std::size_t>(nsims) * num_forest_edge_bit_words_per_plan) {
+        throw Rcpp::exception("Forest edge bits do not match the number of graph edges!\n");
+    }
+
+    Rcpp::LogicalMatrix forest_mat(num_edges, nsims);
+    // take the raw pointer up front so the threads never touch the R API
+    int *const forest_mat_ptr = LOGICAL(forest_mat);
+
+    // plan i's forest is the i-th run of words in the flattened buffer, with
+    // edge id e stored in bit e % 64 of word e / 64
+    pool.parallelFor(0, nsims, [&](int i) {
+        EdgeBitWord const *plan_words =
+            flattened_all_forest_edge_bits.data() +
+            static_cast<std::size_t>(i) * num_forest_edge_bit_words_per_plan;
+        int *const plan_col = forest_mat_ptr + static_cast<std::size_t>(i) * num_edges;
+
+        for (int edge_id = 0; edge_id < num_edges; ++edge_id) {
+            plan_col[edge_id] = static_cast<int>(
+                (plan_words[edge_id / EDGE_BITS_PER_WORD] >> (edge_id % EDGE_BITS_PER_WORD)) &
+                EdgeBitWord{1});
+        }
+    });
+    pool.wait();
+
+    return forest_mat;
+}
+
+Rcpp::DataFrame PlanEnsemble::get_R_linking_edges(GraphEdgeIndex const &edge_index) {
+    if (sampling_space != SamplingSpace::LinkingEdgeSpace) {
+        throw Rcpp::exception("Linking edges are only stored in linking edge space!\n");
+    }
+
+    // Plans are not assumed to all have the same number of linking edges
+    std::size_t total_linking_edges = 0;
+    for (int i = 0; i < nsims; ++i) {
+        total_linking_edges += plan_ptr_vec[i]->get_linking_edges_ref().size();
+    }
+
+    Rcpp::IntegerVector draw(total_linking_edges);
+    Rcpp::IntegerVector edge_id(total_linking_edges);
+    Rcpp::IntegerVector vertex1(total_linking_edges);
+    Rcpp::IntegerVector vertex2(total_linking_edges);
+    Rcpp::NumericVector log_prob(total_linking_edges);
+
+    std::size_t row = 0;
+    std::vector<std::pair<EdgeID, LinkingEdge const *>> plan_edges;
+    for (int i = 0; i < nsims; ++i) {
+        // sort by edge id so the output only depends on the linking edge set
+        plan_edges.clear();
+        for (auto const &linking_edge : plan_ptr_vec[i]->get_linking_edges_ref()) {
+            plan_edges.emplace_back(
+                edge_index.get_edge_id(linking_edge.vertex1, linking_edge.vertex2),
+                &linking_edge);
+        }
+        std::sort(plan_edges.begin(), plan_edges.end(),
+                  [](auto const &a, auto const &b) { return a.first < b.first; });
+
+        for (auto const &[plan_edge_id, linking_edge] : plan_edges) {
+            draw[row] = i + 1;
+            edge_id[row] = static_cast<int>(plan_edge_id) + 1;
+            vertex1[row] = linking_edge->vertex1;
+            vertex2[row] = linking_edge->vertex2;
+            log_prob[row] = linking_edge->valid_log_prob ? linking_edge->log_prob : NA_REAL;
+            ++row;
+        }
+    }
+
+    return Rcpp::DataFrame::create(Rcpp::_["draw"] = draw, Rcpp::_["edge_id"] = edge_id,
+                                   Rcpp::_["vertex1"] = vertex1, Rcpp::_["vertex2"] = vertex2,
+                                   Rcpp::_["log_prob"] = log_prob);
+}
+
+InitialAugmentedSamples get_initial_augmented_samples(Rcpp::List const &control,
+                                                      MapParams const &map_params,
+                                                      int const nsims) {
+    InitialAugmentedSamples initial_augmented_samples;
+
+    if (control.containsElementNamed("initial_spanning_forests")) {
+        Rcpp::LogicalMatrix const forests = control["initial_spanning_forests"];
+        int const num_edge_bit_words = map_params.num_edge_bit_words;
+        initial_augmented_samples.forest_words.assign(
+            static_cast<std::size_t>(nsims) * num_edge_bit_words, EdgeBitWord{0});
+
+        // same packing as the ensemble, edge id e is bit e % 64 of word e / 64
+        for (int i = 0; i < nsims; ++i) {
+            EdgeBitWord *plan_words = initial_augmented_samples.forest_words.data() +
+                                      static_cast<std::size_t>(i) * num_edge_bit_words;
+            for (int edge_id = 0; edge_id < map_params.num_edges; ++edge_id) {
+                if (forests(edge_id, i) == TRUE) {
+                    plan_words[edge_id / EDGE_BITS_PER_WORD] |=
+                        EdgeBitWord{1} << (edge_id % EDGE_BITS_PER_WORD);
+                }
+            }
+        }
+    }
+
+    if (control.containsElementNamed("initial_linking_edges")) {
+        Rcpp::List const linking_edges = Rcpp::as<Rcpp::List>(control["initial_linking_edges"]);
+        Rcpp::IntegerVector const draw = linking_edges["draw"];
+        Rcpp::IntegerVector const vertex1 = linking_edges["vertex1"];
+        Rcpp::IntegerVector const vertex2 = linking_edges["vertex2"];
+
+        initial_augmented_samples.linking_edges.resize(nsims);
+        for (R_xlen_t k = 0; k < draw.size(); ++k) {
+            // no log probability so it is marked invalid and recomputed when needed
+            initial_augmented_samples.linking_edges.at(draw[k] - 1).emplace_back(vertex1[k],
+                                                                                vertex2[k]);
+        }
+    }
+
+    return initial_augmented_samples;
+}
+
 PlanEnsemble get_plan_ensemble(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
@@ -557,15 +700,17 @@ std::unique_ptr<PlanEnsemble> get_plan_ensemble_ptr(
     MapParams const &map_params, SplittingSchedule const &splitting_schedule,
     int const num_regions, int const nsims, SamplingSpace const sampling_space,
     Rcpp::IntegerMatrix const &plans_mat, Rcpp::IntegerMatrix const &region_sizes_mat,
-    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity) {
+    std::vector<RNGState> &rng_states, RcppThread::ThreadPool &pool, int const verbosity,
+    InitialAugmentedSamples const &initial_augmented_samples) {
     if (num_regions == 1) {
-        return std::make_unique<PlanEnsemble>(map_params, 
-            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0), 
+        return std::make_unique<PlanEnsemble>(map_params,
+            std::accumulate(map_params.pop.begin(), map_params.pop.end(), 0),
             nsims, sampling_space, pool, verbosity);
     } else {
         return std::make_unique<PlanEnsemble>(map_params, splitting_schedule, num_regions,
                                               nsims, sampling_space, plans_mat,
-                                              region_sizes_mat, rng_states, pool, verbosity);
+                                              region_sizes_mat, rng_states, pool, verbosity,
+                                              initial_augmented_samples);
     }
 }
 
@@ -911,7 +1056,9 @@ get_tree_splitter_ptrs(MapParams const &map_params, SplittingMethodType const sp
                             return std::make_unique<ExperimentalSplitter>(map_graph, epsilon, target);
                         });
     } else {
-        throw Rcpp::exception("Invalid Splitting Method!");
+        throw std::runtime_error("get_tree_splitter_ptrs: no tree splitter for the " +
+                                 splitting_method_to_str(splitting_method) +
+                                 " splitting method.\n");
     }
 
     return tree_splitters_ptr_vec;
@@ -936,270 +1083,26 @@ std::vector<bool> vector_tree_to_edge_vector(
     return edge_vec;
 }
 
-Rcpp::List graph_edge_index_to_list(
+Rcpp::IntegerMatrix graph_edge_index_to_matrix(
     GraphEdgeIndex const &edge_index
 ) {
-    Rcpp::List edge_list(edge_index.num_edges);
+    Rcpp::IntegerMatrix edge_mat(edge_index.num_edges, 2);
 
     for (int edge_id = 0; edge_id < edge_index.num_edges; ++edge_id) {
         auto const [u, v] = edge_index.get_edge_endpoints(
             static_cast<EdgeID>(edge_id)
         );
 
-        edge_list[edge_id] = Rcpp::IntegerVector::create(
-            static_cast<int>(u) + 1,
-            static_cast<int>(v) + 1
-        );
+        edge_mat(edge_id, 0) = static_cast<int>(u) + 1;
+        edge_mat(edge_id, 1) = static_cast<int>(v) + 1;
     }
 
-    return edge_list;
+    return edge_mat;
 }
 
-SMCDiagnostics::SMCDiagnostics(SamplingSpace const sampling_space,
-                               SplittingMethodType const splitting_method_type,
-                               SplittingSizeScheduleType const splitting_schedule_type,
-                               std::vector<bool> const &merge_split_step_vec, int const V,
-                               int const nsims, int const ndists, int const total_seats,
-                               int const initial_num_regions, int const total_smc_steps,
-                               int const total_ms_steps, 
-                               bool const estimated_unbiased_normalizing_constant,
-                               int const diagnostic_level,
-                               bool const splitting_all_the_way, bool const split_district_only)
-    : diagnostic_level(diagnostic_level), total_steps(total_smc_steps + total_ms_steps),
-      log_wgt_stddevs(total_smc_steps), acceptance_rates(total_steps),
-      nunique_parents(total_smc_steps), nunique_plans(total_steps), n_eff(total_smc_steps),
-      num_merge_split_attempts_vec(total_ms_steps),
-      cut_k_values(sampling_space == SamplingSpace::GraphSpace ? total_steps : 0),
-      tries_before_extra_particle(estimated_unbiased_normalizing_constant ? total_smc_steps : 0),
-      smc_step_parameter_estimation_times(total_smc_steps),
-      smc_split_times(total_smc_steps),
-      smc_weight_times(total_smc_steps),
-      ms_step_parameter_estimation_times(total_ms_steps),
-      ms_step_times(total_ms_steps),
-      wilson_call_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      wilson_backfill_call_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      md_selection_times(perf_config::track_granular_times ? total_smc_steps : 0),
-      plan_updating_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      hard_constraint_split_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      total_plan_smc_split_times(
-        perf_config::track_granular_times ? nsims : 0,
-        perf_config::track_granular_times ? total_smc_steps : 0
-      ),
-      get_valid_smc_pairs_times(perf_config::track_granular_times ? total_smc_steps : 0),
-      get_valid_mergepairs_times(perf_config::track_granular_times ? total_ms_steps : 0),
-      plan_scores_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      region_scores_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      log_tau_times(perf_config::track_granular_times ? total_smc_steps + total_ms_steps : 0),
-      retro_splitting_prob_times(perf_config::track_granular_times ? total_smc_steps : 0),
-      total_plan_smc_weight_times(
-        perf_config::track_granular_times ? nsims : 0,
-        perf_config::track_granular_times ? total_smc_steps : 0
-      ),
-      selecting_merge_pair_times(perf_config::track_granular_times ? total_ms_steps : 0),
-      eff_boundary_times(perf_config::track_granular_times ? total_ms_steps : 0),
-      total_plan_mcmc_times(
-        perf_config::track_granular_times ? nsims : 0,
-        perf_config::track_granular_times ? total_ms_steps : 0
-      )
-       {
-    // Level 1 Diagnostics. Not too big relative to plan size
-    log_incremental_weights_mat = arma::dmat(
-        nsims, total_smc_steps, arma::fill::none); // entry [i][s] is the log unnormalized
-                                                   // weight of particle i AFTER split s
-    draw_tries_mat =
-        Rcpp::IntegerMatrix(nsims, total_steps); // Entry [i][s] is the number of tries it took
-                                                 // to form particle i on split s
-    parent_index_mat = Rcpp::IntegerMatrix(
-        nsims,
-        total_smc_steps); // Entry [i][s] is the index of the parent of particle i at split s
-    // This is a nsims by total_ms_steps matrix where [i][s] is the number of
-    // successful merge splits performed for plan i on merge split round s
-    merge_split_successes_mat =
-        Rcpp::IntegerMatrix(total_ms_steps > 0 ? nsims : 1, total_ms_steps);
-    // counts the size of the trees
-    tree_sizes_mat = Rcpp::IntegerMatrix(total_seats, total_steps);
-    successful_tree_sizes_mat = Rcpp::IntegerMatrix(total_seats, total_steps);
-
-    // Level 2
-    parent_unsuccessful_tries_mat = Rcpp::IntegerMatrix(nsims, total_smc_steps);
-
-    bool diagnostic_mode = diagnostic_level == 1;
-    // level 3
-    all_steps_plan_region_ids_list.reserve(diagnostic_mode ? total_steps : 0);
-    all_steps_forests_adj_list.resize(
-        (diagnostic_mode && sampling_space != SamplingSpace::GraphSpace) ? total_steps : 0);
-    all_steps_linking_edge_list.resize(
-        (diagnostic_mode && sampling_space == SamplingSpace::LinkingEdgeSpace) ? total_steps
-                                                                               : 0);
-    all_steps_valid_region_sizes_to_split.resize(diagnostic_mode ? total_smc_steps : 0);
-    all_steps_valid_split_region_sizes.resize(diagnostic_mode ? total_smc_steps : 0);
-
-    // Store size at every step but last one if needed
-    int plan_dval_list_size = (diagnostic_mode & !split_district_only) ? total_steps - 1 : 0;
-    if (!splitting_all_the_way)
-        plan_dval_list_size++;
-
-    region_sizes_mat_list.reserve(plan_dval_list_size);
-
-    // If diagnostic mode track vertex region ids from every round
-    if (diagnostic_mode) {
-        // The number of regions starts at 1
-        int curr_num_regions = initial_num_regions;
-        for (size_t i = 0; i < total_steps; i++) {
-            all_steps_plan_region_ids_list.emplace_back(V, nsims);
-            // Create V by nsims matrix for the plan
-            // This is a vector where every entry is a V by nsims Rcpp::IntegerMatrix
-
-            // increase number of regions by 1 if that step is an smc one
-            if (!merge_split_step_vec.at(i))
-                curr_num_regions++;
-
-            // If not doing district only splits, and its not the final one or
-            // we're only doing partial plans then make size matrix
-            if (!split_district_only && (i < total_steps - 1 || !splitting_all_the_way)) {
-                // This is number of regions by nsims
-                region_sizes_mat_list.emplace_back(curr_num_regions, nsims);
-            }
-        }
-    }
+// [[Rcpp::export]]
+Rcpp::IntegerMatrix graph_edge_list(Rcpp::List const &adj_list) {
+    Graph const g = list_to_graph(adj_list);
+    return graph_edge_index_to_matrix(GraphEdgeIndex(g, count_undirected_edges(g)));
 }
-
-void SMCDiagnostics::add_full_step_diagnostics(
-    int const total_steps, bool const splitting_all_the_way, int const step_num,
-    int const merge_split_step_num, int const smc_step_num, bool const is_smc_step,
-    SamplingSpace const sampling_space, RcppThread::ThreadPool &pool,
-    PlanEnsemble &plan_ensemble, PlanEnsemble &new_plans_ensemble,
-    SplittingSchedule const &splitting_schedule) {
-    // if(diagnostic_mode){ // record if in diagnostic mode and generalized splits
-    //  reorder the plans by oldest split if either we'vxe done any merge split or
-    //  its generalized region splits
-
-    bool const split_district_only =
-        splitting_schedule.schedule_type == SplittingSizeScheduleType::DistrictOnlySMD;
-    int const nsims = plan_ensemble.nsims;
-
-    // if smc step update splitting step info
-    if (is_smc_step) {
-        int current_num_regions = plan_ensemble.plan_ptr_vec[0]->num_regions;
-        // save the acceptable split sizes
-        for (int region_size = 1;
-             region_size <= splitting_schedule.total_seats - current_num_regions + 2;
-             region_size++) {
-            if (splitting_schedule.valid_split_region_sizes[region_size]) {
-                all_steps_valid_split_region_sizes[smc_step_num].push_back(region_size);
-            }
-            if (splitting_schedule.valid_region_sizes_to_split[region_size]) {
-
-                all_steps_valid_region_sizes_to_split[smc_step_num].push_back(region_size);
-                ;
-            }
-        }
-    }
-
-    if (merge_split_step_num > 0 || !split_district_only) {
-        reorder_all_plans(pool, plan_ensemble.plan_ptr_vec, new_plans_ensemble.plan_ptr_vec);
-    }
-
-    // Copy the vertex plan matrix
-    all_steps_plan_region_ids_list.at(step_num) = plan_ensemble.get_R_plans_matrix();
-
-    // store the
-    if (!(sampling_space == SamplingSpace::GraphSpace)) {
-        all_steps_forests_adj_list.at(step_num).reserve(nsims);
-        for (size_t i = 0; i < nsims; i++) {
-            // add the forests from each plan at this step
-            all_steps_forests_adj_list.at(step_num).push_back(
-                plan_ensemble.plan_ptr_vec[i]->get_forest_adj());
-        }
-        if (sampling_space == SamplingSpace::LinkingEdgeSpace) {
-            for (size_t i = 0; i < nsims; i++) {
-                // add the forests from each plan at this step
-                all_steps_linking_edge_list.at(step_num).push_back(
-                    plan_ensemble.plan_ptr_vec[i]->get_linking_edges());
-            }
-        }
-    }
-
-    // Copy the sizes if neccesary
-    if (!split_district_only && (step_num < total_steps - 1 || !splitting_all_the_way)) {
-        region_sizes_mat_list.at(step_num) = plan_ensemble.get_R_sizes_matrix(pool);
-    }
-
-    return;
-}
-
-void SMCDiagnostics::add_diagnostics_to_out_list(Rcpp::List &out) {
-    // make parent index 1 indexed in place
-    std::transform(parent_index_mat.begin(), parent_index_mat.end(), parent_index_mat.begin(),
-                   [](int x) { return x + 1; });
-
-    // add granular time info 
-    Rcpp::List granular_timing;
-    if constexpr (perf_config::track_granular_times){
-        granular_timing = Rcpp::List::create(
-            Rcpp::_["granular_time_tracked"] = true,
-            Rcpp::_["wilson_call_times"] = wilson_call_times,
-            Rcpp::_["wilson_backfill_call_times"] = wilson_backfill_call_times,
-            Rcpp::_["multidistrict_selection_times"] = md_selection_times,
-            Rcpp::_["plan_updating_times"] = plan_updating_times,
-            Rcpp::_["hard_constraint_split_times"] = hard_constraint_split_times,
-            Rcpp::_["total_plan_smc_split_times"] = total_plan_smc_split_times,
-            Rcpp::_["get_valid_smc_pairs_times"] = get_valid_smc_pairs_times,
-            Rcpp::_["getting_valid_mergepairs_times"] = get_valid_mergepairs_times,
-            Rcpp::_["computing_plan_scores_times"] = plan_scores_times,
-            Rcpp::_["computing_region_scores_times"] = region_scores_times,
-            Rcpp::_["computing_spanning_tree_count_times"] = log_tau_times,   
-            Rcpp::_["computing_retro_splitting_prob_times"] = retro_splitting_prob_times,     
-            Rcpp::_["total_plan_smc_weight_times"] = total_plan_smc_weight_times,
-            Rcpp::_["selecting_merge_pair"] = selecting_merge_pair_times,
-            Rcpp::_["eff_boundary_times"] = eff_boundary_times,
-            Rcpp::_["total_plan_mcmc_times"] = total_plan_mcmc_times
-        );
-
-    }else{
-        granular_timing = Rcpp::List::create(
-            Rcpp::_["granular_time_tracked"] = false
-        );
-    }
-
-    // optional add special timing 
-    if constexpr (perf_config::special_timing){
-        Rcpp::List special_timing_list = Rcpp::List::create(
-        );
-
-        granular_timing["special_timing_list"] = special_timing_list;
-    }
-    
-    out["acceptance_rates"] = acceptance_rates;
-    out["draw_tries_mat"] = draw_tries_mat;
-    out["parent_index"] = parent_index_mat;
-    out["parent_unsuccessful_tries_mat"] = parent_unsuccessful_tries_mat;
-    out["step_n_eff"] = n_eff;
-    out["nunique_parent_indices"] = nunique_parents;
-    out["nunique_plans"] = nunique_plans;
-    out["tree_sizes"] = tree_sizes_mat;
-    out["successful_tree_sizes"] = successful_tree_sizes_mat;
-    out["log_weight_stddev"] = log_wgt_stddevs;
-    out["cut_k_vals"] = cut_k_values;
-    out["log_incremental_weights_mat"] = log_incremental_weights_mat;
-    out["ms_step_counts"] = num_merge_split_attempts_vec;
-    out["merge_split_success_mat"] = merge_split_successes_mat;
-    out["tries_before_extra_particle"] = tries_before_extra_particle;
-    out["smc_step_parameter_estimation_times"] = smc_step_parameter_estimation_times;
-    out["smc_split_times"] = smc_split_times;
-    out["smc_weight_times"] = smc_weight_times;
-    out["ms_step_parameter_estimation_times"] = ms_step_parameter_estimation_times;
-    out["ms_step_times"] = ms_step_times;
-    out["granular_times"] = granular_timing;
-    out["region_ids_mat_list"] = all_steps_plan_region_ids_list;
-    out["region_seats_mat_list"] = region_sizes_mat_list;
-    out["forest_adjs_list"] = all_steps_forests_adj_list;
-    out["linking_edges_list"] = all_steps_linking_edge_list;
-    out["valid_split_region_sizes_list"] = all_steps_valid_split_region_sizes;
-    out["valid_region_sizes_to_split_list"] = all_steps_valid_region_sizes_to_split;
-
-
-    return;
-}
-
 

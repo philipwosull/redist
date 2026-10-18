@@ -1,4 +1,6 @@
-#include <RcppArmadillo.h>
+#include <functional>
+
+#include <Rcpp.h>
 #include <algorithm>
 #include <vector>
 

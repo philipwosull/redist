@@ -2,7 +2,8 @@
 % Please edit documentation in R/redist_smc.R
 \name{redist_smc}
 \alias{redist_smc}
-\title{Generalized SMCS Redistricting Sampler (O'Sullivan, McCartan and Imai forthcoming)}
+\title{Generalized SMCS Redistricting Sampler (O'Sullivan, Imai, and McCartan (2026)
+\url{doi:10.48550/arXiv.2603.22188})}
 \usage{
 redist_smc(
   map,
@@ -16,7 +17,7 @@ redist_smc(
   init_particles = NULL,
   init_seats = NULL,
   init_weights = NULL,
-  sampling_space = c("graph_plan", "spanning_forest", "linking_edge"),
+  sampling_space = c("linking_edge", "spanning_forest", "graph_plan"),
   split_method = NULL,
   split_params = NULL,
   ms_params = list(),
@@ -61,7 +62,9 @@ information on sampling constraints. See \link{constraints} for more information
 \item{resample}{Whether to perform a final resampling step so that the
 generated plans can be used immediately.  Set this to \code{FALSE} to
 perform direct importance sampling estimates, or to adjust the weights
-manually.}
+manually. The resampling is done after the last SMC split, so if the run
+ends with mergesplit rounds they are run on the resampled plans, which can
+restore some of the diversity lost in resampling.}
 
 \item{runs}{How many independent parallel runs to conduct. Each run will
 have \code{nsims} simulations. Multiple runs allows for estimation of simulation
@@ -91,11 +94,13 @@ if \code{init_particles} is a \link{redist_plans} object. If \code{init_particle
 but not \code{init_seats} then the number of seats will be attempted
 to be inferred.}
 
-\item{init_weights}{A vector of length \code{nsims} of unnormalized plan weights
-associated with \code{init_particles}. The weights must all be strictly positive.
-If no weights are passed in then they will all be set to 1. If the
-\code{init_plans} were not resampled then it is recommended to pass their weights in.
-Not needed if \code{init_particles} is a \link{redist_plans} object.}
+\item{init_weights}{A vector of length \code{nsims} of plan weights associated
+with \code{init_particles}. The weights must all be strictly positive and are
+normalized to sum to 1, so they may be passed in on any scale. If no weights
+are passed in then the plans are weighted equally, unless \code{init_particles} is
+a \link{redist_plans} object that was not resampled, in which case its weights
+are used. If \code{init_particles} is a matrix of plans that were not resampled
+then it is recommended to pass their weights in.}
 
 \item{sampling_space}{The space to sample the plans on. This does not affect
 the plans output by the function but the sample space used can have a large
@@ -154,20 +159,26 @@ and larger values result in more unstable weights.
 }
 }}
 
-\item{ms_params}{A list of mergesplit parameters.
+\item{ms_params}{A list of mergesplit parameters. Mergesplit rounds are run
+if any of the parameters below are passed. For maps with 10 or more districts
+they are also run by default, with the defaults below, unless \code{ms_params} is
+\code{NULL}. Pass \code{ms_params = NULL} to turn mergesplit off.
 \itemize{
 \item \code{frequency}: How often to perform mergesplit rounds after SMC
 steps. Should either be an integer (meaning run after every _ smc steps)
 or a vector of 1 indexed step numbers indicating after which smc steps to
 run a mergesplit round. A value of -1 means just run a single mergesplit round
 after all smc steps have been run. A value of 1 means run after every smc step.
+Defaults to 1.
 \item \code{mh_accept_per_smc} Multiplier to the baseline number of mergesplit
 steps to be performed each round. For a mergesplit round the baseline number of
 steps is calculated as the ceiling of 1 over the previous mergesplit round
 acceptance rate (or smc step if no prior mergesplit rounds were done). The
 total number of steps is \code{ceiling(mh_accept_per_smc * baseline_num_steps)}.
 This should be thought of as specifying how many successful mergesplit steps
-are desired for each mergesplit round.
+are desired for each mergesplit round. Defaults to the number of districts
+divided by 3, rounded down, for maps with 10 or more districts and 1
+otherwise.
 \item \code{pair_rule} What probability to use to select regions to merge
 in the mergesplit kernel. Defaults to giving all pairs equal probability.
 }}
@@ -198,7 +209,7 @@ Recommended.}
 options are
 \itemize{
 \item \code{basic} Saves the final plans and for each step the
-incremental weights and ancestors.
+incremental weights and parent indices.
 \item \code{all} Saves everything \code{basic} does in addition to the
 intermediate plan and seat matrices after each splitting and mergesplit step.
 Use with caution as this can use a lot of memory very quickly.
@@ -228,6 +239,19 @@ number of tries before sampling the extra plan, and then discarding the
 extra plan. The number of attempts can be used with the weights to form an
 unbiased estimator, as opposed to the biased normalizing
 constant estimators that are obtained with the weights alone.
+\item \code{return_augmented_samples} Whether or not to return the spanning
+forests and linking edges associated with the sampled plans (if applicable).
+Setting this value to \code{TRUE} can substantially increase the size of the
+\code{redist_plans} object returned.
+\item \code{keep_init_plan_info} If \code{init_particles} is a \link{redist_plans}
+object sampled with \code{redist_smc()}, whether to combine its diagnostics with
+those of this run, so the output has the diagnostics of every step as if
+all the steps had been run at once. Requires \code{runs = 1} both here and for
+the initial plans, the same \code{nsims}, and initial plans sampled with
+\code{resample = FALSE}. Defaults to \code{FALSE}.
+\item \code{md_alpha} What power to use for multidistrict selection
+probability. When choosing a multidistrict to split, one will be chosen with
+probability proportional to \if{html}{\out{<size>}}^md_alpha.
 }}
 
 \item{adapt_k_thresh}{Deprecated. Pass in through the \code{split_params} arg.
@@ -248,7 +272,8 @@ plans.
 }
 \description{
 \code{redist_smc} uses a Sequential Monte Carlo Sampler algorithm
-(O'Sullivan, McCartan and Imai forthcoming) to generate representative samples of
+(O'Sullivan, Imai, and McCartan (2026)
+\url{doi:10.48550/arXiv.2603.22188}) to generate representative samples of
 congressional or legislative redistricting plans according to
 contiguity, population, compactness, and administrative boundary constraints.
 }
