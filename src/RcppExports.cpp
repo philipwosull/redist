@@ -733,6 +733,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// laplacian_builder_log_dets
+Rcpp::NumericMatrix laplacian_builder_log_dets(Rcpp::List const& graphs);
+RcppExport SEXP _redist_laplacian_builder_log_dets(SEXP graphsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List const& >::type graphs(graphsSEXP);
+    rcpp_result_gen = Rcpp::wrap(laplacian_builder_log_dets(graphs));
+    return rcpp_result_gen;
+END_RCPP
+}
 // plans_are_hierarchically_valid
 Rcpp::LogicalVector plans_are_hierarchically_valid(Rcpp::List const& adj_list, Rcpp::IntegerVector const& counties, Rcpp::IntegerMatrix const& plans_mat, int const ndists);
 RcppExport SEXP _redist_plans_are_hierarchically_valid(SEXP adj_listSEXP, SEXP countiesSEXP, SEXP plans_matSEXP, SEXP ndistsSEXP) {
@@ -1101,6 +1112,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_redist_resample_lowvar", (DL_FUNC) &_redist_resample_lowvar, 1},
     {"_redist_get_log_number_linking_edges", (DL_FUNC) &_redist_get_log_number_linking_edges, 7},
     {"_redist_get_merged_log_number_linking_edges", (DL_FUNC) &_redist_get_merged_log_number_linking_edges, 9},
+    {"_redist_laplacian_builder_log_dets", (DL_FUNC) &_redist_laplacian_builder_log_dets, 1},
     {"_redist_plans_are_hierarchically_valid", (DL_FUNC) &_redist_plans_are_hierarchically_valid, 4},
     {"_redist_get_canonical_plan_labelling", (DL_FUNC) &_redist_get_canonical_plan_labelling, 3},
     {"_redist_get_plan_counts", (DL_FUNC) &_redist_get_plan_counts, 4},

@@ -24,6 +24,7 @@
 #include "scoring.h"
 #include "base_plan_type.h"
 #include "redist_alg_helpers.h"
+#include "sparse_logdet.h"
 #include "threading_helpers.h"
 
 
@@ -545,6 +546,93 @@ double get_merged_log_number_linking_edges(Rcpp::List const &adj_list,
 
     return plan_multigraph.compute_merged_log_multigraph_tau(num_regions, region1_id,
                                                              region2_id, scoring_function);
+}
+
+
+// Test hook for LaplacianBuilder
+//
+// `graphs` is a list where each element is a list with
+//   edges           2 column integer matrix of 0-indexed endpoints
+//   weights         one non-negative weight per edge
+//   num_vertices    the number of vertices
+//   dropped_vertex  0-indexed vertex whose row and column are removed
+//   log_det_twice   optional, if TRUE log_det() is called a second time,
+//                   which should throw
+//
+// For each graph this computes the log determinant of the Laplacian minor
+// twice: with a single LaplacianBuilder reused across all the graphs, so reuse
+// across dense and sparse sizes is exercised, and with the existing
+// compute_log_det_from_entries on entries built by hand.
+//
+// @returns A matrix with one row per graph and columns (builder, entries)
+//
+// @keywords internal
+// [[Rcpp::export]]
+Rcpp::NumericMatrix laplacian_builder_log_dets(Rcpp::List const &graphs) {
+    int const num_graphs = graphs.size();
+    Rcpp::NumericMatrix out(num_graphs, 2);
+    LaplacianBuilder builder;
+
+    for (int g = 0; g < num_graphs; g++) {
+        Rcpp::List const graph = graphs[g];
+        Rcpp::IntegerMatrix const edges = graph["edges"];
+        Rcpp::NumericVector const weights = graph["weights"];
+        int const num_vertices = Rcpp::as<int>(graph["num_vertices"]);
+        int const dropped_vertex = Rcpp::as<int>(graph["dropped_vertex"]);
+        bool const log_det_twice = graph.containsElementNamed("log_det_twice") &&
+                                   Rcpp::as<bool>(graph["log_det_twice"]);
+
+        // the builder skips these checks unless perf_config turns them on
+        if (num_vertices < 1 || dropped_vertex < 0 || dropped_vertex >= num_vertices) {
+            throw std::runtime_error("laplacian_builder_log_dets: need num_vertices >= 1 and "
+                                     "0 <= dropped_vertex < num_vertices.");
+        }
+        if (edges.ncol() != 2 || edges.nrow() != weights.size()) {
+            throw std::runtime_error("laplacian_builder_log_dets: edges must be a 2 column "
+                                     "matrix with one row per weight.");
+        }
+        for (int e = 0; e < edges.nrow(); e++) {
+            if (edges(e, 0) < 0 || edges(e, 0) >= num_vertices || edges(e, 1) < 0 ||
+                edges(e, 1) >= num_vertices || !(weights[e] >= 0.0)) {
+                throw std::runtime_error("laplacian_builder_log_dets: edge endpoints must be "
+                                         "valid vertices and weights non-negative.");
+            }
+        }
+
+        builder.reset(num_vertices, dropped_vertex);
+        for (int e = 0; e < edges.nrow(); e++) {
+            builder.add_edge(edges(e, 0), edges(e, 1), weights[e]);
+        }
+        out(g, 0) = builder.log_det();
+        if (log_det_twice) {
+            builder.log_det();
+        }
+
+        // the same minor the old way: upper triangle entries plus degrees
+        int const num_rows = num_vertices - 1;
+        std::vector<double> degrees(num_rows, 0.0);
+        std::vector<SparseEntry> entries;
+        for (int e = 0; e < edges.nrow(); e++) {
+            int const u = edges(e, 0);
+            int const v = edges(e, 1);
+            if (u == v) continue;
+            int const u_row = u < dropped_vertex ? u : u - 1;
+            int const v_row = v < dropped_vertex ? v : v - 1;
+            bool const u_kept = u != dropped_vertex;
+            bool const v_kept = v != dropped_vertex;
+            if (u_kept) degrees[u_row] += weights[e];
+            if (v_kept) degrees[v_row] += weights[e];
+            if (u_kept && v_kept) {
+                entries.emplace_back(std::min(u_row, v_row), std::max(u_row, v_row), -weights[e]);
+            }
+        }
+        for (int r = 0; r < num_rows; r++) {
+            entries.emplace_back(r, r, degrees[r]);
+        }
+        out(g, 1) = num_rows == 0 ? 0.0 : compute_log_det_from_entries(entries, num_rows);
+    }
+
+    return out;
 }
 
 
