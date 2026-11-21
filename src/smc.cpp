@@ -1064,16 +1064,13 @@ void run_merge_split_step_on_all_plans(
     // now make the vectors of important variables to be used by threads
     std::vector<USTSampler> ust_samplers_vec;
     ust_samplers_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> current_plan_multigraphs_vec;
-    current_plan_multigraphs_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> proposed_plan_multigraphs_vec;
-    proposed_plan_multigraphs_vec.reserve(num_threads);
+    // current and proposed merge-split state for each thread
+    std::vector<MergeSplitStates> merge_split_states_vec;
+    merge_split_states_vec.reserve(num_threads);
 
     for (size_t i = 0; i < num_threads; i++) {
         ust_samplers_vec.emplace_back(map_params, splitting_schedule);
-        current_plan_multigraphs_vec.emplace_back(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
-        proposed_plan_multigraphs_vec.emplace_back(
+        merge_split_states_vec.emplace_back(
             map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
     }
     std::vector<GranularMCMCTimes> granular_weight_times(num_threads);
@@ -1110,8 +1107,7 @@ void run_merge_split_step_on_all_plans(
                 map_params, splitting_schedule, scoring_functions[thread_id],
                 rng_states[thread_id], sampling_space, *plan_ptrs_vec[i], *new_plan_ptrs_vec[i],
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id],
-                current_plan_multigraphs_vec[thread_id],
-                proposed_plan_multigraphs_vec[thread_id], merge_prob_type, rho, is_final,
+                merge_split_states_vec[thread_id], merge_prob_type, rho, is_final,
                 nsteps_to_run, thread_tree_sizes[thread_id],
                 thread_successful_tree_sizes[thread_id], true,
                 cache_ensemble.weight_cache_ptr_vec[i].get(),
@@ -1121,8 +1117,7 @@ void run_merge_split_step_on_all_plans(
                 map_params, splitting_schedule, scoring_functions[thread_id],
                 rng_states[thread_id], sampling_space, *plan_ptrs_vec[i], *new_plan_ptrs_vec[i],
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id],
-                current_plan_multigraphs_vec[thread_id],
-                proposed_plan_multigraphs_vec[thread_id], merge_prob_type, rho, is_final,
+                merge_split_states_vec[thread_id], merge_prob_type, rho, is_final,
                 nsteps_to_run, thread_tree_sizes[thread_id],
                 thread_successful_tree_sizes[thread_id], false, nullptr,
                 granular_weight_times[thread_id]);

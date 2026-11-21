@@ -448,8 +448,6 @@ class RegionPairHash {
     void Rprint(std::vector<int> const &county_component) const;
 };
 
-void swap_pair_maps(RegionPairHash &a, RegionPairHash &b);
-
 // Class for managing the plan region multigraph
 // primarily used for calculating weights and finding adjacent pairs
 class PlanMultigraph {
@@ -571,8 +569,5 @@ class PlanMultigraph {
                                              RegionID const region2_id,
                                              ScoringFunction const &scoring_function);
 };
-
-// swap function
-void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b);
 
 #endif

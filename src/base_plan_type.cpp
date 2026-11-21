@@ -2549,17 +2549,6 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     return log_tau;
 }
 
-void swap_pair_maps(RegionPairHash &a, RegionPairHash &b) {
-    std::swap(a.num_hashed_pairs, b.num_hashed_pairs);
-    std::swap(a.values, b.values);
-    std::swap(a.hashed, b.hashed);
-    std::swap(a.hashed_pairs, b.hashed_pairs);
-    std::swap(
-        a.num_hier_smc_merge_valid_pairs,
-        b.num_hier_smc_merge_valid_pairs
-    );
-};
-
 PlanMultigraph::PlanMultigraph(MapParams const &map_params,
                                bool const need_to_compute_multigraph_taus
                             )
@@ -3375,14 +3364,4 @@ bool PlanMultigraph::is_hierarchically_valid(PlanVector const &region_ids,
     // splits so we just need to check for cycles in the administratively
     // adjacent quotient graph
     return build_plan_hierarchical_multigraph(region_ids, num_regions);
-}
-
-void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b) {
-    std::swap(a.county_component, b.county_component);
-    std::swap(a.component_split_counts, b.component_split_counts);
-    std::swap(a.component_region_counts, b.component_region_counts);
-    std::swap(a.region_overlap_counties, b.region_overlap_counties);
-    std::swap(a.num_county_region_components, b.num_county_region_components);
-    std::swap(a.num_county_connected_components, b.num_county_connected_components);
-    swap_pair_maps(a.pair_map, b.pair_map);
 }
