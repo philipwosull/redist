@@ -111,8 +111,13 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
     }
 
     int const n_threads = num_threads == 0 ? 1 : num_threads;
-    std::vector<PlanMultigraph> plan_multigraph_buffers(n_threads,
-                                                        PlanMultigraph(map_params, false));
+    std::vector<PlanMultigraph> plan_multigraph_buffers;
+    plan_multigraph_buffers.reserve(n_threads);
+    for (size_t i = 0; i < n_threads; i++) {
+        plan_multigraph_buffers.emplace_back(map_params, false);
+    }
+
+
     std::vector<std::vector<bool>> county_component_lookup_buffers(
         n_threads, std::vector<bool>(num_regions * map_params.num_counties, false));
     std::vector<CircularQueue<int>> vertex_queue_buffers(n_threads,
@@ -383,9 +388,12 @@ std::vector<double> compute_plans_log_optimal_weights(
     std::atomic<int> thread_id_counter{0};
 
     int const n_threads = num_threads == 0 ? 1 : num_threads;
-    std::vector<PlanMultigraph> plan_multigraph_buffers(
-        n_threads,
-        PlanMultigraph(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace));
+    std::vector<PlanMultigraph> plan_multigraph_buffers;
+    plan_multigraph_buffers.reserve(n_threads);
+    for (size_t i = 0; i < n_threads; i++) {
+        plan_multigraph_buffers.emplace_back(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+    }
+
     RcppThread::ProgressBar bar(nsims, 1);
     // Parallel thread pool where all objects in memory shared by default
     pool.parallelFor(0, nsims, [&](int i) {
@@ -531,9 +539,11 @@ std::vector<double> compute_plans_log_simple_weights(
     std::atomic<int> thread_id_counter{0};
 
     int const n_threads = num_threads == 0 ? 1 : num_threads;
-    std::vector<PlanMultigraph> plan_multigraph_buffers(
-        n_threads,
-        PlanMultigraph(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace));
+    std::vector<PlanMultigraph> plan_multigraph_buffers;
+    plan_multigraph_buffers.reserve(n_threads);
+    for (size_t i = 0; i < n_threads; i++) {
+        plan_multigraph_buffers.emplace_back(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+    }
     RcppThread::ProgressBar bar(nsims, 1);
     // Parallel thread pool where all objects in memory shared by default
     pool.parallelFor(0, nsims, [&](int i) {

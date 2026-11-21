@@ -292,7 +292,13 @@ PlanEnsemble::PlanEnsemble(MapParams const &map_params,
     int const n_threads = get_num_threads(pool); 
     std::vector<USTSampler> ust_sampler_buffers(n_threads,
                                                 USTSampler(map_params, splitting_schedule));
-    std::vector<PlanMultigraph> plan_multigraph_buffers(n_threads, PlanMultigraph(map_params));
+
+    std::vector<PlanMultigraph> plan_multigraph_buffers;
+    plan_multigraph_buffers.reserve(n_threads);
+    for (size_t i = 0; i < n_threads; i++) {
+        plan_multigraph_buffers.emplace_back(map_params);
+    }
+
     std::vector<Graph> region_graph_buffers(n_threads, Graph(num_regions));
 
     RcppThread::ProgressBar bar(nsims, 1);

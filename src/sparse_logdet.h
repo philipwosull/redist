@@ -41,7 +41,11 @@ class LaplacianBuilder {
   public:
     static constexpr int dense_max_rows = 48;
 
-    LaplacianBuilder();
+    // preallocate_dense = false skips the dense buffer (dense_max_rows^2
+    // doubles, about 18 KB) for owners that may never compute a log det. Such
+    // a builder must not get a dense reset(); with perf_config::bounds_checking
+    // on that throws, otherwise it writes past the empty buffer.
+    explicit LaplacianBuilder(bool preallocate_dense = true);
     ~LaplacianBuilder();
     LaplacianBuilder(LaplacianBuilder &&) noexcept;
     LaplacianBuilder &operator=(LaplacianBuilder &&) noexcept;
@@ -71,7 +75,8 @@ class LaplacianBuilder {
     // set by reset() and cleared by log_det(), since the dense factorization
     // overwrites its buffer and a second log_det() would read garbage
     bool awaiting_log_det = false;
-    std::vector<double> dense_matrix; // dense_max_rows^2, column major, upper triangle used
+    // dense_max_rows^2 when preallocated (else empty), column major, upper triangle used
+    std::vector<double> dense_matrix;
     struct SparseImpl;                // Eigen triplets, degrees, SparseMatrix, SimplicialLLT
     std::unique_ptr<SparseImpl> sparse; // created on the first sparse reset()
 };

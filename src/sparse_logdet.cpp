@@ -207,8 +207,10 @@ double LaplacianBuilder::SparseImpl::log_det(int const num_rows) {
     return 2.0 * sum_log;
 }
 
-LaplacianBuilder::LaplacianBuilder()
-    : dense_matrix(static_cast<std::size_t>(dense_max_rows) * dense_max_rows, 0.0) {}
+LaplacianBuilder::LaplacianBuilder(bool const preallocate_dense)
+    : dense_matrix(
+          preallocate_dense ? static_cast<std::size_t>(dense_max_rows) * dense_max_rows : 0,
+          0.0) {}
 
 LaplacianBuilder::~LaplacianBuilder() = default;
 LaplacianBuilder::LaplacianBuilder(LaplacianBuilder &&) noexcept = default;
@@ -232,6 +234,18 @@ void LaplacianBuilder::reset(int const num_vertices, int const dropped_vertex) {
     awaiting_log_det = true;
 
     if (is_dense) {
+        // only a builder constructed without preallocate_dense gets here
+        // with a buffer that is too small
+        if constexpr (perf_config::bounds_checking) {
+            if (dense_matrix.size() < static_cast<std::size_t>(num_rows) * num_rows) {
+                std::ostringstream oss;
+                oss << "LaplacianBuilder::reset: dense buffer holds " << dense_matrix.size()
+                    << " entries but a " << num_rows << " row minor needs "
+                    << num_rows * num_rows
+                    << ". Construct the builder with preallocate_dense = true to use it.\n";
+                throw std::runtime_error(oss.str());
+            }
+        }
         // zero the upper triangle of each column of the active block
         for (int j = 0; j < num_rows; ++j) {
             std::fill_n(dense_matrix.begin() + static_cast<std::size_t>(j) * num_rows, j + 1,

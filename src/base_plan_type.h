@@ -18,6 +18,7 @@
 #include "advanced_types.h"
 #include "redist_types.h"
 #include "tree_op.h"
+#include "sparse_logdet.h"
 
 class USTSampler;
 class PlanMultigraph;
@@ -480,6 +481,8 @@ class PlanMultigraph {
     bool const need_to_compute_multigraph_taus;
     std::vector<int> county_component_reindex;
     std::vector<int> region_reindex_vec;
+
+    LaplacianBuilder laplacian; // laplacian object for computing multigraph taus
 
     // Prints relevant info - for debugging
     std::string debug_string() const;
