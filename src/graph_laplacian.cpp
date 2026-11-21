@@ -171,13 +171,20 @@ double GraphLaplacian::log_spanning_trees(InRegion in_region) {
     // the region spans several counties: the county level term plus one term
     // per region intersect county piece
     double log_tau = county_level_log_spanning_trees(n, in_region);
-    group_region_by_county(n);
+    // grouping only gives partial counties their vertices as one contiguous
+    // run, so it waits for the first partial county and is skipped entirely
+    // when every touched county is whole
+    bool grouped = false;
     for (int const c : touched_counties) {
         int const count = county_count[c];
         // if the entire county is in the region just use the precomputed value
         if (count == static_cast<int>(map_params.county_vertices[c].size())) {
             log_tau += whole_county_log_tau[c];
         } else {
+            if (!grouped) {
+                group_region_by_county(n);
+                grouped = true;
+            }
             log_tau += piece_log_spanning_trees(piece_vertices, county_offset[c], count,
                                                 map_params.county_restricted_flat_graph,
                                                 in_region);

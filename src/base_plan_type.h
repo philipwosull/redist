@@ -143,18 +143,6 @@ class Plan {
                                                             std::vector<bool> &vertices_visited,
                                                             std::vector<bool> &regions_visited);
 
-    // Compute the log number of spanning trees on a region
-    double compute_log_region_spanning_trees(MapParams const &map_params,
-                                             int const region_id) const;
-
-    // Compute the log number of spanning trees on a merged region
-    double compute_log_merged_region_spanning_trees(MapParams const &map_params,
-                                                    int const region1_id,
-                                                    int const region2_id) const;
-
-    // Compute the log number of spanning trees on the entire plan
-    double compute_log_plan_spanning_trees(MapParams const &map_params) const;
-
     // computes the entire score of a plan
     double compute_region_score(ScoringFunction &scoring_function, int const region_id);
     double compute_just_plan_component_score(ScoringFunction &scoring_function);
