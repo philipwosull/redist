@@ -310,8 +310,10 @@ class USTSampler {
         return undirected;
     }
 
-    // checks that all the vertices in the tree are valid and 
-    // its a directed tree 
+    // checks that all the vertices in the tree are valid and
+    // its a directed tree. Uses its own scratch, so the sampler's state
+    // (visited, stack) is left untouched. Only call it behind
+    // perf_config::object_integrity_checking, since it allocates per call.
     void check_tree_integrity(
       Tree const &a_ust,
       std::string_view where,

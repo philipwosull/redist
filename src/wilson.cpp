@@ -1774,15 +1774,24 @@ void USTSampler::check_tree_integrity(
         a_ust, map_params.graph_edge_index,
         where
     );
-    // now check the tree returned is actually a directed tree
+    // now check the tree returned is actually a directed tree.
+    // The check overwrites the scratch it is given, so it gets its own rather
+    // than the sampler's `visited` and `stack`. fill_in_skipped_subtrees relies
+    // on `visited` as the last draw left it (every vertex outside the drawn
+    // region marked visited), and wiping it let the fill start walks outside
+    // the region. Allocating here is fine since every caller is behind
+    // perf_config::object_integrity_checking. The DFS pushes each vertex at
+    // most once, so V entries is enough for the stack.
+    std::vector<bool> check_visited(a_ust.size(), false);
+    TreePopStack check_stack(a_ust.size());
     check_is_directed_tree(
         a_ust,
         where,
         root,
         expected_tree_vertices,
         check_vertex_count,
-        visited,
-        stack
+        check_visited,
+        check_stack
     );
 }
 
