@@ -91,7 +91,7 @@ void GraphPlan::update_vertex_and_plan_specific_info_from_cut(
 std::vector<std::tuple<RegionID, RegionID, double>>
 GraphPlan::get_valid_adj_regions_and_eff_log_boundary_lens(
     PlanMultigraph &plan_multigraph, const SplittingSchedule &splitting_schedule, ScheduleContext &schedule_ctx,
-    ScoringFunction const &scoring_function, bool const is_final_split, USTSampler &ust_sampler,
+    ScoringFunction const &scoring_function, USTSampler &ust_sampler,
     TreeSplitter &tree_splitter) const {
 
     // build the multigraph
@@ -101,8 +101,7 @@ GraphPlan::get_valid_adj_regions_and_eff_log_boundary_lens(
     // remove invalid size pairs
     plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule, schedule_ctx);
     // remove invalid hard constraint pairs
-    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function,
-                                                         is_final_split);
+    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function);
     // now make the output vector
     std::vector<std::tuple<RegionID, RegionID, double>> region_pairs_tuple_vec;
     region_pairs_tuple_vec.reserve(plan_multigraph.pair_map.num_hashed_pairs);

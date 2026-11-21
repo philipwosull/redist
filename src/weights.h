@@ -32,7 +32,7 @@ double compute_log_optimal_incremental_weights(
     ScoringFunction const &scoring_function, double const rho,
     double const whole_map_compactness_term, bool compute_log_splitting_prob,
     double const multidistrict_selection_alpha,
-    bool is_final_split, bool const using_caching, WeightCache *weight_cache,
+    bool const using_caching, WeightCache *weight_cache,
     GranularWeightTimes &granular_times);
     
 
@@ -44,7 +44,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
                                              ScoringFunction const &scoring_function,
                                              double rho, bool compute_log_splitting_prob,
                                              double const multidistrict_selection_alpha,
-                                             bool is_final_split, bool const using_caching,
+                                             bool const using_caching,
                                              WeightCache *weight_cache,
                                              GranularWeightTimes &granular_times);
 

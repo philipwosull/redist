@@ -21,7 +21,7 @@ constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
 
 
 bool PlanState::build_merge_pairs(Plan const &plan, SplittingSchedule const &splitting_schedule,
-                                  ScoringFunction const &scoring_function, bool const is_final,
+                                  ScoringFunction const &scoring_function,
                                   GranularMCMCTimes &granular_times) {
     // the multigraph is about to be rebuilt, so any stored tau is stale
     log_multigraph_tau = std::numeric_limits<double>::quiet_NaN();
@@ -29,7 +29,7 @@ bool PlanState::build_merge_pairs(Plan const &plan, SplittingSchedule const &spl
     splitting_schedule.build_context(plan, schedule_ctx);
     auto pair_building_time = maybe_now(); // optional timing
     auto pair_build_attempt = plan.attempt_to_get_valid_mergesplit_pairs(
-        multigraph, splitting_schedule, schedule_ctx, scoring_function, is_final);
+        multigraph, splitting_schedule, schedule_ctx, scoring_function);
     merge_pairs = std::move(pair_build_attempt.second);
     if constexpr (perf_config::track_granular_times) {
         add_elapsed(granular_times.get_valid_mergepairs, pair_building_time); // optional timing
@@ -57,9 +57,8 @@ void MergeSplitStates::build_current_plan_context(Plan const &plan,
                                                   SplittingSchedule const &splitting_schedule,
                                                   ScoringFunction const &scoring_function,
                                                   std::string const &merge_prob_type,
-                                                  bool const is_final,
                                                   GranularMCMCTimes &granular_times) {
-    if (!current->build_merge_pairs(plan, splitting_schedule, scoring_function, is_final,
+    if (!current->build_merge_pairs(plan, splitting_schedule, scoring_function,
                                     granular_times)) {
         std::ostringstream oss;
         oss << "MergeSplitStates::build_current_plan_context: building the plan multigraph "
@@ -262,7 +261,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     ScoringFunction const &scoring_function, RNGState &rng_state,
     SamplingSpace const sampling_space, Plan &plan, Plan &new_plan, USTSampler &ust_sampler,
     TreeSplitter &tree_splitter, MergeSplitStates &states, std::string const merge_prob_type,
-    bool save_edge_selection_prob, double const rho, bool const is_final, bool const do_mh,
+    bool save_edge_selection_prob, double const rho, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times
 ) {
@@ -332,7 +331,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     // find merge pairs
     // and check if new plan is hierarchically valid if needed
     bool const multigraph_built = states.proposed->build_merge_pairs(new_plan, splitting_schedule,
-        scoring_function, is_final, granular_times);
+        scoring_function, granular_times);
 
 
     // new plan is valid if build attempt successful and passes any hard constraints
@@ -563,7 +562,7 @@ int run_merge_split_steps(MapParams const &map_params,
                           USTSampler &ust_sampler, TreeSplitter &tree_splitter,
                           MergeSplitStates &states,
                           std::string const merge_prob_type, double const rho,
-                          bool const is_final, int num_steps_to_run,
+                          int num_steps_to_run,
                           std::vector<int> &tree_sizes, std::vector<int> &successful_tree_sizes,
                           bool const using_caching, WeightCache *weight_cache,
                           GranularMCMCTimes &granular_times) {
@@ -573,7 +572,7 @@ int run_merge_split_steps(MapParams const &map_params,
     // Build the plan context of the current plan
     // So build mergesplit pair list and compute the weights 
     states.build_current_plan_context(plan, splitting_schedule, scoring_function,
-                               merge_prob_type, is_final,
+                               merge_prob_type,
                                granular_times);
 
 
@@ -583,7 +582,7 @@ int run_merge_split_steps(MapParams const &map_params,
         std::tuple<bool, bool, double, int> mergesplit_result = attempt_mergesplit_step(
             map_params, splitting_schedule, scoring_function, rng_state, sampling_space, plan,
             dummy_plan, ust_sampler, tree_splitter, states, merge_prob_type,
-            save_edge_selection_prob, rho, is_final, true, using_caching, weight_cache,
+            save_edge_selection_prob, rho, true, using_caching, weight_cache,
             granular_times);
 
 

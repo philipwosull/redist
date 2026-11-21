@@ -1079,8 +1079,7 @@ void Plan::fill_in_skipped_subtrees(
 std::pair<bool, std::vector<std::pair<RegionID, RegionID>>>
 Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                             SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-                                            ScoringFunction const &scoring_function,
-                                            bool const is_final_split) const {
+                                            ScoringFunction const &scoring_function) const {
     bool const result = plan_multigraph.build_plan_multigraph(region_ids, num_regions);
     // return false if not successful
     if (!result)
@@ -1088,8 +1087,7 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
     // plan_multigraph.Rprint_detailed(*this);
     // else remove all the invalid size and mergesplit pairs and invalid hard constraint
     plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule, schedule_ctx);
-    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function,
-                                                         is_final_split);
+    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function);
     plan_multigraph.remove_invalid_mergesplit_pairs(*this);
     // plan_multigraph.Rprint_detailed(*this);
 
@@ -1098,7 +1096,7 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
 
 std::vector<std::pair<RegionID, RegionID>> Plan::get_valid_smc_merge_regions(
     PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-    ScoringFunction const &scoring_function, bool const is_final_split) const {
+    ScoringFunction const &scoring_function) const {
     // build the multigraph
     plan_multigraph.build_plan_multigraph(region_ids, num_regions);
 
@@ -3218,7 +3216,7 @@ void PlanMultigraph::remove_invalid_size_pairs(Plan const &plan,
 }
 
 void PlanMultigraph::remove_invalid_hard_constraint_pairs(
-    Plan const &plan, ScoringFunction const &scoring_function, bool const is_final_split) {
+    Plan const &plan, ScoringFunction const &scoring_function) {
     // do nothing if no hard constraints
     if (!scoring_function.any_hard_constraints)
         return;

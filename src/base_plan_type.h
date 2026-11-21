@@ -165,14 +165,12 @@ class Plan {
     attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                           SplittingSchedule const &splitting_schedule,
                                           ScheduleContext &schedule_ctx,
-                                          ScoringFunction const &scoring_function,
-                                          bool const is_final_split) const;
+                                          ScoringFunction const &scoring_function) const;
 
     // `schedule_ctx` must be built for this plan.
     virtual std::vector<std::pair<RegionID, RegionID>> get_valid_smc_merge_regions(
         PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule,
-        ScheduleContext &schedule_ctx, ScoringFunction const &scoring_function,
-        bool const is_final_split) const;
+        ScheduleContext &schedule_ctx, ScoringFunction const &scoring_function) const;
 
     // redist_smc related methods
     int choose_multidistrict_to_split(SplittingSchedule const &splitting_schedule,
@@ -253,7 +251,6 @@ class Plan {
                                                     const SplittingSchedule &splitting_schedule,
                                                     ScheduleContext &schedule_ctx,
                                                     ScoringFunction const &scoring_function,
-                                                    bool const is_final_split,
                                                     USTSampler &ust_sampler,
                                                     TreeSplitter &tree_splitter) const = 0;
 
@@ -523,8 +520,7 @@ class PlanMultigraph {
     // Removes pairs where merging them makes a plan that
     // doesn't satisfy hard constraints
     void remove_invalid_hard_constraint_pairs(Plan const &plan,
-                                              ScoringFunction const &scoring_function,
-                                              bool const is_final_split);
+                                              ScoringFunction const &scoring_function);
 
     // Removes pairs where merging them would create a hierarchically
     // invalid plan

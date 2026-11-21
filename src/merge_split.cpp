@@ -202,7 +202,7 @@ Rcpp::List ms_plans(
         // for the current plan. Throws if the multigraph can't be built, which
         // the hierarchical validity check above should rule out.
         states.build_current_plan_context(*plan_ensemble.plan_ptr_vec[0], *splitting_schedule_ptr,
-                                          scoring_function, pair_rule, true, granular_times);
+                                          scoring_function, pair_rule, granular_times);
 
         // Set or estimate k if doing graph space sampling
         if (sampling_space == SamplingSpace::GraphSpace) {
@@ -299,7 +299,7 @@ Rcpp::List ms_plans(
                 map_params, *splitting_schedule_ptr, scoring_function, rng_state,
                 sampling_space, *plan_ensemble.plan_ptr_vec[0],
                 *proposal_plan_ensemble.plan_ptr_vec[0], ust_sampler, *tree_splitter_ptr_vec[0],
-                states, pair_rule, save_edge_selection_prob, rho, true, do_mh, false, nullptr,
+                states, pair_rule, save_edge_selection_prob, rho, do_mh, false, nullptr,
                 granular_times);
 
             if constexpr (DEBUG_PURE_MS_VERBOSE) {

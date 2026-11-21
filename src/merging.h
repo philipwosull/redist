@@ -59,7 +59,7 @@ struct PlanState {
     // hierarchically valid), in which case merge_pairs should not be used.
     // Time goes to granular_times.get_valid_mergepairs.
     bool build_merge_pairs(Plan const &plan, SplittingSchedule const &splitting_schedule,
-                           ScoringFunction const &scoring_function, bool is_final,
+                           ScoringFunction const &scoring_function,
                            GranularMCMCTimes &granular_times);
 
     // Unnormalized selection weight of each pair in merge_pairs, so
@@ -97,7 +97,7 @@ class MergeSplitStates {
     // weights, since both should always succeed for the current plan
     void build_current_plan_context(Plan const &plan, SplittingSchedule const &splitting_schedule,
                                     ScoringFunction const &scoring_function,
-                                    std::string const &merge_prob_type, bool is_final,
+                                    std::string const &merge_prob_type,
                                     GranularMCMCTimes &granular_times);
 
 };
@@ -115,7 +115,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     ScoringFunction const &scoring_function, RNGState &rng_state,
     SamplingSpace const sampling_space, Plan &plan, Plan &new_plan, USTSampler &ust_sampler,
     TreeSplitter &tree_splitter, MergeSplitStates &states, std::string const merge_prob_type,
-    bool save_edge_selection_prob, double const rho, bool const is_final, bool const do_mh,
+    bool save_edge_selection_prob, double const rho, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times);
 
@@ -126,7 +126,7 @@ int run_merge_split_steps(MapParams const &map_params,
                           USTSampler &ust_sampler, TreeSplitter &tree_splitter,
                           MergeSplitStates &states,
                           std::string const merge_prob_type, double const rho,
-                          bool const is_final, int num_steps_to_run,
+                          int num_steps_to_run,
                           std::vector<int> &tree_sizes, std::vector<int> &successful_tree_sizes,
                           bool const using_caching, WeightCache *weight_cache, 
                           GranularMCMCTimes &granular_times);

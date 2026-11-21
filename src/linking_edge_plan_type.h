@@ -58,7 +58,6 @@ class LinkingEdgePlan : public Plan {
     get_valid_adj_regions_and_eff_log_boundary_lens(PlanMultigraph &plan_multigraph,
                                                     const SplittingSchedule &splitting_schedule, ScheduleContext &schedule_ctx,
                                                     ScoringFunction const &scoring_function,
-                                                    bool const is_final_split,
                                                     USTSampler &ust_sampler,
                                                     TreeSplitter &tree_splitter) const override;
 
@@ -75,13 +74,12 @@ class LinkingEdgePlan : public Plan {
     std::pair<bool, std::vector<std::pair<RegionID, RegionID>>>
     attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                           SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-                                          ScoringFunction const &scoring_function,
-                                          bool const is_final_split) const override;
+                                          ScoringFunction const &scoring_function) const override;
 
     // Get a vector of all valid adj region pairs for the backwards kernel
     std::vector<std::pair<RegionID, RegionID>> get_valid_smc_merge_regions(
         PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-        ScoringFunction const &scoring_function, bool const is_final_split) const override;
+        ScoringFunction const &scoring_function) const override;
 };
 
 #endif

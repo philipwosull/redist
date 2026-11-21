@@ -66,7 +66,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
                                              ScoringFunction const &scoring_function,
                                              double rho, bool compute_log_splitting_prob,
                                              double const multidistrict_selection_alpha,
-                                             bool is_final_split, bool const using_caching,
+                                             bool const using_caching,
                                              WeightCache *weight_cache,
                                              GranularWeightTimes &granular_times) {
     // bool for whether we'll need to compute spanning tree count
@@ -88,8 +88,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
     // build the plan multigraph and get valid adj pairs
     auto time_get_pairs = maybe_now(); // optional timing
     auto valid_adj_pairs = plan.get_valid_smc_merge_regions(plan_multigraph, splitting_schedule,
-                                                            schedule_ctx,
-                                                            scoring_function, is_final_split);
+                                                            schedule_ctx, scoring_function);
     if constexpr (perf_config::track_granular_times) {
         add_elapsed(granular_times.get_valid_pairs, time_get_pairs); // optional timing
     }
@@ -332,7 +331,7 @@ double compute_log_optimal_incremental_weights(
     ScoringFunction const &scoring_function, double const rho,
     double const whole_map_compactness_term, bool compute_log_splitting_prob,
     double const multidistrict_selection_alpha,
-    bool is_final_split, bool const using_caching, WeightCache *weight_cache,
+    bool const using_caching, WeightCache *weight_cache,
     GranularWeightTimes &granular_times) {
     // plan.Rprint();
     // bool for whether we'll need to compute spanning tree count
@@ -351,7 +350,7 @@ double compute_log_optimal_incremental_weights(
     auto time_get_pairs = maybe_now(); // optional timing 
     auto region_pair_log_eff_boundary_map =
         plan.get_valid_adj_regions_and_eff_log_boundary_lens(
-            plan_multigraph, splitting_schedule, schedule_ctx, scoring_function, is_final_split,
+            plan_multigraph, splitting_schedule, schedule_ctx, scoring_function,
             ust_sampler,
             edge_splitter);
     if constexpr (perf_config::track_granular_times){
