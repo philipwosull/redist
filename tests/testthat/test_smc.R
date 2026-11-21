@@ -567,6 +567,36 @@ test_that("normalizing constant estimates require seq_alpha = 1", {
     expect_error(est_norm_biased(iowa_map, plans), "seq_alpha = 1")
 })
 
+test_that("blank map target density is the whole map log spanning tree count", {
+    # With compactness 1 and no constraints the blank map target density saved
+    # with the plans is just the whole map log spanning tree count MapParams
+    # precomputes, so it should match redistmetrics on the one region plan
+    iowa_map <- suppressMessages(redist_map(iowa, ndists = 4, pop_tol = 0.05))
+    V <- nrow(iowa_map)
+    one_region <- matrix(1L, V, 1)
+
+    county_cases <- list(
+        # counties off, so the one county is the whole map
+        none = NULL,
+        # a few counties, so both levels of the hierarchy are non trivial
+        region = iowa_map$region,
+        # one vertex per county, so everything is in the county multigraph
+        every_vertex = seq_len(V)
+    )
+    for (name in names(county_cases)) {
+        counties <- county_cases[[name]]
+        plans <- redist_smc(iowa_map, 10, counties = !!counties, silent = TRUE)
+        blank <- attr(plans, "internal_diagnostics")[[1]]$log_blank_map_target_density
+
+        county_ids <- if (is.null(counties)) rep(1L, V) else as.integer(as.factor(counties))
+        expect_equal(
+            blank,
+            redistmetrics:::log_st_map(iowa_map$adj, one_region, county_ids, 1L),
+            tolerance = 1e-10, info = name
+        )
+    }
+})
+
 test_that("md_alpha is passed in split_params", {
     iowa_map <- suppressMessages(redist_map(iowa, existing_plan = cd_2010, pop_tol = 0.05))
     plans <- redist_smc(

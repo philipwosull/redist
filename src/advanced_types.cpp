@@ -10,6 +10,7 @@
 #include "advanced_types.h"
 #include "redist_constants.h"
 #include "redist_types.h"
+#include "sparse_logdet.h"
 
 #include <algorithm>
 #include <array>
@@ -117,6 +118,17 @@ std::vector<std::vector<int>> build_county_vertices(
         result[county_id - 1].push_back(static_cast<int>(v));
     }
 
+    // every label in 1, ..., num_counties must be used, since an empty county
+    // would be an isolated node in the county multigraph
+    for (int c = 0; c < num_counties; ++c) {
+        if (result[c].empty()) {
+            throw std::runtime_error(
+                "County IDs must be consecutive, but no vertex has county ID " +
+                std::to_string(c + 1) + "."
+            );
+        }
+    }
+
     return result;
 }
 
@@ -141,6 +153,63 @@ Graph build_restricted_county_graph(Graph const &g, std::vector<unsigned int> co
     return county_graph;
 }
 
+// builds map graph taus 
+WholeUnitLogTaus build_whole_unit_log_taus(
+    std::vector<std::vector<int>> const &county_vertices,
+    Graph const &county_restricted_graph,
+    Multigraph const &cg
+    ){
+    // get the number of counties
+    int const num_counties = static_cast<int>(county_vertices.size());
+    LaplacianBuilder laplacian;
+    WholeUnitLogTaus out;
+    // for now we assume the two levels are 
+    // - county level
+    // - county subgraphs. 
+    // When counties are not on there's just 1 county
+    out.by_level.resize(2);
+
+    if (num_counties > 1){
+        // depth 0: county multigraph of the whole map. cg lists every cross county
+        // map edge from both sides, so add it only from the lower numbered county
+        laplacian.reset(num_counties, num_counties - 1);
+        for (int cty = 0; cty < num_counties; ++cty) {
+            for (auto const &edge : cg[cty]) {
+                if (cty < edge.neighbor_admin) laplacian.add_edge(cty, edge.neighbor_admin);
+            }
+        }
+        out.by_level[0].push_back(laplacian.log_det());
+    }else{
+        // if no counties then 1 fake county so only 1 tree
+        out.by_level[0].push_back(0.0);
+    }
+
+
+    // depth 1: map graph inside each county, its vertices numbered in
+    // ascending order (the order of county_vertices)
+    std::vector<int> local_index(county_restricted_graph.size());
+    out.by_level[1].resize(num_counties);
+    for (int cty = 0; cty < num_counties; ++cty) {
+        auto const &vertices = county_vertices[cty];
+        int const n = static_cast<int>(vertices.size());
+        for (int i = 0; i < n; ++i) local_index[vertices[i]] = i;
+
+        laplacian.reset(n, n - 1);
+        for (int i = 0; i < n; ++i) {
+            // every neighbor here is in this county, so its local_index was just set
+            for (int nbor : county_restricted_graph[vertices[i]]) {
+                if (local_index[nbor] > i) laplacian.add_edge(i, local_index[nbor]);
+            }
+        }
+        out.by_level[1][cty] = laplacian.log_det();
+    }
+
+    // sum up taus across each level for whole map value
+    for (auto const &level : out.by_level)
+        for (double log_tau : level) out.whole_map += log_tau;
+
+    return out;
+}
 
 } // namespace
 
@@ -523,6 +592,8 @@ void FlatGraph::erase_directed_edge(EdgeCut const &cut_edge) {
     --sizes[parent];
 }
 
+
+
 // Constructor
 MapParams::MapParams(Graph const &g, 
     const std::vector<unsigned int> &counties, 
@@ -547,6 +618,9 @@ MapParams::MapParams(Graph const &g,
         county_restricted_graph(num_counties > 1 ? build_restricted_county_graph(g, counties)
                                                 : g),
         county_restricted_flat_graph(county_restricted_graph),
+        map_log_taus(build_whole_unit_log_taus(
+            county_vertices,county_restricted_graph, cg
+        )),
         pop(pop), V(static_cast<int>(g.size())), ndists(ndists), total_seats(total_seats),
         lower(lower), target(target), upper(upper),
         is_district([ndists, total_seats, &district_seat_sizes]() {

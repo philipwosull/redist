@@ -1897,8 +1897,9 @@ Rcpp::List run_redist_smc(
         double entire_map_compactness = 0.0;
         // compute the whole map compactness if we're starting from scratch
         if (initial_num_regions == 1) {
-            double entire_map_log_st_count = plan_ensemble_ptr->plan_ptr_vec[0]->compute_log_region_spanning_trees(
-                    map_params, 0);
+            // the plan is one region covering the map, so this is the whole
+            // map log tau MapParams precomputes
+            double const entire_map_log_st_count = map_params.map_log_taus.whole_map;
             entire_map_compactness = (rho - 1) * entire_map_log_st_count;
             log_blank_map_target_density = rho * entire_map_log_st_count;
 
