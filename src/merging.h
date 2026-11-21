@@ -6,6 +6,7 @@
 #include "base_plan_type.h"
 #include "splitting_schedule_types.h"
 
+#include <limits>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -47,6 +48,11 @@ struct PlanState {
     ScheduleContext schedule_ctx;
     std::vector<std::pair<RegionID, RegionID>> merge_pairs;
     std::vector<double> pair_wgts;  // unnormalized, aligned with merge_pairs
+    // log number of linking edges of the plan (its log multigraph tau). Only
+    // computed in linking edge space; NaN until compute_log_multigraph_tau
+    // sets it, and reset to NaN whenever build_merge_pairs rebuilds the
+    // multigraph, so a stale read shows up as a non finite MH ratio
+    double log_multigraph_tau = std::numeric_limits<double>::quiet_NaN();
 
     // Builds schedule_ctx for `plan`, then the multigraph and merge_pairs.
     // Returns false if the multigraph could not be built (the plan is not
@@ -61,6 +67,12 @@ struct PlanState {
     // granular_times.selecting_merge_pair.
     void compute_pair_wgts(Plan const &plan, std::string const &merge_prob_type,
                            GranularMCMCTimes &granular_times);
+
+    // Sets log_multigraph_tau from the multigraph, so build_merge_pairs must
+    // come first. Does nothing unless multigraph.need_to_compute_multigraph_taus
+    // (linking edge space). Not timed here, since callers time it with the
+    // other effective boundary terms.
+    void compute_log_multigraph_tau(Plan const &plan, ScoringFunction const &scoring_function);
 };
 
 
@@ -79,7 +91,8 @@ class MergeSplitStates {
     void accept() { std::swap(current, proposed); }
 
     // build_context + attempt_to_get_valid_mergesplit_pairs +
-    // get_adj_pair_unnormalized_weights in one, for the current plan.
+    // get_adj_pair_unnormalized_weights in one, for the current plan, plus its
+    // log multigraph tau in linking edge space (timed as eff_boundary_length).
     // Throws if the multigraph could not be built or there are no merge pair
     // weights, since both should always succeed for the current plan
     void build_current_plan_context(Plan const &plan, SplittingSchedule const &splitting_schedule,

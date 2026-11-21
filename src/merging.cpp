@@ -23,6 +23,8 @@ constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
 bool PlanState::build_merge_pairs(Plan const &plan, SplittingSchedule const &splitting_schedule,
                                   ScoringFunction const &scoring_function, bool const is_final,
                                   GranularMCMCTimes &granular_times) {
+    // the multigraph is about to be rebuilt, so any stored tau is stale
+    log_multigraph_tau = std::numeric_limits<double>::quiet_NaN();
     // the merge pairs depend on the schedule context, so build it first
     splitting_schedule.build_context(plan, schedule_ctx);
     auto pair_building_time = maybe_now(); // optional timing
@@ -42,6 +44,13 @@ void PlanState::compute_pair_wgts(Plan const &plan, std::string const &merge_pro
     if constexpr (perf_config::track_granular_times) {
         add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing
     }
+}
+
+void PlanState::compute_log_multigraph_tau(Plan const &plan,
+                                           ScoringFunction const &scoring_function) {
+    // only linking edge space builds the multigraph with a laplacian to use
+    if (!multigraph.need_to_compute_multigraph_taus) return;
+    log_multigraph_tau = multigraph.compute_log_multigraph_tau(plan.num_regions, scoring_function);
 }
 
 void MergeSplitStates::build_current_plan_context(Plan const &plan,
@@ -67,6 +76,14 @@ void MergeSplitStates::build_current_plan_context(Plan const &plan,
             << "pair weights (" << current->merge_pairs.size() << " merge pairs).\n";
         oss << plan.debug_string(true);
         throw std::runtime_error(oss.str());
+    }
+
+    // the current plan's log multigraph tau, read by every merge-split step
+    // until a proposal is accepted (linking edge space only)
+    auto tau_time = maybe_now(); // optional timing
+    current->compute_log_multigraph_tau(plan, scoring_function);
+    if constexpr (perf_config::track_granular_times) {
+        add_elapsed(granular_times.eff_boundary_length, tau_time); // optional timing
     }
 }
 
@@ -419,11 +436,27 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
             tree_splitter, scoring_function, region1_id, region2_id);
         // If linking edge space we need to subtract linking edge correction term
         if (using_linking_edge_space) {
+            // Only the proposed plan's tau is computed here. The current plan's
+            // was computed by build_current_plan_context, or carried over by
+            // states.accept() when its plan was accepted
+            states.proposed->compute_log_multigraph_tau(new_plan, scoring_function);
+            if constexpr (perf_config::object_integrity_checking) {
+                // the stored value must match a fresh compute (NaN never matches)
+                double const recomputed = states.current->multigraph.compute_log_multigraph_tau(
+                    plan.num_regions, scoring_function);
+                if (recomputed != states.current->log_multigraph_tau) {
+                    std::ostringstream oss;
+                    oss.precision(17);
+                    oss << "attempt_mergesplit_step: the stored log multigraph tau of the "
+                        << "current plan is " << states.current->log_multigraph_tau
+                        << " but recomputing it gives " << recomputed << ".\n";
+                    oss << plan.debug_string(true);
+                    throw std::runtime_error(oss.str());
+                }
+            }
             // add instead of subtract bc its flipped in MH ratio
-            current_log_eff_boundary += states.current->multigraph.compute_log_multigraph_tau(
-                plan.num_regions, scoring_function);
-            proposed_log_eff_boundary += states.proposed->multigraph.compute_log_multigraph_tau(
-                new_plan.num_regions, scoring_function);
+            current_log_eff_boundary += states.current->log_multigraph_tau;
+            proposed_log_eff_boundary += states.proposed->log_multigraph_tau;
         }
         if constexpr (perf_config::track_granular_times){
             add_elapsed(granular_times.eff_boundary_length, eff_boundary_time); // optional timing
