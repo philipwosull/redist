@@ -728,6 +728,7 @@ class MapParams {
     std::vector<std::vector<int>> county_vertices;    // The vertices in each county 
     Graph const county_restricted_graph; // g but with all edges crossing counties removed
     FlatGraph county_restricted_flat_graph; // flat version
+    FlatGraph const cross_county_flat_graph; // g with only the edges crossing counties
     WholeUnitLogTaus const map_log_taus;       // Stores precomputed log tau for map and admin units
     std::vector<unsigned int> const pop; // population of each vertex
     int const V;                         // Number of vertices in the graph

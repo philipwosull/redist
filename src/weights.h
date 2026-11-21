@@ -10,6 +10,7 @@
 
 class Plan;
 class PlanMultigraph;
+class GraphLaplacian;
 class SplittingSchedule;
 class ScoringFunction;
 class USTSampler;
@@ -25,8 +26,9 @@ struct GranularWeightTimes {
     double tau_terms = 0.0;
 };
 
+// `graph_laplacian` is only used when rho != 1, so it may be unallocated otherwise
 double compute_log_optimal_incremental_weights(
-    Plan const &plan, PlanMultigraph &plan_multigraph,
+    Plan const &plan, PlanMultigraph &plan_multigraph, GraphLaplacian &graph_laplacian,
     const SplittingSchedule &splitting_schedule, USTSampler &ust_sampler,
     TreeSplitter &edge_splitter, SamplingSpace const sampling_space,
     ScoringFunction const &scoring_function, double const rho,
@@ -36,7 +38,11 @@ double compute_log_optimal_incremental_weights(
     GranularWeightTimes &granular_times);
     
 
+// `graph_laplacian` is used when rho != 1 or outside graph space (forest and
+// linking edge space always need merged region taus), so it may be
+// unallocated only for graph space with rho == 1
 double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &plan_multigraph,
+                                             GraphLaplacian &graph_laplacian,
                                              const SplittingSchedule &splitting_schedule,
                                              USTSampler &ust_sampler,
                                              TreeSplitter &edge_splitter,

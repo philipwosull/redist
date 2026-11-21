@@ -6,6 +6,7 @@
  ********************************************************/
 
 #include "merging.h"
+#include "graph_laplacian.h"
 #include "scoring.h"
 #include "tree_op.h"
 #include "wilson.h"
@@ -173,7 +174,7 @@ std::vector<double> get_adj_pair_unnormalized_weights(
 // new_region1_log_compactness, new_region2_log_compactness
 // are pass by reference to save the log tau of the new regions
 // if the split was successful
-double get_log_mh_ratio(MapParams const &map_params, ScoringFunction const &scoring_function,
+double get_log_mh_ratio(GraphLaplacian &graph_laplacian, ScoringFunction const &scoring_function,
                         const int region1_id, const int region2_id,
                         double const current_log_eff_boundary_len,
                         double const proposed_log_eff_boundary_len,
@@ -215,17 +216,19 @@ double get_log_mh_ratio(MapParams const &map_params, ScoringFunction const &scor
         auto log_st_time = maybe_now();
         // we add scorse of proposed region
         new_region1_log_compactness =
-            (rho - 1) * proposed_plan.compute_log_region_spanning_trees(map_params, region1_id);
+            (rho - 1) * graph_laplacian.log_region_spanning_trees(proposed_plan.region_ids,
+                                                                  region1_id);
         new_region2_log_compactness =
-            (rho - 1) * proposed_plan.compute_log_region_spanning_trees(map_params, region2_id);
+            (rho - 1) * graph_laplacian.log_region_spanning_trees(proposed_plan.region_ids,
+                                                                  region2_id);
         log_mh_ratio += new_region1_log_compactness;
         log_mh_ratio += new_region2_log_compactness;
         // we subtract scores of current region
         // This function return (rho-1)*log compactness
         log_mh_ratio -= compute_or_fetch_log_region_compactness(
-            current_plan, region1_id, map_params, rho, using_caching, weight_cache);
+            current_plan, region1_id, graph_laplacian, rho, using_caching, weight_cache);
         log_mh_ratio -= compute_or_fetch_log_region_compactness(
-            current_plan, region2_id, map_params, rho, using_caching, weight_cache);
+            current_plan, region2_id, graph_laplacian, rho, using_caching, weight_cache);
         if constexpr (perf_config::track_granular_times){
             add_elapsed(granular_times.tau_terms, log_st_time);
         }
@@ -260,7 +263,8 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     MapParams const &map_params, const SplittingSchedule &splitting_schedule,
     ScoringFunction const &scoring_function, RNGState &rng_state,
     SamplingSpace const sampling_space, Plan &plan, Plan &new_plan, USTSampler &ust_sampler,
-    TreeSplitter &tree_splitter, MergeSplitStates &states, std::string const merge_prob_type,
+    TreeSplitter &tree_splitter, MergeSplitStates &states, GraphLaplacian &graph_laplacian,
+    std::string const merge_prob_type,
     bool save_edge_selection_prob, double const rho, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times
@@ -485,7 +489,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         double new_region1_log_compactness, new_region2_log_compactness;
 
         log_mh_ratio =
-            get_log_mh_ratio(map_params, scoring_function, region1_id, region2_id,
+            get_log_mh_ratio(graph_laplacian, scoring_function, region1_id, region2_id,
                              current_log_eff_boundary, proposed_log_eff_boundary,
                              std::log(unnormalized_pair_wgts[sampled_pair_index]) -
                                  std::log(current_pair_wgt_sum),
@@ -560,7 +564,7 @@ int run_merge_split_steps(MapParams const &map_params,
                           ScoringFunction const &scoring_function, RNGState &rng_state,
                           SamplingSpace const sampling_space, Plan &plan, Plan &dummy_plan,
                           USTSampler &ust_sampler, TreeSplitter &tree_splitter,
-                          MergeSplitStates &states,
+                          MergeSplitStates &states, GraphLaplacian &graph_laplacian,
                           std::string const merge_prob_type, double const rho,
                           int num_steps_to_run,
                           std::vector<int> &tree_sizes, std::vector<int> &successful_tree_sizes,
@@ -581,7 +585,7 @@ int run_merge_split_steps(MapParams const &map_params,
 
         std::tuple<bool, bool, double, int> mergesplit_result = attempt_mergesplit_step(
             map_params, splitting_schedule, scoring_function, rng_state, sampling_space, plan,
-            dummy_plan, ust_sampler, tree_splitter, states, merge_prob_type,
+            dummy_plan, ust_sampler, tree_splitter, states, graph_laplacian, merge_prob_type,
             save_edge_selection_prob, rho, true, using_caching, weight_cache,
             granular_times);
 

@@ -1,6 +1,7 @@
 #include <iterator>
 
 #include "cw_proposal.h"
+#include "graph_laplacian.h"
 
 #include <algorithm>
 #include <cmath>
@@ -327,6 +328,7 @@ void apply_update(LCTGraphPlan &plan, MapParams const &map_params,
 // ---------------------------------------------------------------------
 
 int cycle_walk(LCTGraphPlan &plan, MapParams const &map_params,
+               GraphLaplacian &graph_laplacian,
                ScoringFunction const &scoring_function, double const compactness,
                RNGState &rng_state, CycleWalkDiagnostics &diagnostics) {
     diagnostics = CycleWalkDiagnostics();
@@ -442,8 +444,8 @@ int cycle_walk(LCTGraphPlan &plan, MapParams const &map_params,
     auto old_plan_score = scoring_function.compute_plan_score(plan);
     double old_log_st = 0.0;
     if (compactness != 1.0) {
-        old_log_st = plan.compute_log_region_spanning_trees(map_params, d1) +
-                     plan.compute_log_region_spanning_trees(map_params, d2);
+        old_log_st = graph_laplacian.log_region_spanning_trees(plan.region_ids, d1) +
+                     graph_laplacian.log_region_spanning_trees(plan.region_ids, d2);
     }
 
     // ---- construct update ----
@@ -512,8 +514,8 @@ int cycle_walk(LCTGraphPlan &plan, MapParams const &map_params,
     auto new_plan_score = scoring_function.compute_plan_score(plan);
     double new_log_st = 0.0;
     if (compactness != 1.0) {
-        new_log_st = plan.compute_log_region_spanning_trees(map_params, d1) +
-                     plan.compute_log_region_spanning_trees(map_params, d2);
+        new_log_st = graph_laplacian.log_region_spanning_trees(plan.region_ids, d1) +
+                     graph_laplacian.log_region_spanning_trees(plan.region_ids, d2);
     }
 
     int new_boundary = static_cast<int>(plan.get_cross_edges(d1, d2).size());

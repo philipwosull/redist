@@ -153,6 +153,25 @@ Graph build_restricted_county_graph(Graph const &g, std::vector<unsigned int> co
     return county_graph;
 }
 
+/*
+ * Given a graph G and county assignments this creates the graph with only the
+ * edges of G that cross counties, the complement of build_restricted_county_graph.
+ * Each vertex keeps its neighbors in other counties, in the same order as in G,
+ * so with a single county every neighbor list is empty.
+ */
+Graph build_cross_county_graph(Graph const &g, std::vector<unsigned int> const &counties) {
+    Graph cross_graph(g.size());
+    for (std::size_t v = 0; v < g.size(); v++) {
+        for (auto const u : g[v]) {
+            // only keep the edge if it leaves v's county
+            if (counties[v] != counties[u]) {
+                cross_graph[v].push_back(u);
+            }
+        }
+    }
+    return cross_graph;
+}
+
 // builds map graph taus 
 WholeUnitLogTaus build_whole_unit_log_taus(
     std::vector<std::vector<int>> const &county_vertices,
@@ -618,6 +637,7 @@ MapParams::MapParams(Graph const &g,
         county_restricted_graph(num_counties > 1 ? build_restricted_county_graph(g, counties)
                                                 : g),
         county_restricted_flat_graph(county_restricted_graph),
+        cross_county_flat_graph(build_cross_county_graph(g, counties)),
         map_log_taus(build_whole_unit_log_taus(
             county_vertices,county_restricted_graph, cg
         )),

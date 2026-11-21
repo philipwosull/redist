@@ -22,6 +22,7 @@ class RNGState;
 class USTSampler;
 class TreeSplitter;
 class WeightCache;
+class GraphLaplacian;
 
 // Simple struct for tracking granular time
 struct GranularMCMCTimes {
@@ -110,21 +111,24 @@ std::vector<double> get_adj_pair_unnormalized_weights(
 // `states.current` must be built for `plan` (build_current_plan_context).
 // `states.proposed` is rebuilt for the proposed plan, and states.accept() is
 // called if the proposal is accepted so `states.current` always matches `plan`.
+// `graph_laplacian` is only used when rho != 1, so it may be unallocated otherwise.
 std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     MapParams const &map_params, const SplittingSchedule &splitting_schedule,
     ScoringFunction const &scoring_function, RNGState &rng_state,
     SamplingSpace const sampling_space, Plan &plan, Plan &new_plan, USTSampler &ust_sampler,
-    TreeSplitter &tree_splitter, MergeSplitStates &states, std::string const merge_prob_type,
+    TreeSplitter &tree_splitter, MergeSplitStates &states, GraphLaplacian &graph_laplacian,
+    std::string const merge_prob_type,
     bool save_edge_selection_prob, double const rho, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times);
 
+// `graph_laplacian` is only used when rho != 1, so it may be unallocated otherwise.
 int run_merge_split_steps(MapParams const &map_params,
                           const SplittingSchedule &splitting_schedule,
                           ScoringFunction const &scoring_function, RNGState &rng_state,
                           SamplingSpace const sampling_space, Plan &plan, Plan &dummy_plan,
                           USTSampler &ust_sampler, TreeSplitter &tree_splitter,
-                          MergeSplitStates &states,
+                          MergeSplitStates &states, GraphLaplacian &graph_laplacian,
                           std::string const merge_prob_type, double const rho,
                           int num_steps_to_run,
                           std::vector<int> &tree_sizes, std::vector<int> &successful_tree_sizes,

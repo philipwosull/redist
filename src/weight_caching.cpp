@@ -7,6 +7,7 @@
 
 #include "weight_caching.h"
 #include "base_plan_type.h"
+#include "graph_laplacian.h"
 
 WeightCacheEnsemble::WeightCacheEnsemble(bool const using_caching, MapParams const &map_params,
                                          int const nsims, double const rho,
@@ -33,7 +34,7 @@ WeightCacheEnsemble::WeightCacheEnsemble(bool const using_caching, MapParams con
 
 // this computes rho-1 compactness
 double compute_or_fetch_log_region_compactness(Plan const &plan, RegionID const region_id,
-                                               MapParams const &map_params, double const rho,
+                                               GraphLaplacian &graph_laplacian, double const rho,
                                                bool const using_caching,
                                                WeightCache *weight_cache) {
     // If there are
@@ -45,7 +46,7 @@ double compute_or_fetch_log_region_compactness(Plan const &plan, RegionID const 
     }
     // else we need to compute the values
     double compactness_term =
-        (rho - 1) * plan.compute_log_region_spanning_trees(map_params, region_id);
+        (rho - 1) * graph_laplacian.log_region_spanning_trees(plan.region_ids, region_id);
 
     if (using_caching) {
         // store the new value and update the counter

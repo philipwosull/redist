@@ -18,6 +18,7 @@
 
 #include "base_plan_type.h"
 #include "graph_plan_type.h"
+#include "graph_laplacian.h"
 #include "merging.h"
 #include "redist_alg_helpers.h"
 #include "scoring.h"
@@ -170,6 +171,9 @@ Rcpp::List ms_plans(
         USTSampler ust_sampler(map_params, *splitting_schedule_ptr);
         // current and proposed merge-split state
         MergeSplitStates states(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+        // map graph log tau scratch. Merge split only computes taus when
+        // rho != 1, so otherwise nothing is allocated
+        GraphLaplacian graph_laplacian(map_params, rho != 1);
 
         // 1 means serial under the package threading convention
         RcppThread::ThreadPool pool = get_thread_pool(1);
@@ -299,7 +303,8 @@ Rcpp::List ms_plans(
                 map_params, *splitting_schedule_ptr, scoring_function, rng_state,
                 sampling_space, *plan_ensemble.plan_ptr_vec[0],
                 *proposal_plan_ensemble.plan_ptr_vec[0], ust_sampler, *tree_splitter_ptr_vec[0],
-                states, pair_rule, save_edge_selection_prob, rho, do_mh, false, nullptr,
+                states, graph_laplacian, pair_rule, save_edge_selection_prob, rho, do_mh,
+                false, nullptr,
                 granular_times);
 
             if constexpr (DEBUG_PURE_MS_VERBOSE) {

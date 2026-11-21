@@ -15,6 +15,7 @@
 #include <string>
 
 #include "map_calc.h"
+#include "graph_laplacian.h"
 #include "merging.h"
 #include "redist_alg_helpers.h"
 #include "tree_op.h"
@@ -113,8 +114,13 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
     int const n_threads = num_threads == 0 ? 1 : num_threads;
     std::vector<PlanMultigraph> plan_multigraph_buffers;
     plan_multigraph_buffers.reserve(n_threads);
+    // map graph log tau scratch for each thread, only allocated when the
+    // density includes taus (rho != 0)
+    std::vector<GraphLaplacian> graph_laplacian_buffers;
+    graph_laplacian_buffers.reserve(n_threads);
     for (size_t i = 0; i < n_threads; i++) {
         plan_multigraph_buffers.emplace_back(map_params, false);
+        graph_laplacian_buffers.emplace_back(map_params, rho != 0);
     }
 
 
@@ -148,6 +154,7 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
             throw std::runtime_error(oss.str());
         }
         PlanMultigraph &plan_multigraph = plan_multigraph_buffers[thread_id];
+        GraphLaplacian &graph_laplacian = graph_laplacian_buffers[thread_id];
         std::vector<bool> &county_component_lookup = county_component_lookup_buffers[thread_id];
         CircularQueue<int> &vertex_queue = vertex_queue_buffers[thread_id];
         std::vector<bool> &vertices_visited = vertices_visited_buffers[thread_id];
@@ -300,8 +307,8 @@ Rcpp::NumericMatrix compute_log_unnormalized_target_density_components(
 
             if (rho != 0) {
                 double region_tau =
-                    rho * plan_ensemble.plan_ptr_vec[i]->compute_log_region_spanning_trees(
-                              map_params, region_id);
+                    rho * graph_laplacian.log_region_spanning_trees(
+                              plan_ensemble.plan_ptr_vec[i]->region_ids, region_id);
                 if (just_single_density) {
                     log_unnormalized_component_densities(0, i) += region_tau;
                 } else {

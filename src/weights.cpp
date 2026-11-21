@@ -10,6 +10,7 @@ constexpr bool DEBUG_WEIGHTS_VERBOSE = false; // Compile-time constant
 
 #include "advanced_types.h"          // MapParams, SamplingSpace
 #include "base_plan_type.h"          // Plan, PlanMultigraph
+#include "graph_laplacian.h"         // GraphLaplacian
 #include "redist_constants.h"        // perf_config
 #include "scoring.h"                 // ScoringFunction
 #include "splitting_schedule_types.h" // SplittingSchedule
@@ -59,6 +60,7 @@ static double log_sum_exp(std::vector<double> const &log_terms) {
 // computes the backwards kernel that is uniform in
 // the number of ancestors
 double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &plan_multigraph,
+                                             GraphLaplacian &graph_laplacian,
                                              const SplittingSchedule &splitting_schedule,
                                              USTSampler &ust_sampler,
                                              TreeSplitter &edge_splitter,
@@ -112,8 +114,8 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
         if (compute_log_tau) {
             // do merged region tau if neccesary
             log_tau_ratio_term -=
-                (rho - 1) * plan.compute_log_merged_region_spanning_trees(
-                                plan_multigraph.map_params, region1_id, region2_id);
+                (rho - 1) * graph_laplacian.log_merged_region_spanning_trees(
+                                plan.region_ids, region1_id, region2_id);
         }
     } else if (sampling_space == SamplingSpace::ForestSpace ||
                sampling_space == SamplingSpace::LinkingEdgeSpace) {
@@ -127,8 +129,8 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
             int pair_region1_id = region_pair.first;
             int pair_region2_id = region_pair.second;
 
-            double const log_tau = plan.compute_log_merged_region_spanning_trees(
-                plan_multigraph.map_params, pair_region1_id, pair_region2_id);
+            double const log_tau = graph_laplacian.log_merged_region_spanning_trees(
+                plan.region_ids, pair_region1_id, pair_region2_id);
 
             // If its the merged region actually split save it for use in forward kernel
             if (pair_region1_id == region1_id && pair_region2_id == region2_id) {
@@ -158,9 +160,9 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
         // them. The fetch is still worth making: it writes the values back, so a
         // following mergesplit round reads them instead of recomputing.
         log_tau_ratio_term += compute_or_fetch_log_region_compactness(
-            plan, region1_id, plan_multigraph.map_params, rho, using_caching, weight_cache);
+            plan, region1_id, graph_laplacian, rho, using_caching, weight_cache);
         log_tau_ratio_term += compute_or_fetch_log_region_compactness(
-            plan, region2_id, plan_multigraph.map_params, rho, using_caching, weight_cache);
+            plan, region2_id, graph_laplacian, rho, using_caching, weight_cache);
     }
 
     if constexpr (perf_config::track_granular_times) {
@@ -325,7 +327,7 @@ double compute_simple_log_incremental_weight(Plan const &plan, PlanMultigraph &p
 // @return the log of the incremental weight of the plan
 //
 double compute_log_optimal_incremental_weights(
-    Plan const &plan, PlanMultigraph &plan_multigraph,
+    Plan const &plan, PlanMultigraph &plan_multigraph, GraphLaplacian &graph_laplacian,
     const SplittingSchedule &splitting_schedule, USTSampler &ust_sampler,
     TreeSplitter &edge_splitter, SamplingSpace const sampling_space,
     ScoringFunction const &scoring_function, double const rho,
@@ -482,8 +484,8 @@ double compute_log_optimal_incremental_weights(
                 log_tau_ratio += whole_map_compactness_term;
             } else {
                 log_tau_ratio +=
-                    (rho - 1) * plan.compute_log_merged_region_spanning_trees(
-                                    plan_multigraph.map_params, region1_id, region2_id);
+                    (rho - 1) * graph_laplacian.log_merged_region_spanning_trees(
+                                    plan.region_ids, region1_id, region2_id);
             }
 
             if constexpr (DEBUG_WEIGHTS_VERBOSE) {
@@ -493,9 +495,9 @@ double compute_log_optimal_incremental_weights(
             // subtract split regions
             // This function return (rho-1)*log compactness
             log_tau_ratio -= compute_or_fetch_log_region_compactness(
-                plan, region1_id, plan_multigraph.map_params, rho, using_caching, weight_cache);
+                plan, region1_id, graph_laplacian, rho, using_caching, weight_cache);
             log_tau_ratio -= compute_or_fetch_log_region_compactness(
-                plan, region2_id, plan_multigraph.map_params, rho, using_caching, weight_cache);
+                plan, region2_id, graph_laplacian, rho, using_caching, weight_cache);
             log_of_sum_term += log_tau_ratio;
 
             if constexpr (perf_config::track_granular_times){
