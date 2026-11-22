@@ -451,7 +451,7 @@ double compute_log_optimal_incremental_weights(
                     .compute_merged_plan_score(plan, region1_id, region2_id)
                     .second; 
             if constexpr (perf_config::track_granular_times){
-                add_elapsed(granular_times.region_scores, time_plan_score); // optional timing
+                add_elapsed(granular_times.plan_scores, time_plan_score); // optional timing
             }
             if constexpr (DEBUG_WEIGHTS_VERBOSE) {
                 REprintf("For Regions (%u, %u) Merged Entire Plan Score %f \n", region1_id,
