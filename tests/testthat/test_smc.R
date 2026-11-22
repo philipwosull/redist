@@ -597,6 +597,50 @@ test_that("blank map target density is the whole map log spanning tree count", {
     }
 })
 
+test_that("region log spanning tree counts match redistmetrics", {
+    # With compactness 1 and no constraints each region's log target density is
+    # just its log spanning tree count (GraphLaplacian), so the column sums are
+    # each plan's total, which redistmetrics computes independently
+    iowa_map <- suppressMessages(redist_map(iowa, ndists = 4, pop_tol = 0.05))
+    V <- nrow(iowa_map)
+
+    county_cases <- list(
+        # counties off: each region is one piece on the full map graph
+        none = NULL,
+        # a few counties: county level term with multi edge weights, partial
+        # county pieces and whole county (cached) pieces
+        region = iowa_map$region,
+        # one vertex per county: every piece is a whole county and the county
+        # level term carries the whole region
+        every_vertex = seq_len(V)
+    )
+    # the density helper prints progress, so capture it
+    check_plans <- function(plan_mat, counties, name) {
+        utils::capture.output(dens <- compute_log_target_density_by_region(
+            iowa_map, plan_mat, counties = !!counties, compactness = 1, ncores = 1
+        ))
+        county_ids <- if (is.null(counties)) rep(1L, V) else as.integer(as.factor(counties))
+        expect_equal(
+            colSums(dens[1:4, , drop = FALSE]),
+            redistmetrics:::log_st_map(iowa_map$adj, plan_mat, county_ids, 4L),
+            tolerance = 1e-10, info = name
+        )
+    }
+
+    for (name in names(county_cases)) {
+        counties <- county_cases[[name]]
+        plan_mat <- get_plans_matrix(
+            redist_smc(iowa_map, 20, counties = !!counties, silent = TRUE)
+        )
+        check_plans(plan_mat, counties, name)
+    }
+
+    # counties equal to the plan: every region is exactly one whole county, so
+    # each region's tau is its cached whole county value
+    cd_plan <- as.integer(as.factor(iowa$cd_2010))
+    check_plans(matrix(cd_plan, ncol = 1), cd_plan, "counties_are_the_plan")
+})
+
 test_that("md_alpha is passed in split_params", {
     iowa_map <- suppressMessages(redist_map(iowa, existing_plan = cd_2010, pop_tol = 0.05))
     plans <- redist_smc(

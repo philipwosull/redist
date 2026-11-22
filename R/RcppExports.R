@@ -177,10 +177,6 @@ get_merged_log_number_linking_edges <- function(adj_list, counties, constraints,
     .Call(`_redist_get_merged_log_number_linking_edges`, adj_list, counties, constraints, ndists, nseats, num_regions, region_ids, region1_id, region2_id)
 }
 
-laplacian_builder_log_dets <- function(graphs) {
-    .Call(`_redist_laplacian_builder_log_dets`, graphs)
-}
-
 plans_are_hierarchically_valid <- function(adj_list, counties, plans_mat, ndists) {
     .Call(`_redist_plans_are_hierarchically_valid`, adj_list, counties, plans_mat, ndists)
 }

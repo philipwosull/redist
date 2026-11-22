@@ -661,10 +661,12 @@ get_splitting_size_regime(std::string const &splitting_size_regime_str);
 //
 // Exactness
 // ---------
-// Each entry must be computed with the same vertex ordering and edge insertion
-// order that GraphLaplacian uses for the same piece. Then reading a cached value
-// gives exactly the double a fresh computation would, and results never depend
-// (at the 1e-16 level) on whether a unit happened to be whole.
+// Each entry is computed with the same vertex numbering (ascending) and dropped
+// vertex (the last one) that GraphLaplacian uses for the same piece. Edge
+// weights are integers, so the order edges are added doesn't change the matrix,
+// and a cached value is exactly the double a fresh computation would give. This
+// only matters for cross checking: GraphLaplacian always reads the cached value
+// for a whole unit.
 //
 // Adding a level
 // --------------
