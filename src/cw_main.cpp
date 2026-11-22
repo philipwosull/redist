@@ -51,11 +51,15 @@ Rcpp::List cyclewalk_plans(int N, int warmup, int thin, int ndists, int total_se
     SamplingSpace const sampling_space = SamplingSpace::LCTGraphSpace;
 
     // MapParams: graph, counties, pop, sizes, MMD config.
-    MapParams const map_params(list_to_graph(adj_list), 
-        Rcpp::as<std::vector<unsigned int>>(counties), 
+    // Cycle walk only uses counties for its edge weights and never keeps plans
+    // hierarchically valid, so plans_may_be_non_hierarchical is true. Otherwise
+    // compactness would use hierarchical taus, which are undefined (and throw)
+    // once a move splits a county into disconnected pieces.
+    MapParams const map_params(list_to_graph(adj_list),
+        Rcpp::as<std::vector<unsigned int>>(counties),
         Rcpp::as<std::vector<unsigned int>>(pop), ndists, total_seats,
                                as<std::vector<int>>(district_seat_sizes), lower, target, upper,
-                            sampling_space);
+                            sampling_space, /*plans_may_be_non_hierarchical=*/true);
     int const V = map_params.V;
     bool const mmd_plans = map_params.is_mmd;
 
