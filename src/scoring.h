@@ -3,6 +3,7 @@
 #define SCORING_H
 
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -701,16 +702,20 @@ class TotalPlanSplitsConstraint : public PlanConstraint {
     int const num_admin_units;
     std::vector<std::vector<int>> const admin_vertex_lists;
     mutable std::vector<int> region_reindex_vec;
-    mutable std::vector<std::set<int>> admin_unit_regions;
+    // scratch for counting the distinct regions in each admin unit: a region
+    // was seen in the current unit iff region_seen[region] == stamp, and the
+    // stamp goes up once per unit so the array never needs clearing
+    mutable std::vector<std::uint32_t> region_seen;
+    mutable std::uint32_t stamp = 0;
 
   public:
     TotalPlanSplitsConstraint(Rcpp::List const &constr_inst, MapParams const &map_params)
         : PlanConstraint(constr_inst,map_params.ndists),
-          admin_units(Rcpp::as<std::vector<unsigned int>>(constr_inst["admin"])), 
+          admin_units(Rcpp::as<std::vector<unsigned int>>(constr_inst["admin"])),
           num_admin_units(*std::max_element(admin_units.begin(), admin_units.end())),
           admin_vertex_lists(build_admin_vertex_lists(map_params.g, admin_units)),
           region_reindex_vec(map_params.ndists),
-          admin_unit_regions(std::vector<std::set<int>>(num_admin_units)) {};
+          region_seen(map_params.ndists, 0) {};
     // computes score for a plan
     double
     compute_raw_plan_constraint_score(int const num_regions, PlanVector const &region_ids,
