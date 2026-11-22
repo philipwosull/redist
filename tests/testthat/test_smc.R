@@ -614,11 +614,20 @@ test_that("region log spanning tree counts match redistmetrics", {
         # level term carries the whole region
         every_vertex = seq_len(V)
     )
-    # the density helper prints progress, so capture it
+    # Calls the C++ density directly rather than compute_log_target_density_by_region,
+    # since R/dev_helpers.R is in .Rbuildignore and so absent from built packages
     check_plans <- function(plan_mat, counties, name) {
-        utils::capture.output(dens <- compute_log_target_density_by_region(
-            iowa_map, plan_mat, counties = !!counties, compactness = 1, ncores = 1
-        ))
+        mp <- get_map_parameters(iowa_map, !!counties)
+        dens <- compute_log_unnormalized_target_density_components(
+            mp$adj_list, mp$counties, mp$pop,
+            validate_constraints(iowa_map, rlang::quo(list()), 1),
+            pop_temper = 0, compute_pop_temper = FALSE, rho = 1,
+            ndists = mp$ndists, total_seats = mp$nseats, num_regions = 4L,
+            district_seat_sizes = mp$seats_range,
+            lower = mp$pop_bounds[1], target = mp$pop_bounds[2], upper = mp$pop_bounds[3],
+            region_ids = plan_mat, region_sizes = matrix(1L, 4, ncol(plan_mat)),
+            output_type = "components", num_threads = 1L, verbosity = 0L
+        )
         county_ids <- if (is.null(counties)) rep(1L, V) else as.integer(as.factor(counties))
         expect_equal(
             colSums(dens[1:4, , drop = FALSE]),
