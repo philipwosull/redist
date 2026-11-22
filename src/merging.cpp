@@ -6,6 +6,7 @@
  ********************************************************/
 
 #include "merging.h"
+#include "graph_laplacian.h"
 #include "scoring.h"
 #include "tree_op.h"
 #include "wilson.h"
@@ -18,6 +19,74 @@
 #include <numeric>
 
 constexpr bool DEBUG_MERGING_VERBOSE = false; // Compile-time constant
+
+
+bool PlanState::build_merge_pairs(Plan const &plan, SplittingSchedule const &splitting_schedule,
+                                  ScoringFunction const &scoring_function,
+                                  GranularMCMCTimes &granular_times) {
+    // the multigraph is about to be rebuilt, so any stored tau is stale
+    log_multigraph_tau = std::numeric_limits<double>::quiet_NaN();
+    // the merge pairs depend on the schedule context, so build it first
+    splitting_schedule.build_context(plan, schedule_ctx);
+    auto pair_building_time = maybe_now(); // optional timing
+    auto pair_build_attempt = plan.attempt_to_get_valid_mergesplit_pairs(
+        multigraph, splitting_schedule, schedule_ctx, scoring_function);
+    merge_pairs = std::move(pair_build_attempt.second);
+    if constexpr (perf_config::track_granular_times) {
+        add_elapsed(granular_times.get_valid_mergepairs, pair_building_time); // optional timing
+    }
+    return pair_build_attempt.first;
+}
+
+void PlanState::compute_pair_wgts(Plan const &plan, std::string const &merge_prob_type,
+                                  GranularMCMCTimes &granular_times) {
+    auto pair_weight_time = maybe_now(); // optional timing
+    pair_wgts = get_adj_pair_unnormalized_weights(plan, merge_pairs, merge_prob_type);
+    if constexpr (perf_config::track_granular_times) {
+        add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing
+    }
+}
+
+void PlanState::compute_log_multigraph_tau(Plan const &plan,
+                                           ScoringFunction const &scoring_function) {
+    // only linking edge space builds the multigraph with a laplacian to use
+    if (!multigraph.need_to_compute_multigraph_taus) return;
+    log_multigraph_tau = multigraph.compute_log_multigraph_tau(plan.num_regions, scoring_function);
+}
+
+void MergeSplitStates::build_current_plan_context(Plan const &plan,
+                                                  SplittingSchedule const &splitting_schedule,
+                                                  ScoringFunction const &scoring_function,
+                                                  std::string const &merge_prob_type,
+                                                  GranularMCMCTimes &granular_times) {
+    if (!current->build_merge_pairs(plan, splitting_schedule, scoring_function,
+                                    granular_times)) {
+        std::ostringstream oss;
+        oss << "MergeSplitStates::build_current_plan_context: building the plan multigraph "
+            << "failed but the current plan should be valid.\n";
+        oss << "pairs.size()=" << current->merge_pairs.size() << "\n";
+        oss << plan.debug_string(true);
+        throw std::runtime_error(oss.str());
+    }
+
+    current->compute_pair_wgts(plan, merge_prob_type, granular_times);
+    if (current->pair_wgts.empty()) {
+        std::ostringstream oss;
+        oss << "MergeSplitStates::build_current_plan_context: the current plan has no merge "
+            << "pair weights (" << current->merge_pairs.size() << " merge pairs).\n";
+        oss << plan.debug_string(true);
+        throw std::runtime_error(oss.str());
+    }
+
+    // the current plan's log multigraph tau, read by every merge-split step
+    // until a proposal is accepted (linking edge space only)
+    auto tau_time = maybe_now(); // optional timing
+    current->compute_log_multigraph_tau(plan, scoring_function);
+    if constexpr (perf_config::track_granular_times) {
+        add_elapsed(granular_times.eff_boundary_length, tau_time); // optional timing
+    }
+}
+
 
 /*
  *  Returns a sampler over a vector of adjacent pairs where the probability
@@ -105,7 +174,7 @@ std::vector<double> get_adj_pair_unnormalized_weights(
 // new_region1_log_compactness, new_region2_log_compactness
 // are pass by reference to save the log tau of the new regions
 // if the split was successful
-double get_log_mh_ratio(MapParams const &map_params, ScoringFunction const &scoring_function,
+double get_log_mh_ratio(GraphLaplacian &graph_laplacian, ScoringFunction const &scoring_function,
                         const int region1_id, const int region2_id,
                         double const current_log_eff_boundary_len,
                         double const proposed_log_eff_boundary_len,
@@ -147,17 +216,19 @@ double get_log_mh_ratio(MapParams const &map_params, ScoringFunction const &scor
         auto log_st_time = maybe_now();
         // we add scorse of proposed region
         new_region1_log_compactness =
-            (rho - 1) * proposed_plan.compute_log_region_spanning_trees(map_params, region1_id);
+            (rho - 1) * graph_laplacian.log_region_spanning_trees(proposed_plan.region_ids,
+                                                                  region1_id);
         new_region2_log_compactness =
-            (rho - 1) * proposed_plan.compute_log_region_spanning_trees(map_params, region2_id);
+            (rho - 1) * graph_laplacian.log_region_spanning_trees(proposed_plan.region_ids,
+                                                                  region2_id);
         log_mh_ratio += new_region1_log_compactness;
         log_mh_ratio += new_region2_log_compactness;
         // we subtract scores of current region
         // This function return (rho-1)*log compactness
         log_mh_ratio -= compute_or_fetch_log_region_compactness(
-            current_plan, region1_id, map_params, rho, using_caching, weight_cache);
+            current_plan, region1_id, graph_laplacian, rho, using_caching, weight_cache);
         log_mh_ratio -= compute_or_fetch_log_region_compactness(
-            current_plan, region2_id, map_params, rho, using_caching, weight_cache);
+            current_plan, region2_id, graph_laplacian, rho, using_caching, weight_cache);
         if constexpr (perf_config::track_granular_times){
             add_elapsed(granular_times.tau_terms, log_st_time);
         }
@@ -192,22 +263,20 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     MapParams const &map_params, const SplittingSchedule &splitting_schedule,
     ScoringFunction const &scoring_function, RNGState &rng_state,
     SamplingSpace const sampling_space, Plan &plan, Plan &new_plan, USTSampler &ust_sampler,
-    TreeSplitter &tree_splitter, PlanMultigraph &current_plan_multigraph,
-    PlanMultigraph &proposed_plan_multigraph, ScheduleContext &current_schedule_ctx,
-    ScheduleContext &proposed_schedule_ctx, std::string const merge_prob_type,
-    bool save_edge_selection_prob, std::vector<std::pair<RegionID, RegionID>> &adj_region_pairs,
-    std::vector<double> &unnormalized_pair_wgts, double const rho, bool const is_final, bool const do_mh,
+    TreeSplitter &tree_splitter, MergeSplitStates &states, GraphLaplacian &graph_laplacian,
+    std::string const merge_prob_type,
+    bool save_edge_selection_prob, double const rho, bool const do_mh,
     bool const using_caching, WeightCache *weight_cache,
     GranularMCMCTimes &granular_times
 ) {
     // sample a pair
     auto pair_selection_time = maybe_now(); // optional timing 
-    int sampled_pair_index = rng_state.r_int_unnormalized_wgt(unnormalized_pair_wgts);
+    int sampled_pair_index = rng_state.r_int_unnormalized_wgt(states.current->pair_wgts);
     if constexpr (perf_config::track_granular_times){
         add_elapsed(granular_times.selecting_merge_pair, pair_selection_time); // optional timing 
     }
 
-    std::pair<int, int> merge_pair = adj_region_pairs[sampled_pair_index];
+    std::pair<int, int> merge_pair = states.current->merge_pairs[sampled_pair_index];
 
     int region1_id = merge_pair.first;
     int region2_id = merge_pair.second;
@@ -220,7 +289,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     // try to draw a region
     auto wilson_time = maybe_now(); // optional timing 
     CutSizeOptions const cut_options = splitting_schedule.merged_region_cut_sizes(
-        plan, current_schedule_ctx, region1_id, region2_id);
+        plan, states.current->schedule_ctx, region1_id, region2_id);
     std::tuple<bool, EdgeCut> edge_search_result =
         ust_sampler.attempt_to_find_valid_tree_mergesplit(rng_state, scoring_function,
                                                           tree_splitter, plan, region1_id,
@@ -262,22 +331,17 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         add_elapsed(granular_times.plan_copying, initial_copy_time); // optional timing 
     }
 
-    // the proposed plan's regions are now final so build its schedule context
-    splitting_schedule.build_context(new_plan, proposed_schedule_ctx);
+    // the proposed plan's regions are now final so build its schedule context,
+    // find merge pairs
+    // and check if new plan is hierarchically valid if needed
+    bool const multigraph_built = states.proposed->build_merge_pairs(new_plan, splitting_schedule,
+        scoring_function, granular_times);
 
-    // check new plan is hierarchically valid if needed
-    auto new_pair_building_time = maybe_now(); // optional timing
-    auto build_attempt = new_plan.attempt_to_get_valid_mergesplit_pairs(
-        proposed_plan_multigraph, splitting_schedule, proposed_schedule_ctx, scoring_function,
-        is_final);
-    if constexpr (perf_config::track_granular_times){
-        add_elapsed(granular_times.get_valid_mergepairs, new_pair_building_time); // optional timing 
-    }
 
     // new plan is valid if build attempt successful and passes any hard constraints
     auto hard_constraint_time = maybe_now();
     bool new_plan_valid =
-        build_attempt.first &&
+        multigraph_built &&
         scoring_function.satisfies_hard_constraints(new_plan, region1_id, region2_id); // this split adds 0 new regions
     if constexpr (perf_config::track_granular_times){
         add_elapsed(granular_times.hard_constraint_time, hard_constraint_time); // optional timing 
@@ -286,25 +350,20 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     
 
     if constexpr (DEBUG_MERGING_VERBOSE) {
-        Rprintf("%d county splits!\n", proposed_plan_multigraph.num_county_region_components);
+        Rprintf("%d county splits!\n", states.proposed->multigraph.num_county_region_components);
     }
     if (!new_plan_valid) {
         if constexpr (DEBUG_MERGING_VERBOSE) {
             REprintf("%d splits for %d regions\n",
-                     proposed_plan_multigraph.num_county_region_components, plan.num_regions);
+                     states.proposed->multigraph.num_county_region_components, plan.num_regions);
         }
         // return failure
         return std::make_tuple(true, false, std::log(0.0), merged_region_size);
     }
-    // get adj pairs
-    auto new_valid_adj_region_pairs = build_attempt.second;
+
     // get the weights
-    auto pair_weight_time = maybe_now();
-    auto new_valid_pair_weights = get_adj_pair_unnormalized_weights(
-        new_plan, new_valid_adj_region_pairs, merge_prob_type);
-    if constexpr (perf_config::track_granular_times){
-        add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing 
-    }
+    states.proposed->compute_pair_wgts(new_plan, merge_prob_type, granular_times);
+    auto const &new_valid_pair_weights = states.proposed->pair_wgts;
 
 
     // compute mh ratio if needed
@@ -312,6 +371,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
     bool proposal_accepted;
 
     if (do_mh) {
+        auto const &new_valid_adj_region_pairs = states.proposed->merge_pairs;
         int region_pair_proposal_index = -1;
         // Find the index of the pair in the proposed plan
         for (size_t i = 0; i < new_valid_adj_region_pairs.size(); i++) {
@@ -332,7 +392,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
                 << " no longer adjacent.\n";
 
             oss << "Current adj pairs: ";
-            for (auto const &a_pair : adj_region_pairs) {
+            for (auto const &a_pair : states.current->merge_pairs) {
                 oss << "(" << static_cast<int>(a_pair.first)
                     << ", " << static_cast<int>(a_pair.second) << "), ";
             }
@@ -372,25 +432,41 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         // compute the boundary length
         auto eff_boundary_time = maybe_now();
         double current_log_eff_boundary = plan.get_log_eff_boundary_len(
-            current_plan_multigraph, splitting_schedule, current_schedule_ctx, ust_sampler,
+            states.current->multigraph, splitting_schedule, states.current->schedule_ctx, ust_sampler,
             tree_splitter, scoring_function, region1_id, region2_id);
         double proposed_log_eff_boundary = new_plan.get_log_eff_boundary_len(
-            proposed_plan_multigraph, splitting_schedule, proposed_schedule_ctx, ust_sampler,
+            states.proposed->multigraph, splitting_schedule, states.proposed->schedule_ctx, ust_sampler,
             tree_splitter, scoring_function, region1_id, region2_id);
         // If linking edge space we need to subtract linking edge correction term
         if (using_linking_edge_space) {
+            // Only the proposed plan's tau is computed here. The current plan's
+            // was computed by build_current_plan_context, or carried over by
+            // states.accept() when its plan was accepted
+            states.proposed->compute_log_multigraph_tau(new_plan, scoring_function);
+            if constexpr (perf_config::object_integrity_checking) {
+                // the stored value must match a fresh compute (NaN never matches)
+                double const recomputed = states.current->multigraph.compute_log_multigraph_tau(
+                    plan.num_regions, scoring_function);
+                if (recomputed != states.current->log_multigraph_tau) {
+                    std::ostringstream oss;
+                    oss.precision(17);
+                    oss << "attempt_mergesplit_step: the stored log multigraph tau of the "
+                        << "current plan is " << states.current->log_multigraph_tau
+                        << " but recomputing it gives " << recomputed << ".\n";
+                    oss << plan.debug_string(true);
+                    throw std::runtime_error(oss.str());
+                }
+            }
             // add instead of subtract bc its flipped in MH ratio
-            current_log_eff_boundary += current_plan_multigraph.compute_log_multigraph_tau(
-                plan.num_regions, scoring_function);
-            proposed_log_eff_boundary += proposed_plan_multigraph.compute_log_multigraph_tau(
-                new_plan.num_regions, scoring_function);
+            current_log_eff_boundary += states.current->log_multigraph_tau;
+            proposed_log_eff_boundary += states.proposed->log_multigraph_tau;
         }
         if constexpr (perf_config::track_granular_times){
             add_elapsed(granular_times.eff_boundary_length, eff_boundary_time); // optional timing
         }
 
         
-
+        auto const &unnormalized_pair_wgts = states.current->pair_wgts;
         double const current_pair_wgt_sum = std::accumulate(
             unnormalized_pair_wgts.begin(), unnormalized_pair_wgts.end(), 0.0);
         double const proposed_pair_wgt_sum = std::accumulate(
@@ -399,7 +475,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         if constexpr (DEBUG_MERGING_VERBOSE) {
             Rprintf("Finding Adjacent regions %d, %d!\n", region1_id, region2_id);
             Rprintf("Current Plan: %d Adjacent Regions and I picked index %d ",
-                    (int)adj_region_pairs.size(), sampled_pair_index);
+                    (int) states.current->merge_pairs.size(), sampled_pair_index);
             Rprintf("with probability %f\n",
                     std::exp(std::log(unnormalized_pair_wgts[sampled_pair_index]) -
                              std::log(current_pair_wgt_sum)));
@@ -413,7 +489,7 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
         double new_region1_log_compactness, new_region2_log_compactness;
 
         log_mh_ratio =
-            get_log_mh_ratio(map_params, scoring_function, region1_id, region2_id,
+            get_log_mh_ratio(graph_laplacian, scoring_function, region1_id, region2_id,
                              current_log_eff_boundary, proposed_log_eff_boundary,
                              std::log(unnormalized_pair_wgts[sampled_pair_index]) -
                                  std::log(current_pair_wgt_sum),
@@ -469,14 +545,10 @@ std::tuple<bool, bool, double, int> attempt_mergesplit_step(
             add_elapsed(granular_times.backfill_wilson_time, extra_wilson_time); // optional timing
         }
         if constexpr (DEBUG_MERGING_VERBOSE)
-            Rprintf("Plan updated, now swapping multigraphs\n");
+            Rprintf("Plan updated, now accepting the proposed state!\n");
 
-        // swap the plan multigraphs and schedule contexts
-        swap_plan_multigraphs(current_plan_multigraph, proposed_plan_multigraph);
-        std::swap(current_schedule_ctx, proposed_schedule_ctx);
-        // update pairs and weights to be current one
-        unnormalized_pair_wgts = new_valid_pair_weights;
-        adj_region_pairs = new_valid_adj_region_pairs;
+        // swaps all the plan state information 
+        states.accept();
         return std::make_tuple(true, true, log_mh_ratio, merged_region_size);
     } else {
         if constexpr (DEBUG_MERGING_VERBOSE)
@@ -492,63 +564,31 @@ int run_merge_split_steps(MapParams const &map_params,
                           ScoringFunction const &scoring_function, RNGState &rng_state,
                           SamplingSpace const sampling_space, Plan &plan, Plan &dummy_plan,
                           USTSampler &ust_sampler, TreeSplitter &tree_splitter,
-                          PlanMultigraph &current_plan_multigraph,
-                          PlanMultigraph &proposed_plan_multigraph,
+                          MergeSplitStates &states, GraphLaplacian &graph_laplacian,
                           std::string const merge_prob_type, double const rho,
-                          bool const is_final, int num_steps_to_run,
+                          int num_steps_to_run,
                           std::vector<int> &tree_sizes, std::vector<int> &successful_tree_sizes,
                           bool const using_caching, WeightCache *weight_cache,
                           GranularMCMCTimes &granular_times) {
     int num_succesful_steps = 0;
     bool save_edge_selection_prob = sampling_space == SamplingSpace::LinkingEdgeSpace;
 
-    // Build the schedule context for the current plan. It is swapped with the
-    // proposed plan's context whenever a proposal is accepted, so it always
-    // matches the current plan.
-    ScheduleContext current_schedule_ctx, proposed_schedule_ctx;
-    splitting_schedule.build_context(plan, current_schedule_ctx);
+    // Build the plan context of the current plan
+    // So build mergesplit pair list and compute the weights 
+    states.build_current_plan_context(plan, splitting_schedule, scoring_function,
+                               merge_prob_type,
+                               granular_times);
 
-    // Build the multigraph and get pairs of adj districts
-    auto pair_building_time = maybe_now(); // optional timing
-    auto pair_build_attempt = plan.attempt_to_get_valid_mergesplit_pairs(
-        current_plan_multigraph, splitting_schedule, current_schedule_ctx, scoring_function,
-        is_final);
-
-    auto current_plan_adj_region_pairs = pair_build_attempt.second;
-    if constexpr (perf_config::track_granular_times){
-        add_elapsed(granular_times.get_valid_mergepairs, pair_building_time); // optional timing
-    }
-    if (!pair_build_attempt.first) {
-        std::ostringstream oss;
-        oss << "Building plan multigraph failed but plan should be valid.\n";
-        oss << "pairs.size()=" << current_plan_adj_region_pairs.size() << "\n";
-        throw std::runtime_error(oss.str());
-        return 0;
-    }
-
-    auto pair_weight_time = maybe_now();
-    std::vector<double> current_plan_pair_unnoramalized_wgts =
-        get_adj_pair_unnormalized_weights(plan, current_plan_adj_region_pairs, merge_prob_type);
-    if constexpr (perf_config::track_granular_times){
-        add_elapsed(granular_times.selecting_merge_pair, pair_weight_time); // optional timing
-    }
-    if (current_plan_pair_unnoramalized_wgts.empty()) {
-        std::ostringstream oss;
-        oss << "Getting plan multigraph weights failed.\n";
-        oss << "weights.n_elem=" << current_plan_pair_unnoramalized_wgts.size() << "\n";
-        throw std::runtime_error(oss.str());
-    }
 
     // run the merge split steps and count success
     for (size_t i = 0; i < num_steps_to_run; i++) {
 
         std::tuple<bool, bool, double, int> mergesplit_result = attempt_mergesplit_step(
             map_params, splitting_schedule, scoring_function, rng_state, sampling_space, plan,
-            dummy_plan, ust_sampler, tree_splitter, current_plan_multigraph,
-            proposed_plan_multigraph, current_schedule_ctx, proposed_schedule_ctx,
-            merge_prob_type, save_edge_selection_prob,
-            current_plan_adj_region_pairs, current_plan_pair_unnoramalized_wgts, rho, is_final,
-            true, using_caching, weight_cache, granular_times);
+            dummy_plan, ust_sampler, tree_splitter, states, graph_laplacian, merge_prob_type,
+            save_edge_selection_prob, rho, true, using_caching, weight_cache,
+            granular_times);
+
 
         if constexpr(perf_config::supposedly_safe_input_checks){
             // count tree size

@@ -336,8 +336,9 @@ double eval_polsby(PlanID const &region_ids, int const region1_id, int const reg
  *
  * This is Kirchhoff's theorem: the number of spanning trees equals any cofactor
  * of the Laplacian, so we build the Laplacian with its first row and column
- * dropped and take its log determinant. Mirrors
- * `compute_log_region_and_county_spanning_tree` in base_plan_type.cpp.
+ * dropped and take its log determinant. Kept as an independent copy of the
+ * region intersect county pieces that GraphLaplacian (graph_laplacian.cpp)
+ * computes for the samplers.
  */
 // `check_connectivity` guards against region-and-county pieces that are not
 // connected. Such a piece has no spanning trees at all, so the count is 0 and
@@ -440,7 +441,8 @@ double eval_log_region_county_st(PlanID const &region_ids, Graph const &g,
  * region `region_id`, ie the graph whose vertices are the counties the region
  * touches and whose edges are the region's edges that cross county lines.
  *
- * Mirrors `compute_log_county_level_spanning_tree` in base_plan_type.cpp.
+ * Kept as an independent copy of the county level term that
+ * GraphLaplacian::county_level_log_spanning_trees computes for the samplers.
  */
 template <typename PlanID>
 double eval_log_county_level_st(PlanID const &region_ids, Graph const &g,
@@ -504,7 +506,7 @@ double eval_log_county_level_st(PlanID const &region_ids, Graph const &g,
  * For each region this is the sum over the counties it touches of the spanning
  * trees of the region-and-county intersection, plus the spanning trees of the
  * region's county-level multigraph. That matches the convention used by
- * `Plan::compute_log_region_spanning_tree` in base_plan_type.cpp.
+ * `GraphLaplacian::log_region_spanning_trees` in graph_laplacian.cpp.
  *
  * Regions are 1-indexed, as are counties.
  *

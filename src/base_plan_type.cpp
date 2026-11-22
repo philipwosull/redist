@@ -507,251 +507,6 @@ void Plan::shallow_copy(Plan const &plan_to_copy) {
 }
 
 
-// computes log number of spanning trees on region intersect county
-// In either a region or a merged region
-double compute_log_region_and_county_spanning_tree(
-    Graph const &g, const std::vector<unsigned int> &counties, int const county, PlanVector const &region_ids,
-    int const region1_id, int const region2_id) {
-
-    int const V = g.size();
-    // number of precincts in this district
-    int K = 0;
-    std::vector<int> pos(V); // keep track of positions in subgraph
-    int start = 0;           // where to start loop below, to save time
-    for (int i = 0; i < V; i++) {
-        pos[i] = K - 1; // minus one because we're dropping 1st row and column
-        // Check if in either region and the county
-        if ((region_ids[i] == region1_id || region_ids[i] == region2_id) &&
-            counties[i] == county) {
-            K++;
-            if (K == 2)
-                start = i; // start 2nd vertex
-        }
-    }
-    // if only 1 vertex then log(1) = 0
-    if (K <= 1) {
-        return 0;
-    }
-
-    int const minor_V = K - 1; // number of vertices in the matrix to build
-    // we will build the sparse matrix by first creating entries
-    // This stores entries as (i, j, value)
-    std::vector<SparseEntry> trips;
-    // since modifying triplets after creation is expensive we just track degrees then
-    // add at the end
-    std::vector<int> vertex_degrees(minor_V, 0);
-
-    for (int i = start; i < V; i++) {
-        // ignore if not in either region or the county
-        if ((region_ids[i] != region1_id && region_ids[i] != region2_id) ||
-            counties[i] != county)
-            continue;
-
-        // This tells us what index we're mapping the vertex too
-        int prec = pos[i];
-        if (prec < 0)
-            continue; // if its less than 0 its the first row we're ignoring
-        // iterate over vertex neighbors
-        for (auto const nbor : g[i]) {
-            // if nbor not in same region & county then we ignore it
-            if ((region_ids[nbor] != region1_id && region_ids[nbor] != region2_id) ||
-                counties[nbor] != county)
-                continue;
-            // Else this is an edge we care about so we increase the degree count
-            vertex_degrees[prec]++;
-            // Now only if the other vertex is also not the one we're skipping then
-            // we add an entry
-            if (pos[nbor] < 0)
-                continue;
-            // Since we're only building the upper triangular matrix we only
-            // add it if row <= column which here means
-            // prec <= pos[nbor]
-            if (prec <= pos[nbor]) {
-                trips.emplace_back(prec, pos[nbor], -1.0);
-            }
-        }
-    }
-    // now add the vertex degrees as triplets
-    for (size_t v = 0; v < minor_V; v++) {
-        trips.emplace_back(v, v, static_cast<double>(vertex_degrees[v]));
-    }
-
-    // now return the log determinant
-    return compute_log_det_from_entries(trips, minor_V);
-}
-
-/*
- * Compute the log number of spanning trees for the contracted (ie county level) graph
- */
-// TESTED
-double compute_log_county_level_spanning_tree(Graph const &g, const std::vector<unsigned int> &counties,
-                                                    int const n_cty,
-                                                    PlanVector const &region_ids,
-                                                    int const region1_id,
-                                                    int const region2_id) {
-    // If 1 county then just log(1) = 0
-    if (n_cty == 1)
-        return 0;
-
-    int const V = g.size();
-    // number of counties in this district
-    int K = 0;
-    std::vector<int> pos(V);          // keep track of positions in subgraph
-    std::vector<int> seen(n_cty, -2); // county lookup
-    int start = 0;
-    for (int i = 0; i < V; i++) {
-        if (region_ids[i] != region1_id && region_ids[i] != region2_id)
-            continue;
-
-        if (seen[counties[i] - 1] < 0) {
-            pos[i] = K - 1; // minus one because we're dropping 1st row and column
-            seen[counties[i] - 1] = K;
-            K++;
-            if (K == 2)
-                start = i; // start 2nd vertex
-        } else {
-            pos[i] = seen.at(counties[i] - 1) - 1;
-        }
-    }
-    if (K <= 1)
-        return 0;
-
-    int const minor_V = K - 1; // number of vertices in the matrix to build
-    // we will build the sparse matrix by first creating entries
-    // This stores entries as (i, j, value)
-    std::vector<SparseEntry> trips;
-    // since modifying triplets after creation is expensive we just track degrees then
-    // add at the end
-    std::vector<int> vertex_degrees(minor_V, 0);
-
-    for (int i = start; i < V; i++) {
-        if (region_ids[i] != region1_id && region_ids[i] != region2_id)
-            continue;
-
-        int cty = pos[i];
-        if (cty < 0)
-            continue; // skip 1st row, col
-
-        for (auto const nbor : g[i]) {
-            // skip if not in the region or its in the same county
-            if ((region_ids[nbor] != region1_id && region_ids[nbor] != region2_id) ||
-                pos[nbor] == cty)
-                continue;
-
-            // this means we've found an edge within the region across counties
-            vertex_degrees[cty]++;
-            // if one of the vertices is the 1st one we ignore it
-            if (pos[nbor] < 0)
-                continue;
-            // now because we're building an upper triangular matrix we
-            // only add if row <= col
-            if (cty <= pos[nbor]) {
-                trips.emplace_back(cty, pos[nbor], -1.0);
-            }
-        }
-    }
-
-    // now add the vertex degrees as triplets
-    for (size_t v = 0; v < minor_V; v++) {
-        trips.emplace_back(v, v, static_cast<double>(vertex_degrees[v]));
-    }
-
-    // now return the log determinant
-    return compute_log_det_from_entries(trips, minor_V);
-}
-
-
-// Compute the log number of spanning trees on a region
-double Plan::compute_log_region_spanning_trees(MapParams const &map_params,
-                                               int const region_id) const {
-    double log_st = 0;
-    // gather the counties to iterate over
-    std::set<int> region_counties;
-    // // if one county just that
-    if (map_params.num_counties == 1) {
-        // if there's only 1 county
-        region_counties.insert(map_params.counties[0]);
-    } else {
-        // just add the counties in that region
-        for (size_t v = 0; v < map_params.V; v++) {
-            if (region_ids[v] == region_id) {
-                region_counties.insert(map_params.counties[v]);
-            }
-        }
-    }
-    // comput tau for each county intersect region
-    for (auto const county_num : region_counties) {
-        log_st += compute_log_region_and_county_spanning_tree(
-            map_params.g, map_params.counties, county_num, region_ids, region_id, region_id);
-    }
-    // Add county level multigraph tau
-    log_st += compute_log_county_level_spanning_tree(map_params.g, map_params.counties,
-                                                           map_params.num_counties, region_ids,
-                                                           region_id, region_id);
-
-    // double old_log_st = 0;
-    // // comput tau for each county intersect region
-    // for (auto const county_num: region_counties) {
-    //     old_log_st += compute_log_region_and_county_spanning_tree(
-    //         map_params.g, map_params.counties, county_num,
-    //         region_ids, region_id, region_id
-    //     );
-    // }
-    // // Add county level multigraph tau
-    // old_log_st += compute_log_county_level_spanning_tree(
-    //     map_params.g, map_params.counties, map_params.num_counties,
-    //     region_ids,
-    //     region_id, region_id
-    // );
-    // REprintf("New %f vs old %f, diff is %.20F and %d\n",
-    //     log_st, old_log_st, std::fabs(log_st - old_log_st), old_log_st == log_st
-    // );
-
-    return log_st;
-}
-
-// Compute the log number of spanning trees on a merged region
-double Plan::compute_log_merged_region_spanning_trees(MapParams const &map_params,
-                                                      int const region1_id,
-                                                      int const region2_id) const {
-    double log_st = 0;
-    // gather the counties to iterate over
-    std::set<int> region_counties;
-    // // if one county just that
-    if (map_params.num_counties == 1) {
-        // if there's only 1 county
-        region_counties.insert(map_params.counties[0]);
-    } else {
-        // just add the counties in that region
-        for (size_t v = 0; v < map_params.V; v++) {
-            if (region_ids[v] == region1_id || region_ids[v] == region2_id) {
-                region_counties.insert(map_params.counties[v]);
-            }
-        }
-    }
-
-    // comput tau for each county intersect region
-    for (auto const county_num : region_counties) {
-        log_st += compute_log_region_and_county_spanning_tree(
-            map_params.g, map_params.counties, county_num, region_ids, region1_id, region2_id);
-    }
-    // Add county level multigraph tau
-    log_st += compute_log_county_level_spanning_tree(map_params.g, map_params.counties,
-                                                     map_params.num_counties, region_ids,
-                                                     region1_id, region2_id);
-
-    return log_st;
-}
-
-double Plan::compute_log_plan_spanning_trees(MapParams const &map_params) const {
-    double log_st = 0;
-    // compute tau from each region
-    for (size_t region_id = 0; region_id < num_regions; region_id++) {
-        log_st += compute_log_region_spanning_trees(map_params, region_id);
-    }
-    return log_st;
-}
-
 // Selects a valid multidistrict to split uniformly at random
 //
 // Given a plan object with at least one multidistrict this function randomly
@@ -1079,8 +834,7 @@ void Plan::fill_in_skipped_subtrees(
 std::pair<bool, std::vector<std::pair<RegionID, RegionID>>>
 Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                             SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-                                            ScoringFunction const &scoring_function,
-                                            bool const is_final_split) const {
+                                            ScoringFunction const &scoring_function) const {
     bool const result = plan_multigraph.build_plan_multigraph(region_ids, num_regions);
     // return false if not successful
     if (!result)
@@ -1088,8 +842,7 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
     // plan_multigraph.Rprint_detailed(*this);
     // else remove all the invalid size and mergesplit pairs and invalid hard constraint
     plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule, schedule_ctx);
-    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function,
-                                                         is_final_split);
+    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function);
     plan_multigraph.remove_invalid_mergesplit_pairs(*this);
     // plan_multigraph.Rprint_detailed(*this);
 
@@ -1098,7 +851,7 @@ Plan::attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
 
 std::vector<std::pair<RegionID, RegionID>> Plan::get_valid_smc_merge_regions(
     PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule, ScheduleContext &schedule_ctx,
-    ScoringFunction const &scoring_function, bool const is_final_split) const {
+    ScoringFunction const &scoring_function) const {
     // build the multigraph
     plan_multigraph.build_plan_multigraph(region_ids, num_regions);
 
@@ -1594,10 +1347,13 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
         }
     }
 
-    // else go through and build the laplacian for regions 0 through num_regions-1
-    // Now we compute spanning trees across components
-    // as a sparse upper triangle matrix
-    std::vector<SparseEntry> laplacian_minor_trips;
+    // else go through and build the laplacian for all `num_regions` regions
+    // so 0 ... `num_regions-1`
+
+    // reset the laplacian where the number of vertices
+    // is num_regions and the dropped vertex is the largest 
+    // region id so num_regions-1
+    laplacian.reset(num_regions, num_regions-1);
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1607,55 +1363,32 @@ double PlanMultigraph::compute_non_hierarchical_log_multigraph_tau(
         // component so all edges are within county edges
 
         int const edges = val.within_county_edges;
-        ;
+        if constexpr (perf_config::supposedly_safe_input_checks) {
+        // sanity check its not a loop
+        if (a_pair.second == a_pair.first) {
+            std::ostringstream oss;
+            oss << "ERROR in compute_non_hierarchical_log_multigraph_tau: "
+                << "unexpected equal region indices while constructing Laplacian minor.\n";
+            oss << "a_pair=("
+                << static_cast<int>(a_pair.first) << ", "
+                << static_cast<int>(a_pair.second) << ")\n";
+            oss << "num_regions=" << num_regions << "\n";
+            oss << "edges=" << edges << "\n";
+            oss << debug_string();
+
+            throw std::runtime_error(oss.str());
+            }
+        }
+
         // Now for both pairs we need to
         // 1. Update the degree of the vertex
         // 2. Increase the count of edges between the regions
-
-        // But if either region has index num_regions-1
-        // we don't count its degree or care about edge count
-
-        // Check if neither pair is id num_regions-1
-        if (a_pair.first != num_regions - 1 && a_pair.second != num_regions - 1) {
-            // increase the degree of both vertices by adding triplets for them
-            laplacian_minor_trips.emplace_back(a_pair.first, a_pair.first, edges);
-            laplacian_minor_trips.emplace_back(a_pair.second, a_pair.second, edges);
-            // subtract edges between them
-            // now we add the negative edges between them but only to the upper triangle
-            // meaning (smaller_reindex, bigger_reindex, -edges)
-            if (a_pair.first < a_pair.second) {
-                laplacian_minor_trips.emplace_back(a_pair.first,
-                                                    a_pair.second, -edges);
-            } else if (a_pair.second < a_pair.first) {
-                laplacian_minor_trips.emplace_back(a_pair.second,
-                                                    a_pair.first, -edges);
-            } else {
-                std::ostringstream oss;
-                oss << "ERROR in compute_non_hierarchical_log_multigraph_tau: "
-                    << "unexpected equal region indices while constructing Laplacian minor.\n";
-                oss << "a_pair=("
-                    << static_cast<int>(a_pair.first) << ", "
-                    << static_cast<int>(a_pair.second) << ")\n";
-                oss << "num_regions=" << num_regions << "\n";
-                oss << "edges=" << edges << "\n";
-                oss << debug_string();
-
-                throw std::runtime_error(oss.str());
-            }
-        } else if (a_pair.first != num_regions - 1) {
-            // increase the degree
-            laplacian_minor_trips.emplace_back(a_pair.first,
-                                                a_pair.first, edges);
-            // because other region is not being counted in this laplacian minor ignore
-        } else if (a_pair.second != num_regions - 1) {
-            // increase the degree
-            laplacian_minor_trips.emplace_back(a_pair.second,
-                                                a_pair.second, edges);
-            // because other region is not being counted in this laplacian minor ignore
-        }
+        // The laplacian builder handles that and skips adding the degree
+        // and edge count for the dropped vertex `num_regions-1`
+        laplacian.add_edge(a_pair.first, a_pair.second, edges);
     }
 
-    return compute_log_det_from_entries(laplacian_minor_trips, num_regions - 1);
+    return laplacian.log_det();
 };
 
 double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
@@ -1681,6 +1414,7 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
             ++current_reindex;
         }
     }
+    int const num_merged_regions = num_regions - 1;
 
     /*
     Recall the graph laplacian for a multigraph with V vertices is a VxV matric
@@ -1696,7 +1430,10 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
     determinant of the minor we actually have a num_regions-2 x num_regions-2 matrix
     where we delete the row and column corresponding to the merged region.
      */
-    std::vector<SparseEntry> merged_laplacian_minor_trips;
+
+    // reset the laplacian where the number of vertices
+    // is num_merged_regions and the dropped vertex is the merged_reindex
+    laplacian.reset(num_merged_regions, merged_reindex);
 
     // Now we iterate through the pairs
     for (auto const a_pair : pair_map.hashed_pairs) {
@@ -1717,58 +1454,12 @@ double PlanMultigraph::compute_non_hierarchical_merged_log_multigraph_tau(
         // Now for both pairs we need to
         // 1. Update the degree of the vertex
         // 2. Increase the count of edges between the regions
-
-        // But if either region is part of the merged region then
-        // we don't count its degree or care about edge count
-
-        // Check if neither pair is merged region
-        if (reshuffled_pair1 != merged_reindex && reshuffled_pair2 != merged_reindex) {
-            // increase the degree of both vertices by adding triplets for them
-            merged_laplacian_minor_trips.emplace_back(reshuffled_pair1, reshuffled_pair1, edges);
-            merged_laplacian_minor_trips.emplace_back(reshuffled_pair2, reshuffled_pair2, edges);
-
-            // subtract edges between them
-            // now we add the negative edges between them but only to the upper triangle
-            // meaning (smaller_reindex, bigger_reindex, -edges)
-            if (reshuffled_pair1 < reshuffled_pair2) {
-                merged_laplacian_minor_trips.emplace_back(reshuffled_pair1,
-                                                    reshuffled_pair2, -edges);
-            } else if (reshuffled_pair2 < reshuffled_pair1) {
-                merged_laplacian_minor_trips.emplace_back(reshuffled_pair2,
-                                                    reshuffled_pair1, -edges);
-            } else {
-                std::ostringstream oss;
-                oss << "ERROR in compute_non_hierarchical_merged_log_multigraph_tau: "
-                    << "unexpected equal reindexed region indices while constructing Laplacian minor.\n";
-                oss << "original pair=("
-                    << static_cast<int>(a_pair.first) << ", "
-                    << static_cast<int>(a_pair.second) << ")\n";
-                oss << "reshuffled_pair1=" << reshuffled_pair1 << "\n";
-                oss << "reshuffled_pair2=" << reshuffled_pair2 << "\n";
-                oss << "region1_id=" << static_cast<int>(region1_id) << "\n";
-                oss << "region2_id=" << static_cast<int>(region2_id) << "\n";
-                oss << "num_regions=" << num_regions << "\n";
-                oss << "merged_reindex=" << merged_reindex << "\n";
-                oss << vec_to_string(region_reindex_vec, "region_reindex_vec");
-                oss << debug_string();
-
-                throw std::runtime_error(oss.str());
-            }
-
-        } else if (reshuffled_pair1 != merged_reindex) {
-            // increase the degree
-            merged_laplacian_minor_trips.emplace_back(reshuffled_pair1,
-                                                reshuffled_pair1, edges);
-            // because other region is not being counted in this laplacian minor ignore
-        } else if (reshuffled_pair2 != merged_reindex) {
-            // increase the degree
-            merged_laplacian_minor_trips.emplace_back(reshuffled_pair2,
-                                                reshuffled_pair2, edges);
-            // because other region is not being counted in this laplacian minor ignore
-        }
+        // The laplacian builder handles that and skips adding the degree
+        // and edge count for the dropped vertex `merged_reindex`
+        laplacian.add_edge(reshuffled_pair1, reshuffled_pair2, edges);
     }
 
-    return compute_log_det_from_entries(merged_laplacian_minor_trips, num_regions - 2);
+    return laplacian.log_det();
 }
 
 double PlanMultigraph::compute_log_multigraph_tau(int const num_regions,
@@ -1914,9 +1605,10 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
                 }
             }
 
-            // Now make the graph laplacian matrix
-            // as a sparse upper triangle matrix
-            std::vector<SparseEntry> laplacian_minor_trips;
+
+            // reset the laplacian where the number of vertices
+            // is num_component_regions and the dropped vertex is the num_component_regions-1
+            laplacian.reset(num_component_regions, num_component_regions - 1);
 
             // now we iterate through all pairs where both are in this component
             while (curr_index < all_pairs.size() &&
@@ -1962,57 +1654,29 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
                 auto reindexed_pair_region1 = region_reindex_vec[pair_region1];
                 auto reindexed_pair_region2 = region_reindex_vec[pair_region2];
 
+                if constexpr (perf_config::supposedly_safe_input_checks) {
+                if (reindexed_pair_region1 == reindexed_pair_region2){
+                    std::ostringstream oss;
+                    oss << "ERROR in compute_hierarchical_log_multigraph_tau: "
+                        << "equal reindexed pair inside component Laplacian.\n";
+                    oss << "reindexed_pair_region1=" << reindexed_pair_region1 << "\n";
+                    oss << "reindexed_pair_region2=" << reindexed_pair_region2 << "\n";
+                    oss << "component_id=" << component_id << "\n";
+                    oss << "num_component_regions=" << num_component_regions << "\n";
+                    oss << "edges=" << edges << "\n";
+                    oss << debug_string();
+
+                    throw std::runtime_error(oss.str());
+                }
+                }
+
                 // Now for both pairs we need to
                 // 1. Update the degree of the vertex
                 // 2. Increase the count of edges between the regions
+                laplacian.add_edge(reindexed_pair_region1,
+                                    reindexed_pair_region2, 
+                                    edges);
 
-                // But if either region has index num_regions-1
-                // we don't count its degree or care about edge count
-
-                // Check if neither pair is id num_regions-1
-                if (reindexed_pair_region1 != num_component_regions - 1 &&
-                    reindexed_pair_region2 != num_component_regions - 1) {
-                    // increase the degree of both vertices
-                    // by adding triplets for them
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                       reindexed_pair_region1, edges);
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                       reindexed_pair_region2, edges);
-
-                    // subtract edges between them
-                    // now we add the negative edges between them but only to the upper triangle
-                    // meaning (smaller_reindex, bigger_reindex, -edges)
-                    if (reindexed_pair_region1 < reindexed_pair_region2) {
-                        laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                           reindexed_pair_region2, -edges);
-                    } else if (reindexed_pair_region2 < reindexed_pair_region1) {
-                        laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                           reindexed_pair_region1, -edges);
-                    } else {
-                        std::ostringstream oss;
-                        oss << "ERROR in compute_hierarchical_log_multigraph_tau: "
-                            << "equal reindexed pair inside component Laplacian.\n";
-                        oss << "reindexed_pair_region1=" << reindexed_pair_region1 << "\n";
-                        oss << "reindexed_pair_region2=" << reindexed_pair_region2 << "\n";
-                        oss << "component_id=" << component_id << "\n";
-                        oss << "num_component_regions=" << num_component_regions << "\n";
-                        oss << "edges=" << edges << "\n";
-                        oss << debug_string();
-
-                        throw std::runtime_error(oss.str());
-                    }
-
-                } else if (reindexed_pair_region1 != num_component_regions - 1) {
-                    // increase the degree
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                       reindexed_pair_region1, edges);
-                    // because other region is merged one ignore the edges between them
-                } else if (reindexed_pair_region2 != num_component_regions - 1) {
-                    // increase the degree
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                       reindexed_pair_region2, edges);
-                    // because other region is merged one ignore the edges between them
-                }
                 // increase current index by 1
                 ++curr_index;
             }
@@ -2021,8 +1685,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
                 // laplacian_minor.print();
             }
             // Now add log det
-            log_tau +=
-                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
+            log_tau += laplacian.log_det();
         }
     }
 
@@ -2066,9 +1729,11 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
         return log_tau;
     }
 
-    // Now we compute spanning trees across components
-    // as a sparse upper triangle matrix
-    std::vector<SparseEntry> component_laplacian_minor_trips;
+    // now reset laplacian for size `num_county_connected_components`
+    // with the ignore vertex being the last one so
+    // `num_county_connected_components - 1`
+    laplacian.reset(num_county_connected_components, 
+        num_county_connected_components - 1);
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2100,48 +1765,28 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
             REprintf("Components (%d,%d) - %g edges across!\n", component1_id, component2_id,
                      edges);
         }
+
+        if constexpr (perf_config::supposedly_safe_input_checks) {
+        if (component1_id == component2_id){
+            std::ostringstream oss;
+            oss << "ERROR in compute_hierarchical_log_multigraph_tau: "
+                << "equal component ids while constructing component Laplacian.\n";
+            oss << "component1_id=" << component1_id << "\n";
+            oss << "component2_id=" << component2_id << "\n";
+            oss << "num_county_connected_components=" << num_county_connected_components << "\n";
+            oss << "edges=" << edges << "\n";
+            oss << debug_string();
+
+            throw std::runtime_error(oss.str());
+        }
+        }
+
         // Now for both pairs we need to
         // 1. Update the degree of the vertex
         // 2. Increase the count of edges between the regions
-
-        // But if either region has index num_regions-1
-        // we don't count its degree or care about edge count
-
-        // Check if neither pair is id num_regions-1
-        if (component1_id != num_county_connected_components - 1 &&
-            component2_id != num_county_connected_components - 1) {
-            // increase the degree of both vertices
-            component_laplacian_minor_trips.emplace_back(component1_id, component1_id, edges);
-            component_laplacian_minor_trips.emplace_back(component2_id, component2_id, edges);
-
-            // subtract edges between them
-            if (component1_id < component2_id) {
-                component_laplacian_minor_trips.emplace_back(component1_id, component2_id,
-                                                             -edges);
-            } else if (component2_id < component1_id) {
-                component_laplacian_minor_trips.emplace_back(component2_id, component1_id,
-                                                             -edges);
-            } else {
-                std::ostringstream oss;
-                oss << "ERROR in compute_hierarchical_log_multigraph_tau: "
-                    << "equal component ids while constructing component Laplacian.\n";
-                oss << "component1_id=" << component1_id << "\n";
-                oss << "component2_id=" << component2_id << "\n";
-                oss << "num_county_connected_components=" << num_county_connected_components << "\n";
-                oss << "edges=" << edges << "\n";
-                oss << debug_string();
-
-                throw std::runtime_error(oss.str());
-            }
-        } else if (component1_id != num_county_connected_components - 1) {
-            // increase the degree
-            component_laplacian_minor_trips.emplace_back(component1_id, component1_id, edges);
-            // because other region is merged one ignore
-        } else if (component2_id != num_county_connected_components - 1) {
-            // increase the degree
-            component_laplacian_minor_trips.emplace_back(component2_id, component2_id, edges);
-            // because other region is merged one ignore
-        }
+        laplacian.add_edge(component1_id,
+                            component2_id, 
+                            edges);
     }
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
@@ -2149,8 +1794,7 @@ double PlanMultigraph::compute_hierarchical_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_entries(component_laplacian_minor_trips,
-                                             num_county_connected_components - 1);
+    log_tau += laplacian.log_det();
 
     return log_tau;
 }
@@ -2409,9 +2053,11 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
                 }
             }
 
-            // Now make the graph laplacian matrix
-            // as a sparse upper triangle matrix
-            std::vector<SparseEntry> laplacian_minor_trips;
+            // reset the laplacian where the number of vertices is num_component_regions
+            // and the dropped vertex is num_component_regions - 1. In the merged
+            // component both merged regions were reindexed to num_component_regions - 1,
+            // so the merged region is the dropped vertex
+            laplacian.reset(num_component_regions, num_component_regions - 1);
 
             // now we iterate through all pairs where both are in this component
             while (
@@ -2457,32 +2103,14 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
                 auto reindexed_pair_region1 = region_reindex_vec[pair_region1];
                 auto reindexed_pair_region2 = region_reindex_vec[pair_region2];
-                // Now for both pairs we need to
-                // 1. Update the degree of the vertex
-                // 2. Increase the count of edges between the regions
 
-                // But if either region has index num_regions-1
-                // we don't count its degree or care about edge count
-
-                // Check if neither pair is id num_regions-1
-                if (reindexed_pair_region1 != num_component_regions - 1 &&
-                    reindexed_pair_region2 != num_component_regions - 1) {
-                    // increase the degree of both vertices
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                       reindexed_pair_region1, edges);
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                       reindexed_pair_region2, edges);
-
-                    // subtract edges between them
-                    // now we add the negative edges between them but only to the upper triangle
-                    // meaning (smaller_reindex, bigger_reindex, -edges)
-                    if (reindexed_pair_region1 < reindexed_pair_region2) {
-                        laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                           reindexed_pair_region2, -edges);
-                    } else if (reindexed_pair_region2 < reindexed_pair_region1) {
-                        laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                           reindexed_pair_region1, -edges);
-                    } else {
+                // Distinct regions never share a reindex except the two merged ones,
+                // which both map to the dropped vertex num_component_regions - 1.
+                // add_edge skips that pair as a self loop, which is right since its
+                // edges are inside the merged region.
+                if constexpr (perf_config::supposedly_safe_input_checks) {
+                    if (reindexed_pair_region1 == reindexed_pair_region2 &&
+                        reindexed_pair_region1 != num_component_regions - 1) {
                         std::ostringstream oss;
                         oss << "ERROR in compute_hierarchical_merged_log_multigraph_tau: "
                             << "equal reindexed pair inside component Laplacian.\n";
@@ -2495,17 +2123,15 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
                         throw std::runtime_error(oss.str());
                     }
-                } else if (reindexed_pair_region1 != num_component_regions - 1) {
-                    // increase the degree
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region1,
-                                                       reindexed_pair_region1, edges);
-                    // because other region is merged one ignore
-                } else if (reindexed_pair_region2 != num_component_regions - 1) {
-                    // increase the degree
-                    laplacian_minor_trips.emplace_back(reindexed_pair_region2,
-                                                       reindexed_pair_region2, edges);
-                    // because other region is merged one ignore
                 }
+
+                // Now for both pairs we need to
+                // 1. Update the degree of the vertex
+                // 2. Increase the count of edges between the regions
+                // The laplacian builder handles that and skips adding the degree
+                // and edge count for the dropped vertex num_component_regions - 1
+                laplacian.add_edge(reindexed_pair_region1, reindexed_pair_region2, edges);
+
                 // increase current index by 1
                 ++curr_index;
             }
@@ -2513,8 +2139,7 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
                 REprintf("Printing Laplacian Minor!\n");
             }
             // Now add log det
-            log_tau +=
-                compute_log_det_from_entries(laplacian_minor_trips, num_component_regions - 1);
+            log_tau += laplacian.log_det();
         }
     }
 
@@ -2582,9 +2207,11 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
         return log_tau;
     }
 
-    // Now we compute spanning trees across components
-    // as a sparse upper triangle matrix
-    std::vector<SparseEntry> merged_component_laplacian_minor_trips;
+    // now reset laplacian for size `merged_num_admin_connected_components`
+    // with the ignore vertex being the last one, which the reindexing below
+    // assigns to the merged component
+    laplacian.reset(merged_num_admin_connected_components,
+                    merged_num_admin_connected_components - 1);
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
         REprintf("Current index now %d with %zu pairs\n", curr_index, all_pairs.size());
@@ -2637,29 +2264,12 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
             REprintf("Components (%d,%d) - %g edges across!\n", component1_id, component2_id,
                      edges);
         }
-        // Now for both pairs we need to
-        // 1. Update the degree of the vertex
-        // 2. Increase the count of edges between the regions
-
-        // But if either region has index num_regions-1
-        // we don't count its degree or care about edge count
-
-        // Check if neither pair is id num_regions-1
-        if (component1_id != merged_num_admin_connected_components - 1 &&
-            component2_id != merged_num_admin_connected_components - 1) {
-            // increase the degree of both vertices
-            merged_component_laplacian_minor_trips.emplace_back(component1_id, component1_id,
-                                                                edges);
-            merged_component_laplacian_minor_trips.emplace_back(component2_id, component2_id,
-                                                                edges);
-            // subtract edges between them
-            if (component1_id < component2_id) {
-                merged_component_laplacian_minor_trips.emplace_back(component1_id,
-                                                                    component2_id, -edges);
-            } else if (component2_id < component1_id) {
-                merged_component_laplacian_minor_trips.emplace_back(component2_id,
-                                                                    component1_id, -edges);
-            } else {
+        // Distinct components never share a reindex except the ones folded into
+        // the merged component, the dropped vertex, which add_edge skips as a
+        // self loop (same as the old code, which threw only when the ids were
+        // equal and not the merged component)
+        if constexpr (perf_config::supposedly_safe_input_checks) {
+            if (component1_id == component2_id && component1_id != merged_component) {
                 std::ostringstream oss;
                 oss << "ERROR in compute_hierarchical_merged_log_multigraph_tau: "
                     << "equal component ids while constructing merged component Laplacian.\n";
@@ -2672,17 +2282,14 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
 
                 throw std::runtime_error(oss.str());
             }
-        } else if (component1_id != merged_num_admin_connected_components - 1) {
-            // increase the degree
-            merged_component_laplacian_minor_trips.emplace_back(component1_id, component1_id,
-                                                                edges);
-            // because other region is merged one ignore
-        } else if (component2_id != merged_num_admin_connected_components - 1) {
-            // increase the degree
-            merged_component_laplacian_minor_trips.emplace_back(component2_id, component2_id,
-                                                                edges);
-            // because other region is merged one ignore
         }
+
+        // Now for both pairs we need to
+        // 1. Update the degree of the vertex
+        // 2. Increase the count of edges between the regions
+        // The laplacian builder handles that and skips adding the degree
+        // and edge count for the dropped merged component
+        laplacian.add_edge(component1_id, component2_id, edges);
     }
 
     if constexpr (DEBUG_LOG_LINK_EDGE_VERBOSE) {
@@ -2690,22 +2297,10 @@ double PlanMultigraph::compute_hierarchical_merged_log_multigraph_tau(
     }
 
     // Now add log det
-    log_tau += compute_log_det_from_entries(merged_component_laplacian_minor_trips,
-                                             merged_num_admin_connected_components - 1);
+    log_tau += laplacian.log_det();
 
     return log_tau;
 }
-
-void swap_pair_maps(RegionPairHash &a, RegionPairHash &b) {
-    std::swap(a.num_hashed_pairs, b.num_hashed_pairs);
-    std::swap(a.values, b.values);
-    std::swap(a.hashed, b.hashed);
-    std::swap(a.hashed_pairs, b.hashed_pairs);
-    std::swap(
-        a.num_hier_smc_merge_valid_pairs,
-        b.num_hier_smc_merge_valid_pairs
-    );
-};
 
 PlanMultigraph::PlanMultigraph(MapParams const &map_params,
                                bool const need_to_compute_multigraph_taus
@@ -2724,7 +2319,8 @@ PlanMultigraph::PlanMultigraph(MapParams const &map_params,
       current_county_region_vertices(map_params.num_edges + 1), pair_map(map_params.ndists),
       need_to_compute_multigraph_taus(need_to_compute_multigraph_taus),
       county_component_reindex(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0),
-      region_reindex_vec(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0)
+      region_reindex_vec(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0),
+      laplacian(need_to_compute_multigraph_taus)
       {
 
       };
@@ -3375,7 +2971,7 @@ void PlanMultigraph::remove_invalid_size_pairs(Plan const &plan,
 }
 
 void PlanMultigraph::remove_invalid_hard_constraint_pairs(
-    Plan const &plan, ScoringFunction const &scoring_function, bool const is_final_split) {
+    Plan const &plan, ScoringFunction const &scoring_function) {
     // do nothing if no hard constraints
     if (!scoring_function.any_hard_constraints)
         return;
@@ -3521,14 +3117,4 @@ bool PlanMultigraph::is_hierarchically_valid(PlanVector const &region_ids,
     // splits so we just need to check for cycles in the administratively
     // adjacent quotient graph
     return build_plan_hierarchical_multigraph(region_ids, num_regions);
-}
-
-void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b) {
-    std::swap(a.county_component, b.county_component);
-    std::swap(a.component_split_counts, b.component_split_counts);
-    std::swap(a.component_region_counts, b.component_region_counts);
-    std::swap(a.region_overlap_counties, b.region_overlap_counties);
-    std::swap(a.num_county_region_components, b.num_county_region_components);
-    std::swap(a.num_county_connected_components, b.num_county_connected_components);
-    swap_pair_maps(a.pair_map, b.pair_map);
 }

@@ -18,6 +18,7 @@
 
 #include "base_plan_type.h"
 #include "graph_plan_type.h"
+#include "graph_laplacian.h"
 #include "merging.h"
 #include "redist_alg_helpers.h"
 #include "scoring.h"
@@ -168,12 +169,11 @@ Rcpp::List ms_plans(
 
     {
         USTSampler ust_sampler(map_params, *splitting_schedule_ptr);
-        PlanMultigraph current_plan_multigraph(map_params, sampling_space ==
-                                                               SamplingSpace::LinkingEdgeSpace
-                                                );
-        PlanMultigraph proposed_plan_multigraph(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace
-            );
+        // current and proposed merge-split state
+        MergeSplitStates states(map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+        // map graph log tau scratch. Merge split only computes taus when
+        // rho != 1, so otherwise nothing is allocated
+        GraphLaplacian graph_laplacian(map_params, rho != 1);
 
         // 1 means serial under the package threading convention
         RcppThread::ThreadPool pool = get_thread_pool(1);
@@ -194,7 +194,7 @@ Rcpp::List ms_plans(
             Rprintf("Checkpoint 4!\n");
         // sanity check make sure the plan is ok
         std::vector<bool> county_component_lookup(ndists * map_params.num_counties, false);
-        bool hierarchically_valid = current_plan_multigraph.is_hierarchically_valid(
+        bool hierarchically_valid = states.current->multigraph.is_hierarchically_valid(
             *plan_ensemble.plan_ptr_vec[0], county_component_lookup);
 
         if (!hierarchically_valid) {
@@ -202,33 +202,11 @@ Rcpp::List ms_plans(
             throw Rcpp::exception("Initial Plan is not hierarchically valid. Either turn off "
                                   "counties or pass in a hierarchically valid plan\n");
         }
-        // Build the schedule context for the current plan. It is swapped with the
-        // proposed plan's context whenever a proposal is accepted, so it always
-        // matches the current plan.
-        ScheduleContext current_schedule_ctx, proposed_schedule_ctx;
-        splitting_schedule_ptr->build_context(*plan_ensemble.plan_ptr_vec[0],
-                                              current_schedule_ctx);
-
-        // build multigraph on current plan and get pairs of adj districts to merge
-        auto build_result =
-            plan_ensemble.plan_ptr_vec[0]->attempt_to_get_valid_mergesplit_pairs(
-                current_plan_multigraph, *splitting_schedule_ptr, current_schedule_ctx,
-                scoring_function, true);
-        // shouldn't be possible but just a sanity check
-        if (!build_result.first) {
-            throw Rcpp::exception("BIG ERROR: Plan registered as hierarchically valid but we "
-                                  "failed to build hierarchical multigraph!\n");
-        }
-        auto current_plan_adj_region_pairs =
-            plan_ensemble.plan_ptr_vec[0]
-                ->attempt_to_get_valid_mergesplit_pairs(
-                    current_plan_multigraph, *splitting_schedule_ptr, current_schedule_ctx,
-                    scoring_function, true)
-                .second;
-
-        // get weights
-        std::vector<double> current_plan_pair_unnoramalized_wgts = get_adj_pair_unnormalized_weights(
-            *plan_ensemble.plan_ptr_vec[0], current_plan_adj_region_pairs, pair_rule);
+        // Build the schedule context, multigraph, merge pairs and pair weights
+        // for the current plan. Throws if the multigraph can't be built, which
+        // the hierarchical validity check above should rule out.
+        states.build_current_plan_context(*plan_ensemble.plan_ptr_vec[0], *splitting_schedule_ptr,
+                                          scoring_function, pair_rule, granular_times);
 
         // Set or estimate k if doing graph space sampling
         if (sampling_space == SamplingSpace::GraphSpace) {
@@ -239,7 +217,7 @@ Rcpp::List ms_plans(
                 double tol = std::max(target - lower, upper - target) / target;
 
                 cut_k = estimate_mergesplit_cut_k(map_params,
-                    *plan_ensemble.plan_ptr_vec[0], current_plan_multigraph,
+                    *plan_ensemble.plan_ptr_vec[0], states.current->multigraph,
                     *splitting_schedule_ptr, thresh, tol, rng_state);
 
                 if (verbosity >= 3) {
@@ -261,7 +239,7 @@ Rcpp::List ms_plans(
 
         if constexpr (DEBUG_PURE_MS_VERBOSE) {
             Rprintf("Adj regions are:");
-            for (auto const &a_pair : current_plan_adj_region_pairs) {
+            for (auto const &a_pair : states.current->merge_pairs) {
                 Rprintf("(%d, %d), ", a_pair.first, a_pair.second);
             }
             Rprintf("\n");
@@ -325,10 +303,8 @@ Rcpp::List ms_plans(
                 map_params, *splitting_schedule_ptr, scoring_function, rng_state,
                 sampling_space, *plan_ensemble.plan_ptr_vec[0],
                 *proposal_plan_ensemble.plan_ptr_vec[0], ust_sampler, *tree_splitter_ptr_vec[0],
-                current_plan_multigraph, proposed_plan_multigraph, current_schedule_ctx,
-                proposed_schedule_ctx, pair_rule,
-                save_edge_selection_prob, current_plan_adj_region_pairs,
-                current_plan_pair_unnoramalized_wgts, rho, true, do_mh, false, nullptr,
+                states, graph_laplacian, pair_rule, save_edge_selection_prob, rho, do_mh,
+                false, nullptr,
                 granular_times);
 
             if constexpr (DEBUG_PURE_MS_VERBOSE) {

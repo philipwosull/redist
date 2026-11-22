@@ -8,7 +8,9 @@
 #include "scoring.h"
 #include "base_plan_type.h"
 
+#include <algorithm> // std::fill
 #include <cmath>
+#include <cstdint>   // std::uint32_t
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -92,26 +94,36 @@ int count_admin_splits(std::vector<std::vector<int>> const &admin_vertex_lists,
     return split_units;
 }
 
+// Total splits is the sum over admin units of (number of regions in the unit
+// minus 1). The distinct regions of a unit are counted with `region_seen`:
+// region r was already seen in the current unit iff region_seen[r] == stamp.
+// The stamp goes up once per unit, so region_seen never needs clearing, and
+// there are no allocations or set lookups (the old version used a std::set
+// per unit). `region_seen` needs one entry per possible reindexed region.
 int count_total_admin_splits(std::vector<std::vector<int>> const &admin_vertex_lists,
-                             std::vector<std::set<int>> &admin_unit_regions,
                              PlanVector const &region_ids,
-                             std::vector<int> const &region_reindex_vec) {
+                             std::vector<int> const &region_reindex_vec,
+                             std::vector<std::uint32_t> &region_seen,
+                             std::uint32_t &stamp) {
     int total_splits = 0;
-    int const num_admin_units = admin_vertex_lists.size();
 
-    // clear each units sets
-    for (size_t i = 0; i < num_admin_units; i++) {
-        admin_unit_regions[i].clear();
-    }
-
-    for (size_t admin_unit_i = 0; admin_unit_i < num_admin_units; admin_unit_i++) {
-        // First count how many different regions are in that admin unit
-        for (auto const v : admin_vertex_lists[admin_unit_i]) {
-            auto const v_unit_region = region_reindex_vec[region_ids[v]];
-            admin_unit_regions[admin_unit_i].insert(v_unit_region);
+    for (auto const &unit_vertices : admin_vertex_lists) {
+        // a new stamp for this unit. If the counter wraps around, clear the
+        // array once so a mark left from long ago can't look current
+        if (++stamp == 0) {
+            std::fill(region_seen.begin(), region_seen.end(), 0);
+            stamp = 1;
+        }
+        int distinct_regions = 0;
+        for (int const v : unit_vertices) {
+            int const v_unit_region = region_reindex_vec[region_ids[v]];
+            if (region_seen[v_unit_region] != stamp) {
+                region_seen[v_unit_region] = stamp;
+                ++distinct_regions;
+            }
         }
         // The number of splits is the number of regions in the admin unit minus 1
-        total_splits += admin_unit_regions[admin_unit_i].size() - 1;
+        total_splits += distinct_regions - 1;
     }
 
     return total_splits;
@@ -860,8 +872,8 @@ double TotalPlanSplitsConstraint::compute_raw_plan_constraint_score(
 
     set_identity_reindex(region_reindex_vec, num_regions);
 
-    auto splits = count_total_admin_splits(admin_vertex_lists, admin_unit_regions, region_ids,
-                                           region_reindex_vec);
+    auto splits = count_total_admin_splits(admin_vertex_lists, region_ids, region_reindex_vec,
+                                           region_seen, stamp);
 
     return splits;
 }
@@ -874,8 +886,8 @@ double TotalPlanSplitsConstraint::compute_raw_merged_plan_constraint_score(
 
     set_merged_reindex(region_reindex_vec, plan.num_regions, region1_id, region2_id);
 
-    auto splits = count_total_admin_splits(admin_vertex_lists, admin_unit_regions,
-                                           plan.region_ids, region_reindex_vec);
+    auto splits = count_total_admin_splits(admin_vertex_lists, plan.region_ids,
+                                           region_reindex_vec, region_seen, stamp);
 
     return splits;
 }

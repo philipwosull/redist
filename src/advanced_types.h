@@ -604,6 +604,93 @@ enum class SplittingSizeScheduleType : unsigned char {
 SplittingSizeScheduleType
 get_splitting_size_regime(std::string const &splitting_size_regime_str);
 
+// Log spanning tree counts (log tau) of every whole unit in the map's
+// administrative hierarchy. Computed once when MapParams is built and read
+// only after that, so it is safe to share across threads.
+//
+// The hierarchy as a tree
+// -----------------------
+// The map is split into nested units. The whole map is the root at depth 0,
+// counties are its children at depth 1, and any finer level added later (eg
+// municipalities within counties) sits one depth further down. The map
+// vertices are the leaves; they are not units and get no entry here.
+//
+//   depth 0   whole map                       1 unit
+//   depth 1   counties                        num_counties units
+//   depth 2   municipalities within counties  (future)
+//   leaves    map vertices
+//
+// Hierarchical spanning trees
+// ---------------------------
+// For a region R, the hierarchical log spanning tree count is a sum with one
+// term per unit that R touches. The term for unit u is the log tau of the
+// multigraph whose nodes are the children of u that intersect R, where two
+// children are joined by an edge weighted by the number of map edges between
+// them inside R. When the children of u are map vertices this is just the map
+// graph on R intersect u, with every edge weight 1 (map edge weights are not
+// used in tau).
+//
+// With counties only, for a region R that touches counties c_1, ..., c_k:
+//
+//   log tau(R) =   sum_i log tau(map graph on R intersect c_i)    depth 1 terms
+//                + log tau(county multigraph on c_1, ..., c_k)    depth 0 term
+//
+// What is stored
+// --------------
+// by_level[l][u] is the term for unit u at depth l when R contains ALL of u,
+// ie the log tau of the multigraph on every child of u. Depths go coarsest
+// first, so with counties only:
+//
+//   by_level[0][0]   log tau of the county multigraph of the whole map (the
+//                    multigraph in MapParams::cg, weighted by edge counts)
+//   by_level[1][c]   log tau of the map graph inside county c, for
+//                    c = 0, ..., num_counties - 1 (county label c + 1, the same
+//                    indexing as MapParams::county_vertices)
+//
+// A region containing every vertex of unit u can read by_level[l][u] for that
+// unit's term instead of computing it. Only units the region covers partially
+// need a fresh log determinant.
+//
+// whole_map is the sum of every entry, ie log tau of the region that is the
+// entire map (a plan with one region). SMC uses it for the blank map's target
+// density.
+//
+// With a single county (counties not in use) the root has one child, and a
+// multigraph with one node has log tau 0, so by_level[0] = {0.0} and
+// by_level[1] = {log tau of the whole map graph}. Nothing needs special casing.
+//
+// Exactness
+// ---------
+// Each entry is computed with the same vertex numbering (ascending) and dropped
+// vertex (the last one) that GraphLaplacian uses for the same piece. Edge
+// weights are integers, so the order edges are added doesn't change the matrix,
+// and a cached value is exactly the double a fresh computation would give. This
+// only matters for cross checking: GraphLaplacian always reads the cached value
+// for a whole unit.
+//
+// Adding a level
+// --------------
+// A finer level is appended (by_level[2] for municipalities) without moving any
+// existing index. Each by_level[1][c] then changes meaning: a county's children
+// become its municipalities, so the entry becomes the log tau of the multigraph
+// of c's municipalities. The map graph inside a whole county is no longer a term
+// of the sum at all; it is replaced by the municipality entries plus that
+// multigraph term.
+//
+// With several levels, a region containing a whole county would need its own
+// entry plus all of its descendants' entries. To make that one lookup, add
+// subtree_total[l][u] = by_level[l][u] + every descendant's entry (whole_map is
+// then subtree_total[0][0]). With counties only it equals by_level apart from
+// the root, so it is left out for now.
+struct WholeUnitLogTaus {
+    std::vector<std::vector<double>> by_level; // [depth][unit], coarsest first
+    double whole_map = 0.0;                     // sum of every entry in by_level
+
+    // For future nested sampling 
+    // subtree_total[l][u] = by_level[l][u] + sum of every descendant's by_level entry
+    // std::vector<std::vector<double>> subtree_total;
+};
+
 // Essentially just a useful container for map and some algorithm parameters
 class MapParams {
   public:
@@ -643,6 +730,8 @@ class MapParams {
     std::vector<std::vector<int>> county_vertices;    // The vertices in each county 
     Graph const county_restricted_graph; // g but with all edges crossing counties removed
     FlatGraph county_restricted_flat_graph; // flat version
+    FlatGraph const cross_county_flat_graph; // g with only the edges crossing counties
+    WholeUnitLogTaus const map_log_taus;       // Stores precomputed log tau for map and admin units
     std::vector<unsigned int> const pop; // population of each vertex
     int const V;                         // Number of vertices in the graph
     int const ndists;                    // The number of districts a final plan should have

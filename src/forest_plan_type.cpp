@@ -174,7 +174,7 @@ std::vector<std::tuple<RegionID, RegionID, double>> compute_log_tree_eff_boundar
 std::vector<std::tuple<RegionID, RegionID, double>>
 ForestPlan::get_valid_adj_regions_and_eff_log_boundary_lens(
     PlanMultigraph &plan_multigraph, const SplittingSchedule &splitting_schedule, ScheduleContext &schedule_ctx,
-    ScoringFunction const &scoring_function, bool const is_final_split, USTSampler &ust_sampler,
+    ScoringFunction const &scoring_function, USTSampler &ust_sampler,
     TreeSplitter &tree_splitter) const {
     // build the multigraph
     plan_multigraph.build_plan_multigraph(region_ids, num_regions);
@@ -183,8 +183,7 @@ ForestPlan::get_valid_adj_regions_and_eff_log_boundary_lens(
     // remove invalid size pairs
     plan_multigraph.remove_invalid_size_pairs(*this, splitting_schedule, schedule_ctx);
     // remove invalid hard constraint pairs
-    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function,
-                                                         is_final_split);
+    plan_multigraph.remove_invalid_hard_constraint_pairs(*this, scoring_function);
 
     // get pairs and log tree effective boundary
     auto region_pairs_tuple_vec = compute_log_tree_eff_boundary_lens(

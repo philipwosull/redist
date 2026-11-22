@@ -3,6 +3,7 @@
 #include <Rcpp.h>
 #include "cw_forest_walk.h"
 #include "cw_proposal.h"
+#include "graph_laplacian.h"
 #include "lct_graph_plan_type.h"
 #include "redist_alg_helpers.h"
 #include "scoring.h"
@@ -50,11 +51,15 @@ Rcpp::List cyclewalk_plans(int N, int warmup, int thin, int ndists, int total_se
     SamplingSpace const sampling_space = SamplingSpace::LCTGraphSpace;
 
     // MapParams: graph, counties, pop, sizes, MMD config.
-    MapParams const map_params(list_to_graph(adj_list), 
-        Rcpp::as<std::vector<unsigned int>>(counties), 
+    // Cycle walk only uses counties for its edge weights and never keeps plans
+    // hierarchically valid, so plans_may_be_non_hierarchical is true. Otherwise
+    // compactness would use hierarchical taus, which are undefined (and throw)
+    // once a move splits a county into disconnected pieces.
+    MapParams const map_params(list_to_graph(adj_list),
+        Rcpp::as<std::vector<unsigned int>>(counties),
         Rcpp::as<std::vector<unsigned int>>(pop), ndists, total_seats,
                                as<std::vector<int>>(district_seat_sizes), lower, target, upper,
-                            sampling_space);
+                            sampling_space, /*plans_may_be_non_hierarchical=*/true);
     int const V = map_params.V;
     bool const mmd_plans = map_params.is_mmd;
 
@@ -69,6 +74,10 @@ Rcpp::List cyclewalk_plans(int N, int warmup, int thin, int ndists, int total_se
     // ScoringFunction: replaces calc_gibbs_tgt.
     ScoringFunction const scoring_function(map_params, constraints,
                                            /*pop_temper=*/0, /*smc=*/false);
+
+    // map graph log tau scratch for the chain. Cycle walk only computes taus
+    // when compactness != 1, so otherwise nothing is allocated
+    GraphLaplacian graph_laplacian(map_params, compactness != 1.0);
 
     // Per-chain RNG.
     int const seed = static_cast<int>(Rcpp::sample(INT_MAX, 1)[0]);
@@ -167,8 +176,8 @@ Rcpp::List cyclewalk_plans(int N, int warmup, int thin, int ndists, int total_se
                     int result;
                     if (rng_state.r_unif() < cycle_walk_frac) {
                         CycleWalkDiagnostics diag;
-                        result = cycle_walk(*plan, map_params, scoring_function, compactness,
-                                            rng_state, diag);
+                        result = cycle_walk(*plan, map_params, graph_laplacian,
+                                            scoring_function, compactness, rng_state, diag);
                         if (diagnostic_mode) {
                             diag_accept_prob.push_back(diag.accept_prob);
                             diag_cycle_length.push_back(diag.cycle_length);

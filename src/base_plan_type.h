@@ -18,6 +18,7 @@
 #include "advanced_types.h"
 #include "redist_types.h"
 #include "tree_op.h"
+#include "sparse_logdet.h"
 
 class USTSampler;
 class PlanMultigraph;
@@ -142,18 +143,6 @@ class Plan {
                                                             std::vector<bool> &vertices_visited,
                                                             std::vector<bool> &regions_visited);
 
-    // Compute the log number of spanning trees on a region
-    double compute_log_region_spanning_trees(MapParams const &map_params,
-                                             int const region_id) const;
-
-    // Compute the log number of spanning trees on a merged region
-    double compute_log_merged_region_spanning_trees(MapParams const &map_params,
-                                                    int const region1_id,
-                                                    int const region2_id) const;
-
-    // Compute the log number of spanning trees on the entire plan
-    double compute_log_plan_spanning_trees(MapParams const &map_params) const;
-
     // computes the entire score of a plan
     double compute_region_score(ScoringFunction &scoring_function, int const region_id);
     double compute_just_plan_component_score(ScoringFunction &scoring_function);
@@ -164,14 +153,12 @@ class Plan {
     attempt_to_get_valid_mergesplit_pairs(PlanMultigraph &plan_multigraph,
                                           SplittingSchedule const &splitting_schedule,
                                           ScheduleContext &schedule_ctx,
-                                          ScoringFunction const &scoring_function,
-                                          bool const is_final_split) const;
+                                          ScoringFunction const &scoring_function) const;
 
     // `schedule_ctx` must be built for this plan.
     virtual std::vector<std::pair<RegionID, RegionID>> get_valid_smc_merge_regions(
         PlanMultigraph &plan_multigraph, SplittingSchedule const &splitting_schedule,
-        ScheduleContext &schedule_ctx, ScoringFunction const &scoring_function,
-        bool const is_final_split) const;
+        ScheduleContext &schedule_ctx, ScoringFunction const &scoring_function) const;
 
     // redist_smc related methods
     int choose_multidistrict_to_split(SplittingSchedule const &splitting_schedule,
@@ -252,7 +239,6 @@ class Plan {
                                                     const SplittingSchedule &splitting_schedule,
                                                     ScheduleContext &schedule_ctx,
                                                     ScoringFunction const &scoring_function,
-                                                    bool const is_final_split,
                                                     USTSampler &ust_sampler,
                                                     TreeSplitter &tree_splitter) const = 0;
 
@@ -447,8 +433,6 @@ class RegionPairHash {
     void Rprint(std::vector<int> const &county_component) const;
 };
 
-void swap_pair_maps(RegionPairHash &a, RegionPairHash &b);
-
 // Class for managing the plan region multigraph
 // primarily used for calculating weights and finding adjacent pairs
 class PlanMultigraph {
@@ -480,6 +464,8 @@ class PlanMultigraph {
     bool const need_to_compute_multigraph_taus;
     std::vector<int> county_component_reindex;
     std::vector<int> region_reindex_vec;
+
+    LaplacianBuilder laplacian; // laplacian object for computing multigraph taus
 
     // Prints relevant info - for debugging
     std::string debug_string() const;
@@ -522,8 +508,7 @@ class PlanMultigraph {
     // Removes pairs where merging them makes a plan that
     // doesn't satisfy hard constraints
     void remove_invalid_hard_constraint_pairs(Plan const &plan,
-                                              ScoringFunction const &scoring_function,
-                                              bool const is_final_split);
+                                              ScoringFunction const &scoring_function);
 
     // Removes pairs where merging them would create a hierarchically
     // invalid plan
@@ -568,8 +553,5 @@ class PlanMultigraph {
                                              RegionID const region2_id,
                                              ScoringFunction const &scoring_function);
 };
-
-// swap function
-void swap_plan_multigraphs(PlanMultigraph &a, PlanMultigraph &b);
 
 #endif

@@ -6,6 +6,7 @@
 #include <memory>
 
 class Plan;
+class GraphLaplacian;
 
 // Class used to save expensive computations like compactness for specific plans
 class WeightCache {
@@ -64,7 +65,7 @@ class WeightCacheEnsemble {
 // or computes new one and stores it if stale
 // If no caching then just computes the value
 double compute_or_fetch_log_region_compactness(Plan const &plan, RegionID const region_id,
-                                               MapParams const &map_params, double const rho,
+                                               GraphLaplacian &graph_laplacian, double const rho,
                                                bool const using_caching,
                                                WeightCache *weight_cache);
 

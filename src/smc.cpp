@@ -27,6 +27,7 @@ constexpr bool DEBUG_GSMC_PLANS_VERBOSE = false; // Compile-time constant
 #include "redist_alg_helpers.h"
 #include "splitting_schedule_types.h"
 #include "graph_plan_type.h"
+#include "graph_laplacian.h"
 #include "merging.h"
 #include "scoring.h"
 #include "wilson.h"
@@ -560,7 +561,6 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
                   std::vector<std::unique_ptr<TreeSplitter>> &tree_splitters,
                   const std::vector<double> &normalized_cumulative_weights,
                   SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
-                  bool const is_final_split,
                   bool const estimated_unbiased_normalizing_constant,
                   RcppThread::ThreadPool &pool, int verbosity, int diagnostic_level,
                   int const max_split_tries, double const multidistrict_selection_alpha) {
@@ -1030,7 +1030,7 @@ void run_merge_split_step_on_all_plans(
     SamplingSpace const sampling_space, std::vector<std::unique_ptr<Plan>> &plan_ptrs_vec,
     std::vector<std::unique_ptr<Plan>> &new_plan_ptrs_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    std::string const merge_prob_type, double const rho, bool const is_final,
+    std::string const merge_prob_type, double const rho,
     int const nsteps_to_run, int const merge_split_step_num, int const step_num,
     SMCDiagnostics &smc_diagnostics, WeightCacheEnsemble &cache_ensemble, int verbosity) {
 
@@ -1064,17 +1064,19 @@ void run_merge_split_step_on_all_plans(
     // now make the vectors of important variables to be used by threads
     std::vector<USTSampler> ust_samplers_vec;
     ust_samplers_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> current_plan_multigraphs_vec;
-    current_plan_multigraphs_vec.reserve(num_threads);
-    std::vector<PlanMultigraph> proposed_plan_multigraphs_vec;
-    proposed_plan_multigraphs_vec.reserve(num_threads);
+    // current and proposed merge-split state for each thread
+    std::vector<MergeSplitStates> merge_split_states_vec;
+    merge_split_states_vec.reserve(num_threads);
+    // map graph log tau scratch for each thread. Merge split only computes
+    // taus when rho != 1, so otherwise nothing is allocated
+    std::vector<GraphLaplacian> graph_laplacians_vec;
+    graph_laplacians_vec.reserve(num_threads);
 
     for (size_t i = 0; i < num_threads; i++) {
         ust_samplers_vec.emplace_back(map_params, splitting_schedule);
-        current_plan_multigraphs_vec.emplace_back(
+        merge_split_states_vec.emplace_back(
             map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
-        proposed_plan_multigraphs_vec.emplace_back(
-            map_params, sampling_space == SamplingSpace::LinkingEdgeSpace);
+        graph_laplacians_vec.emplace_back(map_params, rho != 1);
     }
     std::vector<GranularMCMCTimes> granular_weight_times(num_threads);
 
@@ -1110,8 +1112,8 @@ void run_merge_split_step_on_all_plans(
                 map_params, splitting_schedule, scoring_functions[thread_id],
                 rng_states[thread_id], sampling_space, *plan_ptrs_vec[i], *new_plan_ptrs_vec[i],
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id],
-                current_plan_multigraphs_vec[thread_id],
-                proposed_plan_multigraphs_vec[thread_id], merge_prob_type, rho, is_final,
+                merge_split_states_vec[thread_id], graph_laplacians_vec[thread_id],
+                merge_prob_type, rho,
                 nsteps_to_run, thread_tree_sizes[thread_id],
                 thread_successful_tree_sizes[thread_id], true,
                 cache_ensemble.weight_cache_ptr_vec[i].get(),
@@ -1121,8 +1123,8 @@ void run_merge_split_step_on_all_plans(
                 map_params, splitting_schedule, scoring_functions[thread_id],
                 rng_states[thread_id], sampling_space, *plan_ptrs_vec[i], *new_plan_ptrs_vec[i],
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id],
-                current_plan_multigraphs_vec[thread_id],
-                proposed_plan_multigraphs_vec[thread_id], merge_prob_type, rho, is_final,
+                merge_split_states_vec[thread_id], graph_laplacians_vec[thread_id],
+                merge_prob_type, rho,
                 nsteps_to_run, thread_tree_sizes[thread_id],
                 thread_successful_tree_sizes[thread_id], false, nullptr,
                 granular_weight_times[thread_id]);
@@ -1227,9 +1229,8 @@ void compute_all_plans_log_optimal_incremental_weights(
     std::vector<ScoringFunction> const &scoring_functions, double rho,
     double const whole_map_compactness_term, std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
-    bool compute_log_splitting_prob, 
+    bool compute_log_splitting_prob,
     double const multidistrict_selection_alpha,
-    bool is_final_plans, 
     std::vector<double> &log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
     SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
     int verbosity) {
@@ -1249,10 +1250,15 @@ void compute_all_plans_log_optimal_incremental_weights(
     ust_samplers_vec.reserve(num_threads);
     std::vector<PlanMultigraph> plan_multigraphs_vec;
     plan_multigraphs_vec.reserve(num_threads);
+    // map graph log tau scratch for each thread. Optimal weights only compute
+    // taus when rho != 1, so otherwise nothing is allocated
+    std::vector<GraphLaplacian> graph_laplacians_vec;
+    graph_laplacians_vec.reserve(num_threads);
     for (size_t i = 0; i < num_threads; i++) {
         ust_samplers_vec.emplace_back(map_params, splitting_schedule);
         plan_multigraphs_vec.emplace_back(map_params,
                                           sampling_space == SamplingSpace::LinkingEdgeSpace);
+        graph_laplacians_vec.emplace_back(map_params, rho != 1);
     }
     std::vector<GranularWeightTimes> granular_weight_times(num_threads);
 
@@ -1279,25 +1285,27 @@ void compute_all_plans_log_optimal_incremental_weights(
         //     active_guard = std::make_unique<ActiveUserGuard>(active_users[thread_id]);
         // }
 
-        auto total_weight_time = maybe_now(); // optional timing 
+        auto total_weight_time = maybe_now(); // optional timing
 
 
         if (cache_ensemble.using_caching) {
             log_incremental_weights[i] = compute_log_optimal_incremental_weights(
-                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id],
+                graph_laplacians_vec[thread_id], splitting_schedule,
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
                 scoring_functions[thread_id], rho, whole_map_compactness_term,
                 compute_log_splitting_prob, multidistrict_selection_alpha,
-                is_final_plans, cache_ensemble.using_caching,
-                cache_ensemble.weight_cache_ptr_vec[i].get(), 
+                cache_ensemble.using_caching,
+                cache_ensemble.weight_cache_ptr_vec[i].get(),
                 granular_weight_times[thread_id]);
         } else {
             log_incremental_weights[i] = compute_log_optimal_incremental_weights(
-                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+                *plans_ptr_vec[i], plan_multigraphs_vec[thread_id],
+                graph_laplacians_vec[thread_id], splitting_schedule,
                 ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
                 scoring_functions[thread_id], rho, whole_map_compactness_term,
                 compute_log_splitting_prob, multidistrict_selection_alpha,
-                is_final_plans, cache_ensemble.using_caching,
+                cache_ensemble.using_caching,
                 nullptr, granular_weight_times[thread_id]);
         }
 
@@ -1345,7 +1353,6 @@ void compute_all_plans_log_simple_incremental_weights(
     std::vector<std::unique_ptr<Plan>> &plans_ptr_vec,
     std::vector<std::unique_ptr<TreeSplitter>> &tree_splitter_ptrs_vec,
     bool compute_log_splitting_prob, double const multidistrict_selection_alpha,
-    bool is_final_plans,
     std::vector<double> &log_incremental_weights, WeightCacheEnsemble &cache_ensemble,
     SMCDiagnostics &smc_diagnostics, int const smc_step_num, int const step_num,
     int verbosity) {
@@ -1364,10 +1371,17 @@ void compute_all_plans_log_simple_incremental_weights(
     ust_samplers_vec.reserve(num_threads);
     std::vector<PlanMultigraph> plan_multigraphs_vec;
     plan_multigraphs_vec.reserve(num_threads);
+    // map graph log tau scratch for each thread. In graph space simple weights
+    // only compute taus when rho != 1, but in forest and linking edge space
+    // they compute merged region taus for every valid pair, whatever rho is
+    bool const need_log_taus = rho != 1 || sampling_space != SamplingSpace::GraphSpace;
+    std::vector<GraphLaplacian> graph_laplacians_vec;
+    graph_laplacians_vec.reserve(num_threads);
     for (size_t i = 0; i < num_threads; i++) {
         ust_samplers_vec.emplace_back(map_params, splitting_schedule);
         plan_multigraphs_vec.emplace_back(map_params,
                                           sampling_space == SamplingSpace::LinkingEdgeSpace);
+        graph_laplacians_vec.emplace_back(map_params, need_log_taus);
     }
     std::vector<GranularWeightTimes> granular_weight_times(num_threads);
 
@@ -1397,10 +1411,11 @@ void compute_all_plans_log_simple_incremental_weights(
         auto total_weight_time = maybe_now(); // optional timing
 
         log_incremental_weights[i] = compute_simple_log_incremental_weight(
-            *plans_ptr_vec[i], plan_multigraphs_vec[thread_id], splitting_schedule,
+            *plans_ptr_vec[i], plan_multigraphs_vec[thread_id],
+            graph_laplacians_vec[thread_id], splitting_schedule,
             ust_samplers_vec[thread_id], *tree_splitter_ptrs_vec[thread_id], sampling_space,
             scoring_functions[thread_id], rho, compute_log_splitting_prob, multidistrict_selection_alpha,
-            is_final_plans, cache_ensemble.using_caching,
+            cache_ensemble.using_caching,
             cache_ensemble.using_caching ? cache_ensemble.weight_cache_ptr_vec[i].get() : nullptr,
             granular_weight_times[thread_id]);
 
@@ -1905,8 +1920,9 @@ Rcpp::List run_redist_smc(
         double entire_map_compactness = 0.0;
         // compute the whole map compactness if we're starting from scratch
         if (initial_num_regions == 1) {
-            double entire_map_log_st_count = plan_ensemble_ptr->plan_ptr_vec[0]->compute_log_region_spanning_trees(
-                    map_params, 0);
+            // the plan is one region covering the map, so this is the whole
+            // map log tau MapParams precomputes
+            double const entire_map_log_st_count = map_params.map_log_taus.whole_map;
             entire_map_compactness = (rho - 1) * entire_map_log_st_count;
             log_blank_map_target_density = rho * entire_map_log_st_count;
 
@@ -2075,7 +2091,7 @@ Rcpp::List run_redist_smc(
                                  rng_states, sampling_space, plan_ensemble_ptr,
                                  dummy_plan_ensemble_ptr, tree_splitter_ptrs_vec,
                                  normalized_cumulative_weights, smc_diagnostics, smc_step_num,
-                                 step_num, is_final_splitting_step,
+                                 step_num,
                                  estimated_unbiased_normalizing_constant, pool,
                                  verbosity, diagnostic_mode ? 3 : 0, max_split_tries,
                                  multidistrict_selection_alpha);
@@ -2152,9 +2168,8 @@ Rcpp::List run_redist_smc(
                             pool, map_params, *splitting_schedule_ptr, sampling_space,
                             scoring_functions, rho, entire_map_compactness,
                             plan_ensemble_ptr->plan_ptr_vec, tree_splitter_ptrs_vec,
-                            compute_log_splitting_prob, 
+                            compute_log_splitting_prob,
                             multidistrict_selection_alpha,
-                            is_final_splitting_step,
                             log_incremental_weights,
                             *cache_ensemble_ptr,
                             smc_diagnostics, smc_step_num, step_num,
@@ -2167,7 +2182,6 @@ Rcpp::List run_redist_smc(
                             scoring_functions, rho, plan_ensemble_ptr->plan_ptr_vec,
                             tree_splitter_ptrs_vec, compute_log_splitting_prob,
                             multidistrict_selection_alpha,
-                            is_final_splitting_step,
                             log_incremental_weights,
                             *cache_ensemble_ptr,
                             smc_diagnostics, smc_step_num, step_num,
@@ -2321,7 +2335,7 @@ Rcpp::List run_redist_smc(
                         pool, map_params, *splitting_schedule_ptr, scoring_functions,
                         rng_states, sampling_space, plan_ensemble_ptr->plan_ptr_vec,
                         dummy_plan_ensemble_ptr->plan_ptr_vec, tree_splitter_ptrs_vec,
-                        merge_prob_type, rho, is_final_splitting_step, nsteps_to_run,
+                        merge_prob_type, rho, nsteps_to_run,
                         merge_split_step_num, step_num, smc_diagnostics, *cache_ensemble_ptr,
                         verbosity);
 

@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+class GraphLaplacian;
+
 struct CycleWalkUpdate {
     DistrictPair changed_districts;
     std::vector<std::pair<int, int>> links;
@@ -36,8 +38,12 @@ struct CycleWalkDiagnostics {
  *   -2 fewer than 2 boundary edges between picked pair
  *   -3 couldn't construct cycle paths
  *   -4 no valid cut pairs satisfying population bounds
+ *
+ * `graph_laplacian` is only used when compactness != 1, so it may be
+ * unallocated otherwise.
  */
 int cycle_walk(LCTGraphPlan &plan, MapParams const &map_params,
+               GraphLaplacian &graph_laplacian,
                ScoringFunction const &scoring_function, double const compactness,
                RNGState &rng_state, CycleWalkDiagnostics &diagnostics);
 
