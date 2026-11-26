@@ -723,6 +723,8 @@ void run_smc_step(const MapParams &map_params, SplittingSchedule const &splittin
         REprintf("Done!\n");
     }
     
+    // subtract one off for the last success
+    extra_particle_reject_ct--;
 
     // now save the number of failed attempts before sampling the extra plan
     smc_diagnostics.tries_before_extra_particle[smc_step_num] = extra_particle_reject_ct;
