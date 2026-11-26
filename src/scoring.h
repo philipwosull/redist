@@ -158,6 +158,17 @@ class PopTemperConstraint : public RegionConstraint {
                   out[ndists - 1] = false;
 
                   return out;
+              }(),
+              // Temper only regions that are not districts. 
+               // Temp fix for residue problem right now 
+              Rcpp::_["nseats_to_score"] = [&map_params]() {
+                  // R-style mask indexed from 1: out[s - 1] is for regions with s seats
+                  // (the RegionConstraint constructor prepends a false for index 0)
+                  std::vector<bool> out(map_params.total_seats, false);
+                  for (int s = 1; s <= map_params.total_seats; ++s) {
+                      out[s - 1] = !map_params.is_district[s];
+                  }
+                  return out;
               }()
           ),
           ndists,
