@@ -2681,7 +2681,7 @@ void PlanMultigraph::build_plan_non_hierarchical_multigraph(PlanVector const &re
     for (int v = 0; v < map_params.V; v++) {
         auto v_region = region_ids[v];
 
-        for (auto const u : map_params.g[v]) {
+        for (auto const u : map_params.map_graph.neighbors(v)) {
             auto u_region = region_ids[u];
             if (v_region < u_region) {
                 // if true then count
@@ -2785,7 +2785,7 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph(PlanVector const &region
             auto v_region = region_ids[v];
             auto v_county = map_params.counties[v];
 
-            for (int u : map_params.g[v]) {
+            for (int u : map_params.map_graph.neighbors(v)) {
                 // get region and county
                 auto u_region = region_ids[u];
                 auto u_county = map_params.counties[u];

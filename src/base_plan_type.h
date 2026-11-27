@@ -349,11 +349,16 @@ class RegionPairHash {
 
     // resets the hash map to blank state
     void reset() {
-        std::fill(values.begin(), values.end(), PairHashData());
-        std::fill(hashed.begin(), hashed.end(), false);
+        // every entry that can differ from its default is listed in hashed_pairs
+        for (auto const &a_pair : hashed_pairs) {
+            auto const i = pair_hash(a_pair.first, a_pair.second);
+            values[i] = PairHashData();
+            hashed[i] = false;
+        }
         hashed_pairs.clear();
         num_hashed_pairs = 0;
         num_hier_smc_merge_valid_pairs = 0;
+
     }
 
     // gets the value a pair is hashed to if its been hashed
