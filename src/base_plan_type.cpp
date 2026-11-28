@@ -3057,14 +3057,31 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector c
     std::vector<int> const &block = map_params.county_sorted_edges.county_offsets;
     int const n_edges = static_cast<int>(edges.size());
 
-    // union-find root of region r, halving the path on the way up
+    // Union-find over the regions. mg_region_parent[r] is the region that r points
+    // to. Following parents from any region always ends at its group's root, the one
+    // region in the group whose parent is itself. Two regions are in the same group
+    // exactly when they reach the same root. Step 0 makes every region its own root,
+    // and step 1 unites the two regions on each within-county boundary edge (by
+    // pointing one root at the other), so after step 1 each group is one county
+    // component.
+    //
+    // find_root(r) walks up from r to its root and returns it. On the way up it
+    // halves the path: each region it passes is repointed to its grandparent, so the
+    // next lookup from there takes about half as many steps. Without this a run of
+    // unions could build a long chain that every later lookup walks in full.
+    // Repointing never changes which root a region reaches, only how fast.
+    //
+    // Example: parents 3 -> 2 -> 1 -> 0, with 0 the root. find_root(3) sets
+    // parent[3] = 1 and moves to 1, then sets parent[1] = 0 and moves to 0, which is
+    // its own parent, so it returns 0. Afterwards 3 -> 1 -> 0 and 2 -> 1 -> 0.
     auto find_root = [this](int r) {
         // while the parent of a region is not itself keep moving up
         while (mg_region_parent[r] != r) {
+            // skip r's parent: point r at its grandparent, then step there
             mg_region_parent[r] = mg_region_parent[mg_region_parent[r]];
             r = mg_region_parent[r];
         }
-        return r;
+        return r; // r is its own parent, so it is the root
     };
 
     // ---- 0. reset ----
@@ -3120,22 +3137,50 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector c
     }
 
     // ---- 3. number the components, count, and check validity ----
+    // After step 1 two regions share a union-find root exactly when they are in the
+    // same county component, so each root stands for one component. This step:
+    //   a. walks the counties in order of their smallest vertex, gives each root a
+    //      component number the first time one of its counties shows up, and totals
+    //      the counties and incidences (region-county pairs) in each component
+    //   b. gives each region its root's component number and counts the regions in
+    //      each component
+    //   c. computes splits = incidences - counties for each component and returns
+    //      false if any component has a cycle (splits >= regions)
+    // mg_comp_of_root[root] is the component number given to a root, or -1 if it has
+    // none yet. Roots are region ids, so only the active regions' entries are reset.
     std::fill(mg_comp_of_root.begin(), mg_comp_of_root.begin() + num_regions, -1);
     int num_components = 0;
+
+    // a. The traversal numbered components in the order it reached them, walking
+    //    vertices from smallest to largest. A component is made of whole counties,
+    //    so its smallest vertex is the smallest vertex of one of its counties, and
+    //    numbering in order of the counties' smallest vertices gives the same
+    //    numbers. That keeps the multigraph tau summing over components in the same
+    //    order as before.
     for (int const c : map_params.counties_by_min_vertex) {
         // every region in the county is in the same component, so take the one
         // holding the county's smallest vertex
+        // (county_vertices[c] is in increasing order, so [0] is that vertex. Any
+        // vertex of the county would give the same root: its regions were united
+        // in step 1, or the county lies inside one region.)
         int const root = find_root(region_ids[map_params.county_vertices[c][0]]);
         if (mg_comp_of_root[root] < 0) { // first county of a new component
+            // give it the next number and start its totals at 0 (the mg_comp_*
+            // arrays aren't reset in step 0, so they're zeroed here instead)
             mg_comp_of_root[root] = num_components;
             mg_comp_counties[num_components] = 0;
             mg_comp_incidences[num_components] = 0;
             ++num_components;
         }
+        // add this county, and the regions it holds (from step 1), to its component
         int const component = mg_comp_of_root[root];
         ++mg_comp_counties[component];
         mg_comp_incidences[component] += mg_county_incidences[c];
     }
+
+    // b. Every region has a vertex in some county, and that county's root is the
+    //    region's root, so every region's root was numbered in (a) and the lookup
+    //    below never gives -1.
     for (int r = 0; r < num_regions; ++r) {
         int const component = mg_comp_of_root[find_root(r)];
         county_component[r] = component;
@@ -3143,8 +3188,15 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector c
     }
     num_county_connected_components = num_components;
     // the traversal's meaning: pieces beyond the first one in each component
+    // (total_pieces counts one piece per region-county incidence)
     num_county_region_components = total_pieces - num_components;
 
+    // c. Within a component, take a graph with a node for each region and each
+    //    county, and an edge for each incidence. It's connected, so it has at least
+    //    (regions + counties - 1) edges, and it has no cycle exactly when it has no
+    //    more than that. With splits = incidences - counties, this means
+    //    splits >= regions - 1 always holds, and no cycle <=> splits <= regions - 1.
+    //    A cycle means the plan isn't hierarchically valid.
     for (int component = 0; component < num_components; ++component) {
         component_split_counts[component] =
             mg_comp_incidences[component] - mg_comp_counties[component];
