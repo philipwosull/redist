@@ -349,11 +349,16 @@ class RegionPairHash {
 
     // resets the hash map to blank state
     void reset() {
-        std::fill(values.begin(), values.end(), PairHashData());
-        std::fill(hashed.begin(), hashed.end(), false);
+        // every entry that can differ from its default is listed in hashed_pairs
+        for (auto const &a_pair : hashed_pairs) {
+            auto const i = pair_hash(a_pair.first, a_pair.second);
+            values[i] = PairHashData();
+            hashed[i] = false;
+        }
         hashed_pairs.clear();
         num_hashed_pairs = 0;
         num_hier_smc_merge_valid_pairs = 0;
+
     }
 
     // gets the value a pair is hashed to if its been hashed
@@ -454,10 +459,22 @@ class PlanMultigraph {
     int num_county_region_components;    // number of connected components
     int num_county_connected_components; // Number of different county adj components
 
-    // queues used when building multigraph
+    // Queues used by the traversal build (all three) and by
+    // is_hierarchically_connected (the last one). They start with capacity 0
+    // and are allocated the first time one of those runs, so a multigraph that
+    // only uses the single-pass build never pays for them.
     CircularQueue<int> other_counties_vertices;
     CircularQueue<int> current_county_diff_region_vertices;
     CircularQueue<int> current_county_region_vertices;
+
+    // Scratch for build_plan_hierarchical_multigraph_single_pass, sized only
+    // when counties are on (that function describes how each is used)
+    std::vector<int> mg_seen;              // (ndists) c + 1 once a region is seen in county c's block
+    std::vector<int> mg_region_parent;     // (ndists) union-find parent of each region
+    std::vector<int> mg_county_incidences; // (num_counties) number of regions in each county
+    std::vector<int> mg_comp_of_root;      // (ndists) component number of a union-find root, -1 if none
+    std::vector<int> mg_comp_counties;     // (ndists) number of counties in each component
+    std::vector<int> mg_comp_incidences;   // (ndists) region-county incidences in each component
 
     RegionPairHash pair_map; // used for tracking adj regions
 
@@ -476,6 +493,17 @@ class PlanMultigraph {
         PlanVector const &region_ids
     ) const;
 
+    // Debug check (perf_config::object_integrity_checking). `other` was built
+    // from the same plan by the other hierarchical build, and `this_result` and
+    // `other_result` are the two builds' return values. Throws if the two
+    // disagree on anything both builds must agree on: the return value and, when
+    // the plan is valid, the components, their split and region counts, the
+    // counters and every pair's counts and flags. The order of
+    // pair_map.hashed_pairs and the representative edges may differ.
+    void check_matches_other_build(PlanMultigraph const &other, bool const this_result,
+                                   bool const other_result, PlanVector const &region_ids,
+                                   int const num_regions) const;
+
 
     // Checks if the a plan is hierarchically connected, ie
     // Each county intersect region has at most 1 component
@@ -491,13 +519,39 @@ class PlanMultigraph {
                                                      int const num_regions,
                                                      std::vector<bool> component_lookup);
 
-    bool build_plan_hierarchical_multigraph(PlanVector const &region_ids,
-                                            int const num_regions);
+    // Builds the hierarchical multigraph with a traversal of the whole map that
+    // counts every county region piece, so it is correct for any plan, including
+    // one where a region's intersection with a county is in several pieces.
+    // Returns false if the plan is not hierarchically valid.
+    bool build_plan_hierarchical_multigraph_traversal(PlanVector const &region_ids,
+                                                      int const num_regions);
+
+    // Builds the same hierarchical multigraph from one pass over the map's
+    // edges (MapParams::county_sorted_edges) instead of a traversal. Only for
+    // plans which are guaranteed to be hierarchically connected, i.e.,
+    // where every region intersect county is a single connected piece,
+    // which holds for every plan the hierarchical samplers produce. 
+    // Returns false if the plan is not hierarchically valid. Only 
+    // guaranteed to return fail for hierarchically connected plan
+    // that has a cycle in the admin-component graph.
+    bool build_plan_hierarchical_multigraph_single_pass(PlanVector const &region_ids,
+                                                        int const num_regions);
 
     // builds the multigraph ignoring counties
     void build_plan_non_hierarchical_multigraph(PlanVector const &region_ids);
 
+    // Builds the plan multigraph, ignoring counties when counties are off.
+    // Returns false if the plan is not hierarchically valid. Uses the
+    // single-pass build, so it is only for plans where every region intersect
+    // county is a single piece, which holds for every plan the samplers
+    // produce. Debug builds (object_integrity_checking) also run the traversal
+    // and check that the two builds agree.
     bool build_plan_multigraph(PlanVector const &region_ids, int const num_regions);
+
+    // The same, but always using the traversal when counties are on, so it is
+    // correct for any plan. For plans passed in that are not known to be
+    // hierarchical, as in the manual and utility functions.
+    bool build_plan_multigraph_traversal(PlanVector const &region_ids, int const num_regions);
 
     // Removes the pairs with invalid merge sizes
     // from the hash map

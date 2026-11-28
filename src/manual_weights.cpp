@@ -420,8 +420,8 @@ std::vector<double> compute_plans_log_optimal_weights(
         std::ostringstream plan_msg;
 
         // build the multigraph
-        plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
-                                              plan_ensemble.plan_ptr_vec[i]->num_regions);
+        plan_multigraph.build_plan_multigraph_traversal(plan_ensemble.plan_ptr_vec[i]->region_ids,
+                                                        plan_ensemble.plan_ptr_vec[i]->num_regions);
         // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
         // and must not be touched from a worker thread; take the string instead.
         plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);
@@ -570,8 +570,8 @@ std::vector<double> compute_plans_log_simple_weights(
         std::ostringstream plan_msg;
 
         // build the multigraph
-        plan_multigraph.build_plan_multigraph(plan_ensemble.plan_ptr_vec[i]->region_ids,
-                                              plan_ensemble.plan_ptr_vec[i]->num_regions);
+        plan_multigraph.build_plan_multigraph_traversal(plan_ensemble.plan_ptr_vec[i]->region_ids,
+                                                        plan_ensemble.plan_ptr_vec[i]->num_regions);
         // `Rprint_detailed` writes through Rcpp::Rcerr, which is an R connection
         // and must not be touched from a worker thread; take the string instead.
         plan_msg << plan_multigraph.debug_string_detailed(*plan_ensemble.plan_ptr_vec[i]);

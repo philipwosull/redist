@@ -402,9 +402,19 @@ test_that("est_norm_biased agrees with est_norm_unbiased and needs no extra trie
     biased <- est_norm_biased(map, plans)
     unbiased <- est_norm_unbiased(map, plans)
 
-    # the biased version leaves the discarded extra particle out of the
-    # denominator, so it divides by less and always comes out larger
-    expect_true(all(biased > unbiased))
+    # The unbiased estimator divides each step's weight sum by every try (the
+    # kept particles' plus the discarded extra particle's) minus one, so its
+    # denominator exceeds the biased one by exactly the extra particle's failed
+    # tries. The biased estimate is never smaller, and the two are equal when
+    # the extra particle split on its first try at every step.
+    expect_true(all(biased >= unbiased))
+    diags <- attr(plans, "internal_diagnostics")
+    smc_steps <- lapply(attr(plans, "run_information"), function(r) r$step_types == "smc")
+    expected_gap <- mapply(function(d, s) {
+        kept_tries <- colSums(d$draw_tries_mat)[s]
+        sum(log(kept_tries + d$tries_before_extra_particle) - log(kept_tries))
+    }, diags, smc_steps)
+    expect_equal(biased - unbiased, expected_gap)
 
     # that extra particle is one draw among many, so the two barely differ
     expect_equal(log(mean(exp(biased))), exact_log_norm(0.2), tolerance = 0.05)
