@@ -2316,7 +2316,14 @@ PlanMultigraph::PlanMultigraph(MapParams const &map_params,
       num_county_region_components(0), num_county_connected_components(0),
       other_counties_vertices(map_params.num_edges + 1),
       current_county_diff_region_vertices(map_params.num_edges + 1),
-      current_county_region_vertices(map_params.num_edges + 1), pair_map(map_params.ndists),
+      current_county_region_vertices(map_params.num_edges + 1),
+      mg_seen(counties_on ? map_params.ndists : 0, 0),
+      mg_region_parent(counties_on ? map_params.ndists : 0, 0),
+      mg_county_incidences(counties_on ? map_params.num_counties : 0, 0),
+      mg_comp_of_root(counties_on ? map_params.ndists : 0, -1),
+      mg_comp_counties(counties_on ? map_params.ndists : 0, 0),
+      mg_comp_incidences(counties_on ? map_params.ndists : 0, 0),
+      pair_map(map_params.ndists),
       need_to_compute_multigraph_taus(need_to_compute_multigraph_taus),
       county_component_reindex(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0),
       region_reindex_vec(need_to_compute_multigraph_taus ? map_params.ndists : 0, 0),
@@ -2908,6 +2915,167 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_traversal(PlanVector con
         if (pair_map.values[hash_index].admin_adjacent)
             continue;
         // else reset values mark merge as false
+        pair_map.values[hash_index].merge_is_hier_valid = false;
+        --pair_map.num_hier_smc_merge_valid_pairs;
+    }
+
+    return true;
+}
+
+/*
+ * Builds the hierarchical plan multigraph from one pass over the map's edges,
+ * for plans where every region intersect county is a single connected piece (see
+ * the declaration). It gives the same pair counts, county components and their
+ * numbering, split and region counts, counters and validity as the traversal.
+ * Only the order of pair_map.hashed_pairs and the representative edges can differ.
+ *
+ * It relies on four facts, using that counties are contiguous (R splits
+ * non-contiguous counties before they reach C++):
+ *   1. On these plans the number of county region pieces is the number of
+ *      (region, county) incidences: pairs where the region has a vertex in the
+ *      county.
+ *   2. In a county holding two or more regions, every region present has a
+ *      within-county edge to a different region, so the regions seen on the
+ *      county's within-county boundary edges are exactly the regions in it. A
+ *      county with no such edge lies inside one region.
+ *   3. Regions in the same county are joined inside it by within-county edges
+ *      between different regions, and a county component is a group of regions
+ *      linked through shared counties, so a union-find over regions on those
+ *      edges finds the components.
+ *   4. Every component is made of whole counties, so numbering components in
+ *      order of their counties' smallest vertices reproduces the traversal's
+ *      numbering (by smallest vertex).
+ *
+ * Steps:
+ *   0. reset the outputs and the scratch
+ *   1. within-county edges, one county block at a time: count the pair data,
+ *      mark each region present in the county (mg_seen) and unite the two
+ *      regions (mg_region_parent)
+ *   2. cross-county edges: count the pair data
+ *   3. number the components, count the counties, regions and incidences in
+ *      each, set the counters and check validity
+ *   4. mark which pairs can merge hierarchically (the same as the traversal)
+ */
+bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector const &region_ids,
+                                                                    int const num_regions) {
+    int const num_counties = map_params.num_counties;
+    std::vector<MapEdge> const &edges = map_params.county_sorted_edges.edges;
+    // county c's within-county edges are edges[block[c]] up to edges[block[c + 1] - 1],
+    // and the cross-county edges run from edges[block[num_counties]] to the end
+    std::vector<int> const &block = map_params.county_sorted_edges.county_offsets;
+    int const n_edges = static_cast<int>(edges.size());
+
+    // union-find root of region r, halving the path on the way up
+    auto find_root = [this](int r) {
+        // while the parent of a region is not itself keep moving up
+        while (mg_region_parent[r] != r) {
+            mg_region_parent[r] = mg_region_parent[mg_region_parent[r]];
+            r = mg_region_parent[r];
+        }
+        return r;
+    };
+
+    // ---- 0. reset ----
+    pair_map.reset();
+    std::fill(county_component.begin(), county_component.end(), 0);
+    std::fill(component_split_counts.begin(), component_split_counts.end(), 0);
+    std::fill(component_region_counts.begin(), component_region_counts.end(), 0);
+    for (int r = 0; r < num_regions; ++r) {
+        mg_seen[r] = 0;          // not seen in any county yet
+        mg_region_parent[r] = r; // every region its own group
+    }
+
+    // ---- 1. within-county edges, one county block at a time ----
+    int total_pieces = 0; // incidences summed over counties
+    for (int c = 0; c < num_counties; ++c) {
+        int const mark = c + 1; // mg_seen value meaning "seen in county c"
+        int regions_in_county = 0;
+        for (int e = block[c]; e < block[c + 1]; ++e) {
+            int const u = edges[e].u;
+            int const v = edges[e].v;
+            auto const u_region = region_ids[u];
+            auto const v_region = region_ids[v];
+            if (u_region == v_region) continue; // inside one region: nothing to record
+            // two regions will overlap in at most 1 admin unit so this check is ok
+            pair_map.count_graph_edge(u_region, v_region, u, v, true, c);
+            if (mg_seen[u_region] != mark) {
+                mg_seen[u_region] = mark;
+                ++regions_in_county;
+            }
+            if (mg_seen[v_region] != mark) {
+                mg_seen[v_region] = mark;
+                ++regions_in_county;
+            }
+            int const u_root = find_root(u_region);
+            int const v_root = find_root(v_region);
+            if (u_root != v_root) mg_region_parent[v_root] = u_root;
+        }
+        // no boundary edge inside the county, so it lies inside one region
+        if (regions_in_county == 0) regions_in_county = 1;
+        mg_county_incidences[c] = regions_in_county;
+        total_pieces += regions_in_county;
+    }
+
+    // ---- 2. cross-county edges ----
+    for (int e = block[num_counties]; e < n_edges; ++e) {
+        int const u = edges[e].u;
+        int const v = edges[e].v;
+        auto const u_region = region_ids[u];
+        auto const v_region = region_ids[v];
+        if (u_region != v_region) {
+            pair_map.count_graph_edge(u_region, v_region, u, v, false, -1);
+        }
+    }
+
+    // ---- 3. number the components, count, and check validity ----
+    std::fill(mg_comp_of_root.begin(), mg_comp_of_root.begin() + num_regions, -1);
+    int num_components = 0;
+    for (int const c : map_params.counties_by_min_vertex) {
+        // every region in the county is in the same component, so take the one
+        // holding the county's smallest vertex
+        int const root = find_root(region_ids[map_params.county_vertices[c][0]]);
+        if (mg_comp_of_root[root] < 0) { // first county of a new component
+            mg_comp_of_root[root] = num_components;
+            mg_comp_counties[num_components] = 0;
+            mg_comp_incidences[num_components] = 0;
+            ++num_components;
+        }
+        int const component = mg_comp_of_root[root];
+        ++mg_comp_counties[component];
+        mg_comp_incidences[component] += mg_county_incidences[c];
+    }
+    for (int r = 0; r < num_regions; ++r) {
+        int const component = mg_comp_of_root[find_root(r)];
+        county_component[r] = component;
+        ++component_region_counts[component];
+    }
+    num_county_connected_components = num_components;
+    // the traversal's meaning: pieces beyond the first one in each component
+    num_county_region_components = total_pieces - num_components;
+
+    for (int component = 0; component < num_components; ++component) {
+        component_split_counts[component] =
+            mg_comp_incidences[component] - mg_comp_counties[component];
+        if (component_split_counts[component] < component_region_counts[component] - 1) {
+            // impossible: a component's region-county graph is connected
+            REprintf(
+                "CODE ERROR!!!! Somehow county adj component has %d regions but %d splits!\n",
+                component_region_counts[component], component_split_counts[component]);
+        } else if (component_split_counts[component] >= component_region_counts[component]) {
+            // the component's region-county graph has a cycle as there's too many components 
+            return false;
+        }
+    }
+
+    // ---- 4. pairs in the same component can only merge if admin adjacent ----
+    pair_map.num_hier_smc_merge_valid_pairs = pair_map.num_hashed_pairs;
+    for (auto const a_pair : pair_map.hashed_pairs) {
+        if (county_component[a_pair.first] != county_component[a_pair.second])
+            continue;
+        auto hash_index = pair_map.pair_hash(a_pair.first, a_pair.second);
+        pair_map.values[hash_index].same_admin_component = true;
+        if (pair_map.values[hash_index].admin_adjacent)
+            continue;
         pair_map.values[hash_index].merge_is_hier_valid = false;
         --pair_map.num_hier_smc_merge_valid_pairs;
     }

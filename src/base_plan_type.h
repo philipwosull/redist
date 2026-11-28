@@ -464,6 +464,15 @@ class PlanMultigraph {
     CircularQueue<int> current_county_diff_region_vertices;
     CircularQueue<int> current_county_region_vertices;
 
+    // Scratch for build_plan_hierarchical_multigraph_single_pass, sized only
+    // when counties are on (that function describes how each is used)
+    std::vector<int> mg_seen;              // (ndists) c + 1 once a region is seen in county c's block
+    std::vector<int> mg_region_parent;     // (ndists) union-find parent of each region
+    std::vector<int> mg_county_incidences; // (num_counties) number of regions in each county
+    std::vector<int> mg_comp_of_root;      // (ndists) component number of a union-find root, -1 if none
+    std::vector<int> mg_comp_counties;     // (ndists) number of counties in each component
+    std::vector<int> mg_comp_incidences;   // (ndists) region-county incidences in each component
+
     RegionPairHash pair_map; // used for tracking adj regions
 
     bool const need_to_compute_multigraph_taus;
@@ -502,6 +511,17 @@ class PlanMultigraph {
     // Returns false if the plan is not hierarchically valid.
     bool build_plan_hierarchical_multigraph_traversal(PlanVector const &region_ids,
                                                       int const num_regions);
+
+    // Builds the same hierarchical multigraph from one pass over the map's
+    // edges (MapParams::county_sorted_edges) instead of a traversal. Only for
+    // plans which are guaranteed to be hierarchically connected, i.e.,
+    // where every region intersect county is a single connected piece,
+    // which holds for every plan the hierarchical samplers produce. 
+    // Returns false if the plan is not hierarchically valid. Only 
+    // guaranteed to return fail for hierarchically connected plan
+    // that has a cycle in the admin-component graph.
+    bool build_plan_hierarchical_multigraph_single_pass(PlanVector const &region_ids,
+                                                        int const num_regions);
 
     // builds the multigraph ignoring counties
     void build_plan_non_hierarchical_multigraph(PlanVector const &region_ids);
