@@ -496,13 +496,26 @@ class PlanMultigraph {
                                                      int const num_regions,
                                                      std::vector<bool> component_lookup);
 
-    bool build_plan_hierarchical_multigraph(PlanVector const &region_ids,
-                                            int const num_regions);
+    // Builds the hierarchical multigraph with a traversal of the whole map that
+    // counts every county region piece, so it is correct for any plan, including
+    // one where a region's intersection with a county is in several pieces.
+    // Returns false if the plan is not hierarchically valid.
+    bool build_plan_hierarchical_multigraph_traversal(PlanVector const &region_ids,
+                                                      int const num_regions);
 
     // builds the multigraph ignoring counties
     void build_plan_non_hierarchical_multigraph(PlanVector const &region_ids);
 
+    // Builds the plan multigraph, ignoring counties when counties are off.
+    // Returns false if the plan is not hierarchically valid. For plans the
+    // samplers produce, which are always hierarchical (every region intersect
+    // county is a single piece). It currently uses the traversal.
     bool build_plan_multigraph(PlanVector const &region_ids, int const num_regions);
+
+    // The same, but always using the traversal when counties are on, so it is
+    // correct for any plan. For plans passed in that are not known to be
+    // hierarchical, as in the manual and utility functions.
+    bool build_plan_multigraph_traversal(PlanVector const &region_ids, int const num_regions);
 
     // Removes the pairs with invalid merge sizes
     // from the hash map

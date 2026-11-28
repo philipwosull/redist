@@ -511,7 +511,7 @@ double get_log_number_linking_edges(Rcpp::List const &adj_list, Rcpp::IntegerVec
     std::vector<RegionID> flattened_all_plans(region_ids.begin(), region_ids.end());
     PlanVector plan_region_ids(flattened_all_plans, 0, plan_multigraph.map_params.V);
 
-    plan_multigraph.build_plan_multigraph(plan_region_ids, num_regions);
+    plan_multigraph.build_plan_multigraph_traversal(plan_region_ids, num_regions);
 
     return plan_multigraph.compute_log_multigraph_tau(num_regions, scoring_function);
 }
@@ -541,7 +541,7 @@ double get_merged_log_number_linking_edges(Rcpp::List const &adj_list,
     std::vector<RegionID> flattened_all_plans(region_ids.begin(), region_ids.end());
     PlanVector plan_region_ids(flattened_all_plans, 0, plan_multigraph.map_params.V);
 
-    plan_multigraph.build_plan_multigraph(plan_region_ids, num_regions);
+    plan_multigraph.build_plan_multigraph_traversal(plan_region_ids, num_regions);
 
     return plan_multigraph.compute_merged_log_multigraph_tau(num_regions, region1_id,
                                                              region2_id, scoring_function);

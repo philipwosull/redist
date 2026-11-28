@@ -2695,8 +2695,8 @@ void PlanMultigraph::build_plan_non_hierarchical_multigraph(PlanVector const &re
     return;
 }
 
-bool PlanMultigraph::build_plan_hierarchical_multigraph(PlanVector const &region_ids,
-                                                        int const num_regions) {
+bool PlanMultigraph::build_plan_hierarchical_multigraph_traversal(PlanVector const &region_ids,
+                                                                  int const num_regions) {
     // reset the hash map
     pair_map.reset();
     // reset the vertices visited vector
@@ -2917,9 +2917,14 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph(PlanVector const &region
 
 bool PlanMultigraph::build_plan_multigraph(PlanVector const &region_ids,
                                            int const num_regions) {
+    return build_plan_multigraph_traversal(region_ids, num_regions);
+}
+
+bool PlanMultigraph::build_plan_multigraph_traversal(PlanVector const &region_ids,
+                                                     int const num_regions) {
     bool successful;
     if (counties_on) {
-        successful = build_plan_hierarchical_multigraph(region_ids, num_regions);
+        successful = build_plan_hierarchical_multigraph_traversal(region_ids, num_regions);
     } else {
         build_plan_non_hierarchical_multigraph(region_ids);
         successful = true;
@@ -3116,5 +3121,5 @@ bool PlanMultigraph::is_hierarchically_valid(PlanVector const &region_ids,
     // Now we know its hierarchically connected and has at most num_regions-1
     // splits so we just need to check for cycles in the administratively
     // adjacent quotient graph
-    return build_plan_hierarchical_multigraph(region_ids, num_regions);
+    return build_plan_hierarchical_multigraph_traversal(region_ids, num_regions);
 }
