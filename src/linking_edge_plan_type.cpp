@@ -5,8 +5,6 @@
  * Purpose: Implementation of Plan type for Linking Edge space
  ********************************************************/
 
-#include <functional>
-
 #include <Rcpp.h>
 #include "linking_edge_plan_type.h"
 
@@ -17,85 +15,72 @@
 
 constexpr bool DEBUG_L_EDGE_PLANS_VERBOSE = false; // Compile-time constant
 
-// randomly initalize a set of linking edges
+// Initial linking edges for a plan, chosen deterministically.
+//
+// The linking edges must form a hierarchical spanning tree of the regions, the
+// structure compute_hierarchical_log_multigraph_tau counts and every tree the
+// sampler builds by cutting has:
+//   - inside each county component, a spanning tree of its regions using
+//     within-county edges between administratively adjacent regions
+//   - joining the components, a spanning tree of them using cross-county edges
+//     between regions in different components
+// A spanning tree of all hierarchically valid pairs is not enough: it can join
+// two regions of one component through another component, and later moves can
+// then leave a linking edge between regions whose merge is not valid.
+//
+// So the pairs are added with a union-find in two passes: first the
+// administratively adjacent pairs, which never cross components and connect
+// each component's regions (counties are contiguous, and regions spanning
+// county lines link the counties), then the remaining valid pairs, which all
+// join different components. A pair is only added when it joins two groups not
+// yet connected. Each pair's linking edge is its representative edge, which is
+// a within-county edge exactly when the pair is administratively adjacent.
+// With counties off every pair counts as administratively adjacent, so the
+// first pass alone gives an ordinary spanning tree.
+//
+// `region_graph` is no longer used.
 std::vector<std::pair<int, int>> get_intial_linking_edges(PlanMultigraph &plan_multigraph,
                                                           PlanVector const &region_ids,
                                                           int const num_regions,
                                                           Graph &region_graph) {
-    // First clear the region graph
-    for (size_t i = 0; i < region_graph.size(); i++) {
-        region_graph[i].clear();
-    }
-
-    // Now build the plan multigraph
     plan_multigraph.build_plan_multigraph(region_ids, num_regions);
 
-    // Now iterate over the pairs and build the region graph
-    // Where two regions are adjacent iff they are a valid merge
-    for (auto const a_pair : plan_multigraph.pair_map.hashed_pairs) {
-        // Get the value
-        auto val = plan_multigraph.pair_map.get_value(a_pair.first, a_pair.second).second;
-        // continue if not a valid hierarchical merge
-        if (!val.merge_is_hier_valid)
-            continue;
-        // else add edge to the graph
-        region_graph[a_pair.first].push_back(a_pair.second);
-        region_graph[a_pair.second].push_back(a_pair.first);
-    }
-
-    // Now we're going to make a random walk through the graph to make
-    // a spanning tree.
-    std::vector<bool> visited(num_regions, false);
-    std::vector<std::pair<int, int>> tree_edges;
-    tree_edges.reserve(num_regions - 1);
-
-    // DFS helper
-    std::function<void(int)> dfs = [&](int v) {
-        visited[v] = true;
-        for (int u : region_graph[v]) {
-            if (!visited[u]) {
-                tree_edges.emplace_back(v, u); // record tree edge
-                dfs(u);
-            }
+    // union-find over regions: parent[r] == r marks a group's root
+    std::vector<int> parent(num_regions);
+    for (int r = 0; r < num_regions; ++r) parent[r] = r;
+    auto find_root = [&parent](int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]]; // path halving
+            x = parent[x];
         }
+        return x;
     };
-
-    dfs(0); // start from node 0
 
     std::vector<std::pair<int, int>> initial_edges;
     initial_edges.reserve(num_regions - 1);
 
-    // Now for each pair walk through the graph and find the first edge
-    // in those regions
-    for (auto const a_pair : tree_edges) {
-        // REprintf("(%d, %d)\n", a_pair.first, a_pair.second);
-        bool pair_found = false;
-        for (size_t v = 0; v < plan_multigraph.map_params.V; v++) {
-            auto v_region = region_ids[v];
-            // REprintf("%d in region %d\n", v, v_region);
-            if (v_region != a_pair.first)
+    for (int pass = 0; pass < 2; ++pass) {
+        bool const want_admin_adjacent = (pass == 0);
+        for (auto const &a_pair : plan_multigraph.pair_map.hashed_pairs) {
+            auto const pair_data =
+                plan_multigraph.pair_map.get_value(a_pair.first, a_pair.second).second;
+            if (!pair_data.merge_is_hier_valid ||
+                pair_data.admin_adjacent != want_admin_adjacent) {
                 continue;
-
-            for (auto const u : plan_multigraph.map_params.g[v]) {
-                auto u_region = region_ids[u];
-                if (u_region == a_pair.second) {
-                    // means we found edge between (region1, region2) so push back
-                    initial_edges.push_back({v, u});
-                    pair_found = true;
-                    break;
-                }
             }
-            if (pair_found)
-                break;
+            int const root1 = find_root(a_pair.first);
+            int const root2 = find_root(a_pair.second);
+            if (root1 == root2) continue;
+            parent[root2] = root1;
+            initial_edges.push_back(
+                {pair_data.representative_vertex1, pair_data.representative_vertex2});
         }
-        // if (!pair_found)
-        //     REprintf("ERROR! No edge found!\n");
     }
 
-    if (static_cast<int>(tree_edges.size()) != num_regions - 1) {
+    if (static_cast<int>(initial_edges.size()) != num_regions - 1) {
         std::ostringstream oss;
-        oss << "get_intial_linking_edges: the valid region adjacency graph is disconnected "
-            << "so no linking tree exists. Found " << tree_edges.size()
+        oss << "get_intial_linking_edges: the regions can't be joined by a hierarchical "
+            << "linking tree. Found " << initial_edges.size()
             << " linking edges but a plan with " << num_regions << " regions needs "
             << num_regions - 1 << ".\n";
         throw std::runtime_error(oss.str());
