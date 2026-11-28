@@ -172,6 +172,124 @@ Graph build_cross_county_graph(Graph const &g, std::vector<unsigned int> const &
     return cross_graph;
 }
 
+/*
+ * Every undirected edge of g once, ordered for the single-pass plan multigraph
+ * build (see CountySortedEdges in advanced_types.h): the within-county edges
+ * grouped into one block per county, then the cross-county edges, each group in
+ * canonical order (sorted by the smaller endpoint u, then the larger endpoint v).
+ *
+ * The canonical edges are each vertex v paired with its neighbors u > v, the
+ * same edges count_undirected_edges counts. They are then placed with a counting
+ * sort: count each county's within-county edges, prefix-sum the counts into
+ * block start positions, and put every edge in the next free slot of its block
+ * (or after all the blocks, for a cross-county edge). Placing edges in canonical
+ * order keeps every block in canonical order.
+ */
+CountySortedEdges build_county_sorted_edges(
+    Graph const &g,
+    std::vector<unsigned int> const &counties,
+    int const num_counties,
+    int const num_edges
+) {
+    // canonical edges: for each vertex v, its neighbors u > v in ascending order
+    std::vector<MapEdge> canonical;
+    canonical.reserve(num_edges);
+    std::vector<int> higher_nbors;
+    for (std::size_t v = 0; v < g.size(); ++v) {
+        higher_nbors.clear();
+        for (int const u : g[v]) {
+            if (u > static_cast<int>(v)) higher_nbors.push_back(u);
+        }
+        std::sort(higher_nbors.begin(), higher_nbors.end());
+        for (int const u : higher_nbors) canonical.push_back({static_cast<int>(v), u});
+    }
+
+    CountySortedEdges out;
+
+    // count county c's within-county edges into slot c + 1, then prefix-sum so
+    // county_offsets[c] is where county c's block starts
+    out.county_offsets.assign(num_counties + 1, 0);
+    for (MapEdge const &edge : canonical) {
+        if (counties[edge.u] == counties[edge.v]) {
+            int const c = static_cast<int>(counties[edge.u]) - 1; // 1-indexed label to county
+            ++out.county_offsets[c + 1];
+        }
+    }
+    for (int c = 0; c < num_counties; ++c) {
+        out.county_offsets[c + 1] += out.county_offsets[c];
+    }
+
+    // place every edge: next_slot[c] is the next free position in county c's
+    // block, and cross_slot the next free position after all the blocks
+    out.edges.resize(canonical.size());
+    std::vector<int> next_slot(out.county_offsets.begin(), out.county_offsets.end() - 1);
+    int cross_slot = out.county_offsets[num_counties];
+    for (MapEdge const &edge : canonical) {
+        int const slot = (counties[edge.u] == counties[edge.v])
+            ? next_slot[counties[edge.u] - 1]++
+            : cross_slot++;
+        out.edges[slot] = edge;
+    }
+
+    if constexpr (perf_config::redundancy_checks) {
+        auto fail = [](std::string const &what, int const e, MapEdge const &edge) {
+            std::ostringstream oss;
+            oss << "build_county_sorted_edges: " << what << " at position " << e
+                << " (edge " << edge.u << ", " << edge.v << ").";
+            throw std::runtime_error(oss.str());
+        };
+        if (static_cast<int>(out.edges.size()) != num_edges) {
+            throw std::runtime_error(
+                "build_county_sorted_edges: built " + std::to_string(out.edges.size()) +
+                " edges but the map has " + std::to_string(num_edges) + ".");
+        }
+        // each county's block holds only that county's edges
+        for (int c = 0; c < num_counties; ++c) {
+            for (int e = out.county_offsets[c]; e < out.county_offsets[c + 1]; ++e) {
+                MapEdge const &edge = out.edges[e];
+                if (edge.u >= edge.v) fail("an edge with u >= v", e, edge);
+                if (static_cast<int>(counties[edge.u]) != c + 1 ||
+                    static_cast<int>(counties[edge.v]) != c + 1) {
+                    fail("an edge not inside county " + std::to_string(c) + " in that county's block", e, edge);
+                }
+            }
+        }
+        // everything after the blocks crosses counties
+        for (int e = out.county_offsets[num_counties]; e < static_cast<int>(out.edges.size()); ++e) {
+            MapEdge const &edge = out.edges[e];
+            if (edge.u >= edge.v) fail("an edge with u >= v", e, edge);
+            if (counties[edge.u] == counties[edge.v]) fail("a within-county edge among the cross-county edges", e, edge);
+        }
+    }
+
+    return out;
+}
+
+/*
+ * The 0 indexed counties ordered by their smallest vertex: scanning the vertices
+ * in increasing order, a county is appended the first time one of its vertices
+ * appears. The single-pass plan multigraph build numbers county components in
+ * this order, which reproduces the numbering of the traversal it replaces (that
+ * traversal meets components in order of their smallest vertex, and every
+ * component is made of whole counties).
+ */
+std::vector<int> build_counties_by_min_vertex(
+    std::vector<unsigned int> const &counties,
+    int const num_counties
+) {
+    std::vector<int> order;
+    order.reserve(num_counties);
+    std::vector<char> seen(num_counties, 0);
+    for (std::size_t v = 0; v < counties.size(); ++v) {
+        int const c = static_cast<int>(counties[v]) - 1;
+        if (!seen[c]) {
+            seen[c] = 1;
+            order.push_back(c);
+        }
+    }
+    return order;
+}
+
 // builds map graph taus 
 WholeUnitLogTaus build_whole_unit_log_taus(
     std::vector<std::vector<int>> const &county_vertices,
@@ -638,6 +756,8 @@ MapParams::MapParams(Graph const &g,
                                                 : g),
         county_restricted_flat_graph(county_restricted_graph),
         cross_county_flat_graph(build_cross_county_graph(g, counties)),
+        county_sorted_edges(build_county_sorted_edges(g, counties, num_counties, num_edges)),
+        counties_by_min_vertex(build_counties_by_min_vertex(counties, num_counties)),
         map_log_taus(build_whole_unit_log_taus(
             county_vertices,county_restricted_graph, cg
         )),

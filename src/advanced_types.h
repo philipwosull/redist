@@ -686,9 +686,29 @@ struct WholeUnitLogTaus {
     std::vector<std::vector<double>> by_level; // [depth][unit], coarsest first
     double whole_map = 0.0;                     // sum of every entry in by_level
 
-    // For future nested sampling 
+    // For future nested sampling
     // subtree_total[l][u] = by_level[l][u] + sum of every descendant's by_level entry
     // std::vector<std::vector<double>> subtree_total;
+};
+
+// One undirected map edge between vertices u and v, with u < v
+struct MapEdge {
+    int u;
+    int v;
+};
+
+// Every undirected map edge exactly once, ordered for the single-pass plan
+// multigraph build. The within-county edges come first, grouped into one block
+// per county, then all the cross-county edges. Inside each block, and among the
+// cross-county edges, edges are in canonical order (sorted by u, then by v).
+//
+// County c's block (c = 0, ..., num_counties - 1, county label c + 1) is
+//   edges[county_offsets[c]], ..., edges[county_offsets[c + 1] - 1]
+// and the cross-county edges run from edges[county_offsets[num_counties]] to
+// the end. A county with no within-county edges has an empty block.
+struct CountySortedEdges {
+    std::vector<MapEdge> edges;
+    std::vector<int> county_offsets; // num_counties + 1 entries
 };
 
 // Essentially just a useful container for map and some algorithm parameters
@@ -731,6 +751,11 @@ class MapParams {
     Graph const county_restricted_graph; // g but with all edges crossing counties removed
     FlatGraph county_restricted_flat_graph; // flat version
     FlatGraph const cross_county_flat_graph; // g with only the edges crossing counties
+    // Every edge once, grouped by county, for the single-pass plan multigraph build
+    CountySortedEdges const county_sorted_edges;
+    // 0 indexed counties ordered by their smallest vertex index, so the
+    // single-pass build numbers county components the way the traversal did
+    std::vector<int> const counties_by_min_vertex;
     WholeUnitLogTaus const map_log_taus;       // Stores precomputed log tau for map and admin units
     std::vector<unsigned int> const pop; // population of each vertex
     int const V;                         // Number of vertices in the graph
