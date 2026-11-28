@@ -43,7 +43,10 @@ std::vector<std::pair<int, int>> get_intial_linking_edges(PlanMultigraph &plan_m
                                                           PlanVector const &region_ids,
                                                           int const num_regions,
                                                           Graph &region_graph) {
-    plan_multigraph.build_plan_multigraph(region_ids, num_regions);
+    // Starting plans can come from outside the samplers, so use the traversal,
+    // which is correct for any plan. It also keeps the pairs in the order the
+    // linking edges have always been chosen from.
+    plan_multigraph.build_plan_multigraph_traversal(region_ids, num_regions);
 
     // union-find over regions: parent[r] == r marks a group's root
     std::vector<int> parent(num_regions);

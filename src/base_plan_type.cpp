@@ -2314,9 +2314,11 @@ PlanMultigraph::PlanMultigraph(MapParams const &map_params,
       component_region_counts(counties_on ? map_params.ndists : 0, 0),
       region_overlap_counties(counties_on ? map_params.ndists : 0),
       num_county_region_components(0), num_county_connected_components(0),
-      other_counties_vertices(map_params.num_edges + 1),
-      current_county_diff_region_vertices(map_params.num_edges + 1),
-      current_county_region_vertices(map_params.num_edges + 1),
+      // allocated on first use by the traversal or is_hierarchically_connected,
+      // so a multigraph that only uses the single-pass build never pays for them
+      other_counties_vertices(0),
+      current_county_diff_region_vertices(0),
+      current_county_region_vertices(0),
       mg_seen(counties_on ? map_params.ndists : 0, 0),
       mg_region_parent(counties_on ? map_params.ndists : 0, 0),
       mg_county_incidences(counties_on ? map_params.num_counties : 0, 0),
@@ -2701,6 +2703,9 @@ PlanMultigraph::is_hierarchically_connected(PlanVector const &region_ids,
         return std::make_pair(true, 1);
     // reset the vertices visited vector
     std::fill(vertices_visited.begin(), vertices_visited.end(), false);
+    // allocate the queue on first use
+    current_county_region_vertices.ensure_capacity(
+        static_cast<std::size_t>(map_params.num_edges) + 1);
     // component_lookup should be length num_countes * num_regions
     // fill this vector with all false
     std::fill(component_lookup.begin(), component_lookup.end(), false);
@@ -2802,7 +2807,11 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_traversal(PlanVector con
     // quotient graph. reset that
     num_county_connected_components = 0;
 
-    // clear the queues
+    // allocate the queues on first use, then clear them
+    std::size_t const queue_capacity = static_cast<std::size_t>(map_params.num_edges) + 1;
+    other_counties_vertices.ensure_capacity(queue_capacity);
+    current_county_diff_region_vertices.ensure_capacity(queue_capacity);
+    current_county_region_vertices.ensure_capacity(queue_capacity);
     other_counties_vertices.clear();
     current_county_diff_region_vertices.clear();
     current_county_region_vertices.clear();
@@ -3168,17 +3177,23 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector c
 
 bool PlanMultigraph::build_plan_multigraph(PlanVector const &region_ids,
                                            int const num_regions) {
-    bool const result = build_plan_multigraph_traversal(region_ids, num_regions);
+    bool result;
+    if (counties_on) {
+        result = build_plan_hierarchical_multigraph_single_pass(region_ids, num_regions);
+    } else {
+        build_plan_non_hierarchical_multigraph(region_ids);
+        result = true;
+    }
 
-    // Debug builds also run the single-pass build on a scratch multigraph and
-    // check that it agrees with the traversal
+    // Debug builds check the representative edges and, with counties on, also
+    // run the traversal on a scratch multigraph and check the two builds agree
     if constexpr (perf_config::object_integrity_checking) {
+        if (result) check_representative_edges(region_ids);
         if (counties_on) {
-            PlanMultigraph single_pass(map_params);
-            bool const single_pass_result =
-                single_pass.build_plan_hierarchical_multigraph_single_pass(region_ids, num_regions);
-            if (single_pass_result) single_pass.check_representative_edges(region_ids);
-            check_matches_other_build(single_pass, result, single_pass_result, region_ids,
+            PlanMultigraph traversal(map_params);
+            bool const traversal_result =
+                traversal.build_plan_hierarchical_multigraph_traversal(region_ids, num_regions);
+            check_matches_other_build(traversal, result, traversal_result, region_ids,
                                       num_regions);
         }
     }

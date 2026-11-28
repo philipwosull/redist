@@ -846,11 +846,21 @@ template <typename T> class CircularQueue {
     std::vector<T> buffer;
     size_t head = 0; // Points to the front item
     size_t tail = 0; // Points to the next write position
-    size_t const capacity;
+    size_t capacity;
     size_t size = 0;
 
   public:
     explicit CircularQueue(size_t max_size) : buffer(max_size), capacity(max_size) {}
+
+    // Grows the queue to hold at least `min_capacity` items. Does nothing if it
+    // already can; otherwise it reallocates and empties the queue. For queues
+    // created with capacity 0 and only allocated once they are first needed.
+    void ensure_capacity(size_t const min_capacity) {
+        if (capacity >= min_capacity) return;
+        buffer.assign(min_capacity, T());
+        capacity = min_capacity;
+        head = tail = size = 0;
+    }
 
     bool empty() const { return size == 0; }
     bool full() const { return size == capacity; }

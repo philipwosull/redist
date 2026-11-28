@@ -459,7 +459,10 @@ class PlanMultigraph {
     int num_county_region_components;    // number of connected components
     int num_county_connected_components; // Number of different county adj components
 
-    // queues used when building multigraph
+    // Queues used by the traversal build (all three) and by
+    // is_hierarchically_connected (the last one). They start with capacity 0
+    // and are allocated the first time one of those runs, so a multigraph that
+    // only uses the single-pass build never pays for them.
     CircularQueue<int> other_counties_vertices;
     CircularQueue<int> current_county_diff_region_vertices;
     CircularQueue<int> current_county_region_vertices;
@@ -538,9 +541,11 @@ class PlanMultigraph {
     void build_plan_non_hierarchical_multigraph(PlanVector const &region_ids);
 
     // Builds the plan multigraph, ignoring counties when counties are off.
-    // Returns false if the plan is not hierarchically valid. For plans the
-    // samplers produce, which are always hierarchical (every region intersect
-    // county is a single piece). It currently uses the traversal.
+    // Returns false if the plan is not hierarchically valid. Uses the
+    // single-pass build, so it is only for plans where every region intersect
+    // county is a single piece, which holds for every plan the samplers
+    // produce. Debug builds (object_integrity_checking) also run the traversal
+    // and check that the two builds agree.
     bool build_plan_multigraph(PlanVector const &region_ids, int const num_regions);
 
     // The same, but always using the traversal when counties are on, so it is
