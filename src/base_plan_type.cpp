@@ -2590,6 +2590,89 @@ void PlanMultigraph::check_representative_edges(
     }
 }
 
+void PlanMultigraph::check_matches_other_build(PlanMultigraph const &other,
+                                               bool const this_result,
+                                               bool const other_result,
+                                               PlanVector const &region_ids,
+                                               int const num_regions) const {
+    std::ostringstream problems;
+    int num_problems = 0;
+    constexpr int max_reported = 25;
+    auto report = [&](std::string const &problem) {
+        if (num_problems < max_reported) problems << "  " << problem << "\n";
+        ++num_problems;
+    };
+    auto compare = [&](std::string const &what, int const mine, int const theirs) {
+        if (mine != theirs) {
+            report(what + ": " + std::to_string(mine) + " here vs " + std::to_string(theirs));
+        }
+    };
+
+    if (this_result != other_result) {
+        report(std::string("return value: ") + (this_result ? "valid" : "invalid") +
+               " here vs " + (other_result ? "valid" : "invalid"));
+    } else if (this_result) {
+        // the rest is only defined when the plan is valid
+        compare("num_county_connected_components", num_county_connected_components,
+                other.num_county_connected_components);
+        compare("num_county_region_components", num_county_region_components,
+                other.num_county_region_components);
+        compare("num_hashed_pairs", pair_map.num_hashed_pairs, other.pair_map.num_hashed_pairs);
+        compare("num_hier_smc_merge_valid_pairs", pair_map.num_hier_smc_merge_valid_pairs,
+                other.pair_map.num_hier_smc_merge_valid_pairs);
+        for (int r = 0; r < num_regions; ++r) {
+            compare("county_component[" + std::to_string(r) + "]", county_component[r],
+                    other.county_component[r]);
+        }
+        int const shared_components =
+            std::min(num_county_connected_components, other.num_county_connected_components);
+        for (int k = 0; k < shared_components; ++k) {
+            compare("component_split_counts[" + std::to_string(k) + "]",
+                    component_split_counts[k], other.component_split_counts[k]);
+            compare("component_region_counts[" + std::to_string(k) + "]",
+                    component_region_counts[k], other.component_region_counts[k]);
+        }
+        // every pair here must be in the other build with the same counts and
+        // flags; with equal pair counts (checked above) the two sets are equal
+        for (auto const &a_pair : pair_map.hashed_pairs) {
+            std::string const name = "pair (" + std::to_string(a_pair.first) + ", " +
+                                     std::to_string(a_pair.second) + ")";
+            auto const theirs_lookup = other.pair_map.get_value(a_pair.first, a_pair.second);
+            if (!theirs_lookup.first) {
+                report(name + " is missing from the other build");
+                continue;
+            }
+            PairHashData const mine = pair_map.get_value(a_pair.first, a_pair.second).second;
+            PairHashData const &theirs = theirs_lookup.second;
+            compare(name + " within_county_edges", mine.within_county_edges,
+                    theirs.within_county_edges);
+            compare(name + " across_county_edges", mine.across_county_edges,
+                    theirs.across_county_edges);
+            compare(name + " admin_adjacent", mine.admin_adjacent, theirs.admin_adjacent);
+            compare(name + " same_admin_component", mine.same_admin_component,
+                    theirs.same_admin_component);
+            compare(name + " merge_is_hier_valid", mine.merge_is_hier_valid,
+                    theirs.merge_is_hier_valid);
+            compare(name + " shared_county", mine.shared_county, theirs.shared_county);
+        }
+    }
+
+    if (num_problems > 0) {
+        std::ostringstream oss;
+        oss << "PlanMultigraph::check_matches_other_build: the two hierarchical multigraph "
+            << "builds disagree on a plan with " << num_regions << " regions ("
+            << num_problems << " differences";
+        if (num_problems > max_reported) oss << ", first " << max_reported << " shown";
+        oss << "):\n" << problems.str();
+        oss << "Region ids: c(";
+        for (int v = 0; v < map_params.V; ++v) {
+            oss << static_cast<int>(region_ids[v]) << (v + 1 < map_params.V ? "," : "");
+        }
+        oss << ")\n";
+        throw std::runtime_error(oss.str());
+    }
+}
+
 // indexing (i,j) in a matrix
 // assuming the length of a row is row_length
 // i is the row index
@@ -3085,7 +3168,22 @@ bool PlanMultigraph::build_plan_hierarchical_multigraph_single_pass(PlanVector c
 
 bool PlanMultigraph::build_plan_multigraph(PlanVector const &region_ids,
                                            int const num_regions) {
-    return build_plan_multigraph_traversal(region_ids, num_regions);
+    bool const result = build_plan_multigraph_traversal(region_ids, num_regions);
+
+    // Debug builds also run the single-pass build on a scratch multigraph and
+    // check that it agrees with the traversal
+    if constexpr (perf_config::object_integrity_checking) {
+        if (counties_on) {
+            PlanMultigraph single_pass(map_params);
+            bool const single_pass_result =
+                single_pass.build_plan_hierarchical_multigraph_single_pass(region_ids, num_regions);
+            if (single_pass_result) single_pass.check_representative_edges(region_ids);
+            check_matches_other_build(single_pass, result, single_pass_result, region_ids,
+                                      num_regions);
+        }
+    }
+
+    return result;
 }
 
 bool PlanMultigraph::build_plan_multigraph_traversal(PlanVector const &region_ids,

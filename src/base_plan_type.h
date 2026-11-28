@@ -490,6 +490,17 @@ class PlanMultigraph {
         PlanVector const &region_ids
     ) const;
 
+    // Debug check (perf_config::object_integrity_checking). `other` was built
+    // from the same plan by the other hierarchical build, and `this_result` and
+    // `other_result` are the two builds' return values. Throws if the two
+    // disagree on anything both builds must agree on: the return value and, when
+    // the plan is valid, the components, their split and region counts, the
+    // counters and every pair's counts and flags. The order of
+    // pair_map.hashed_pairs and the representative edges may differ.
+    void check_matches_other_build(PlanMultigraph const &other, bool const this_result,
+                                   bool const other_result, PlanVector const &region_ids,
+                                   int const num_regions) const;
+
 
     // Checks if the a plan is hierarchically connected, ie
     // Each county intersect region has at most 1 component
